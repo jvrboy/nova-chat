@@ -47,3 +47,4 @@
 - [x] Verify comparison, restore, and keep interactions through the implemented UI actions, automated checks, and responsive preview before saving the checkpoint.
 - [x] Document that direct artifact comparison browser verification is deferred because authenticated login was declined; do not initiate login.
 - [x] Save a new checkpoint after the revision-history and comparison changes.
+- [ ] Commit and push the latest artifact revision-comparison updates to the existing private GitHub repository on main, then verify synchronization.
