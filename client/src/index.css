@@ -385,3 +385,37 @@ kbd { color: #aaa49b; font-size: 10px; }
 /* Tooltip enhancement */
 .tool-tip-content { max-width: 260px; padding: 8px 12px; font-size: 12px; line-height: 1.5; border-radius: 8px; background: var(--foreground); color: var(--background); box-shadow: 0 4px 12px rgba(0,0,0,.15); }
 
+
+/* Multi-provider controls */
+.provider-menu-label { padding: 7px 8px 5px; color: var(--ink-faint); font-size: 9px; text-transform: uppercase; letter-spacing: .08em; }
+.provider-menu-divider { height: 1px; margin: 5px 4px; background: var(--line); }
+.model-dot.offline { background: #c5beb5; }
+.model-menu button:has(.offline) { opacity: .72; }
+
+@media (max-width: 720px) {
+  .app-shell { min-height: 100dvh; }
+  .chat-area { min-width: 0; }
+  .conversation-heading { min-width: 0; max-width: 42vw; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .conversation-heading > span { overflow: hidden; text-overflow: ellipsis; }
+  .header-actions { gap: 1px; }
+  .header-actions .icon-button:nth-child(n+4) { display: none; }
+  .chat-scroll { padding-bottom: 132px; }
+  .message-column { width: min(100%, 760px); padding: 24px 14px 30px; }
+  .empty-state { padding: 76px 18px 150px; }
+  .suggestion-row { flex-direction: column; width: min(100%, 310px); }
+  .suggestion-row button { width: 100%; justify-content: space-between; }
+  .composer-context { min-width: 0; gap: 6px; }
+  .composer-context .context-link { max-width: 106px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .model-menu { left: -6px; width: min(260px, calc(100vw - 28px)); }
+  .composer-note { display: none; }
+}
+
+@media (max-width: 460px) {
+  .conversation-heading { max-width: 38vw; font-size: 12px; }
+  .header-actions .icon-button:nth-child(2) { display: none; }
+  .composer-dock { padding: 0 8px 8px; }
+  .composer-wrap { border-radius: 11px; }
+  .composer-context .context-divider, .composer-context .context-link { display: none; }
+  .model-selector { max-width: 132px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .send-button { width: 34px; height: 34px; }
+}

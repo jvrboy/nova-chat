@@ -7,4 +7,12 @@ export const ENV = {
   isProduction: process.env.NODE_ENV === "production",
   forgeApiUrl: process.env.BUILT_IN_FORGE_API_URL ?? "",
   forgeApiKey: process.env.BUILT_IN_FORGE_API_KEY ?? "",
+  providerOrder: process.env.NOVA_PROVIDER_ORDER ?? "gemini,groq,ollama-cloud,openrouter",
+  geminiApiKeys: process.env.GEMINI_API_KEYS ?? process.env.GEMINI_API_KEY ?? "",
+  groqApiKeys: process.env.GROQ_API_KEYS ?? process.env.GROQ_API_KEY ?? "",
+  ollamaCloudApiKeys: process.env.OLLAMA_CLOUD_API_KEYS ?? process.env.OLLAMA_CLOUD_API_KEY ?? "",
+  openrouterApiKeys: process.env.OPENROUTER_API_KEYS ?? process.env.OPENROUTER_API_KEY ?? "",
+  kaggleApiKeys: process.env.KAGGLE_API_KEYS ?? process.env.KAGGLE_API_KEY ?? "",
+  firecrawlApiKeys: process.env.FIRECRAWL_API_KEYS ?? process.env.FIRECRAWL_API_KEY ?? "",
+  e2bApiKeys: process.env.E2B_API_KEYS ?? process.env.E2B_API_KEY ?? "",
 };

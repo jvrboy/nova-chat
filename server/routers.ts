@@ -82,6 +82,7 @@ import {
 } from "./_core/tradingStrategy";
 import { runSwarmConsensus, listSwarmAgents, SWARM_AGENTS } from "./_core/swarmConsensus";
 import { executeSandboxedCode } from "./_core/performanceTools";
+import { e2bRunCode, firecrawlScrape, invokeWithProviderFailover, kaggleListDatasets, listConnectionStatus, listProviderStatus, type ProviderId } from "./_core/providerGateway";
 import {
   createConversation,
   createMessage,
@@ -235,10 +236,13 @@ export const appRouter = router({
   }),
   ai: router({
     models: protectedProcedure.query(async () => (await listLLMModels()).data),
+    providers: protectedProcedure.query(() => listProviderStatus()),
+    connections: protectedProcedure.query(() => listConnectionStatus()),
     complete: protectedProcedure
       .input(
         z.object({
           model: z.string().optional(),
+          provider: z.enum(["gemini", "groq", "ollama-cloud", "openrouter"]).optional(),
           system: z.string().optional(),
           messages: z
             .array(
@@ -251,8 +255,9 @@ export const appRouter = router({
         })
       )
       .mutation(async ({ input }) => {
-        const response = await invokeLLM({
+        const response = await invokeWithProviderFailover({
           model: input.model,
+          provider: input.provider as ProviderId | undefined,
           messages: [
             {
               role: "system",
@@ -266,6 +271,8 @@ export const appRouter = router({
         const content = response.choices[0]?.message.content;
         return {
           model: response.model,
+          provider: response.provider,
+          providerLabel: response.providerLabel,
           content:
             typeof content === "string"
               ? content
@@ -329,6 +336,17 @@ export const appRouter = router({
         );
         return { ...parsed, kind: input.kind, model: response.model };
       }),
+  }),
+  connections: router({
+    scrape: protectedProcedure
+      .input(z.object({ url: z.string().url().max(2000) }))
+      .mutation(({ input }) => firecrawlScrape(input.url)),
+    runCode: protectedProcedure
+      .input(z.object({ code: z.string().min(1).max(50000), language: z.string().default("python") }))
+      .mutation(({ input }) => e2bRunCode(input.code, input.language)),
+    listDatasets: protectedProcedure
+      .input(z.object({ search: z.string().min(1).max(200) }))
+      .mutation(({ input }) => kaggleListDatasets(input.search)),
   }),
   images: router({
     generate: protectedProcedure
