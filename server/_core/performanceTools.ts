@@ -36,7 +36,7 @@ export class LRUCache<T> {
   delete(key: string): boolean { return this.cache.delete(key); }
   clear(): void { this.cache.clear(); }
   get size(): number { return this.cache.size; }
-  entries(): Array<{ key: string; value: T }> { return [...this.cache.values()].map(e => ({ key: e.key, value: e.value })); }
+  entries(): Array<{ key: string; value: T }> { return Array.from(this.cache.values(), e => ({ key: e.key, value: e.value })); }
 }
 
 // --- Metrics Collector ---
@@ -89,7 +89,7 @@ export class MetricsCollector {
 
   getAllStats(): Record<string, ReturnType<typeof this.getStats>> {
     const result: Record<string, ReturnType<typeof this.getStats>> = {};
-    for (const name of [...this.timings.keys(), ...this.histograms.keys()]) result[name] = this.getStats(name);
+    for (const name of [...Array.from(this.timings.keys()), ...Array.from(this.histograms.keys())]) result[name] = this.getStats(name);
     return result;
   }
 
@@ -117,14 +117,14 @@ export class EventBus {
 
   async emit(event: string, data?: unknown): Promise<void> {
     const callbacks = this.subscribers.get(event);
-    if (callbacks) for (const cb of callbacks) { try { await cb(data); } catch { /* subscriber error */ } }
-    for (const cb of this.globalSubscribers) { try { await cb({ event, data }); } catch { /* subscriber error */ } }
+    if (callbacks) for (const cb of Array.from(callbacks)) { try { await cb(data); } catch { /* subscriber error */ } }
+    for (const cb of Array.from(this.globalSubscribers)) { try { await cb({ event, data }); } catch { /* subscriber error */ } }
   }
 
   off(event: string): void { this.subscribers.delete(event); }
   removeAllListeners(): void { this.subscribers.clear(); this.globalSubscribers.clear(); }
   listenerCount(event?: string): number {
-    if (!event) return [...this.subscribers.values()].reduce((s, set) => s + set.size, 0) + this.globalSubscribers.size;
+    if (!event) return Array.from(this.subscribers.values()).reduce((s, set) => s + set.size, 0) + this.globalSubscribers.size;
     return (this.subscribers.get(event)?.size ?? 0) + this.globalSubscribers.size;
   }
 }

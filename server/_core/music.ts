@@ -254,31 +254,31 @@ export function generateDrumPattern(
 ): { instrument: string; pattern: boolean[] }[] {
   const patterns: Record<string, Record<string, boolean[]>> = {
     rock: {
-      kick:    [1,0,0,0, 1,0,0,0, 1,0,0,0, 1,0,0,0],
-      snare:   [0,0,0,0, 1,0,0,0, 0,0,0,0, 1,0,0,0],
-      hihat:   [1,0,1,0, 1,0,1,0, 1,0,1,0, 1,0,1,0],
+      kick:    [true,false,false,false, true,false,false,false, true,false,false,false, true,false,false,false],
+      snare:   [false,false,false,false, true,false,false,false, false,false,false,false, true,false,false,false],
+      hihat:   [true,false,true,false, true,false,true,false, true,false,true,false, true,false,true,false],
     },
     jazz: {
-      ride:    [1,0,0,1, 0,0,1,0, 0,1,0,0, 1,0,0,1],
-      kick:    [1,0,0,0, 0,0,0,0, 0,0,1,0, 0,0,0,0],
-      snare:   [0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0],
+      ride:    [true,false,false,true, false,false,true,false, false,true,false,false, true,false,false,true],
+      kick:    [true,false,false,false, false,false,false,false, false,false,true,false, false,false,false,false],
+      snare:   [false,false,false,false, false,false,false,false, false,false,false,false, false,false,false,false],
     },
     hiphop: {
-      kick:    [1,0,0,0, 0,0,1,0, 0,0,1,0, 0,0,0,0],
-      snare:   [0,0,0,0, 1,0,0,0, 0,0,0,0, 1,0,0,0],
-      hihat:   [1,1,1,1, 1,1,1,1, 1,1,1,1, 1,1,1,1],
+      kick:    [false,false,false,false, false,false,true,false, false,false,true,false, false,false,false,false],
+      snare:   [false,false,false,false, true,false,false,false, false,false,false,false, true,false,false,false],
+      hihat:   [true,true,true,true, true,true,true,true, true,true,true,true, true,true,true,true],
     },
     electronic: {
-      kick:    [1,0,0,0, 1,0,0,0, 1,0,0,0, 1,0,0,0],
-      clap:    [0,0,0,0, 1,0,0,0, 0,0,0,0, 1,0,0,0],
-      hihat:   [1,0,1,0, 1,0,1,0, 1,0,1,1, 1,0,1,0],
-      bass:    [1,0,0,1, 0,0,1,0, 1,0,0,1, 0,0,1,0],
+      kick:    [true,false,false,false, true,false,false,false, true,false,false,false, true,false,false,false],
+      clap:    [false,false,false,false, true,false,false,false, false,false,false,false, true,false,false,false],
+      hihat:   [true,false,true,false, true,false,true,false, true,false,true,true, true,false,true,false],
+      bass:    [true,false,false,true, false,false,true,false, true,false,false,true, false,false,true,false],
     },
     latin: {
-      kick:    [1,0,0,0, 0,0,1,0, 0,0,0,0, 1,0,0,0],
-      snare:   [0,0,0,0, 1,0,0,1, 0,0,0,0, 1,0,0,0],
-      hihat:   [1,0,1,1, 0,1,1,0, 1,1,0,1, 1,0,1,0],
-      cowbell: [1,0,0,1, 0,0,1,0, 0,1,0,0, 1,0,0,1],
+      kick:    [true,false,false,true, false,false,true,false, false,true,false,false, true,false,false,true],
+      snare:   [false,false,false,false, true,false,false,true, false,false,false,false, true,false,false,false],
+      hihat:   [true,false,true,true, false,true,true,false, true,true,false,true, true,false,true,false],
+      cowbell: [true,false,false,true, false,false,true,false, false,true,false,false, true,false,false,true],
     },
   };
   const stylePattern = patterns[style] || patterns.rock;
@@ -352,7 +352,8 @@ export function generateSong(
     const chords = generateChordProgression(root, scaleName, degrees, false);
     const melody = generateMelody(root, scaleName, 16);
     const bass = generateBassLine(chords, 'walking');
-    const drums = generateDrumPattern(style === 'pop' ? 'rock' : style, 2);
+    const drumStyle = style === 'pop' || style === 'classical' ? 'rock' : style;
+    const drums = generateDrumPattern(drumStyle, 2);
     return { name: sectionName, chords, melody, bass, drums };
   });
   const allMelody = songSections.flatMap(s => s.melody);

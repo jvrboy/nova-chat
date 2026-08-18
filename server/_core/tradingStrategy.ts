@@ -559,8 +559,9 @@ export function detectCandlePatterns(candles: OHLCV[]): CandlePattern[][] {
     // Morning Star / Evening Star
     if (i >= 2) {
       const twoBefore = candles[i - 2];
-      if (!prevIsBullish && prevBody < twoBefore.body * 0.3 && isBullish && body > twoBefore.body * 0.5 && c.close > (twoBefore.open + twoBefore.close) / 2) patterns.push({ name: 'Morning Star', type: 'bullish', reliability: 'high', description: 'Three-candle bullish reversal' });
-      if (prevIsBullish && prevBody < twoBefore.body * 0.3 && !isBullish && body > twoBefore.body * 0.5 && c.close < (twoBefore.open + twoBefore.close) / 2) patterns.push({ name: 'Evening Star', type: 'bearish', reliability: 'high', description: 'Three-candle bearish reversal' });
+      const twoBeforeBody = Math.abs(twoBefore.close - twoBefore.open);
+      if (!prevIsBullish && prevBody < twoBeforeBody * 0.3 && isBullish && body > twoBeforeBody * 0.5 && c.close > (twoBefore.open + twoBefore.close) / 2) patterns.push({ name: 'Morning Star', type: 'bullish', reliability: 'high', description: 'Three-candle bullish reversal' });
+      if (prevIsBullish && prevBody < twoBeforeBody * 0.3 && !isBullish && body > twoBeforeBody * 0.5 && c.close < (twoBefore.open + twoBefore.close) / 2) patterns.push({ name: 'Evening Star', type: 'bearish', reliability: 'high', description: 'Three-candle bearish reversal' });
     }
     // Piercing Line
     if (!isBullish && prevIsBullish && c.open < prev.low && c.close > (prev.open + prev.close) / 2 && c.close < prev.open) patterns.push({ name: 'Piercing Line', type: 'bullish', reliability: 'medium', description: 'Bullish reversal - price pierces midpoint' });

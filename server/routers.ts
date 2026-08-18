@@ -73,6 +73,7 @@ import {
 } from "./_core/codeTools";
 import {
   runBacktest, BUILT_IN_STRATEGIES, generateRSIBBSignal, generateMACDCrossSignal,
+  type StrategyDefinition,
   generateStochasticCrossSignal, generateEMACrossSignal, detectCandlePatterns,
   DERIV_SYMBOLS, parseDerivCandles, buildDerivWebSocketURL, buildDerivCandleRequest,
   sma as tsSma, ema as tsEma, rsi as tsRsi, atr as tsAtr, bollingerBands as tsBB,
@@ -1194,19 +1195,19 @@ export const appRouter = router({
       strategyName: z.string().optional(),
       customStrategy: z.object({
         name: z.string(), description: z.string(), timeframe: z.string(), marketType: z.string(),
-        entryRules: z.array(z.object({ type: z.string(), params: z.record(z.union([z.number(), z.string(), z.boolean()])) })),
+        entryRules: z.array(z.object({ type: z.string(), params: z.record(z.string(), z.union([z.number(), z.string(), z.boolean()])) })),
         exitRules: z.object({ tpAtrMult: z.number(), slAtrMult: z.number(), trailingStop: z.boolean().optional(), trailingAtrMult: z.number().optional(), maxHoldingBars: z.number() }),
         riskManagement: z.object({ riskPerTrade: z.number(), maxConcurrentPositions: z.number(), minBarsBetweenTrades: z.number() }),
       }).optional(),
     })).mutation(({ input }) => {
       const strategy = input.customStrategy ?? BUILT_IN_STRATEGIES.find(s => s.name === input.strategyName) ?? BUILT_IN_STRATEGIES[0];
-      const { trades, equityCurve, drawdownCurve, ...stats } = runBacktest(input.candles, strategy);
+      const { trades, equityCurve, drawdownCurve, ...stats } = runBacktest(input.candles, strategy as StrategyDefinition);
       return { ...stats, tradeCount: trades.length, sampleTrades: trades.slice(-10) };
     }),
     signals: protectedProcedure.input(z.object({
       candles: z.array(z.object({ timestamp: z.number(), open: z.number(), high: z.number(), low: z.number(), close: z.number(), volume: z.number() })).min(30),
       strategyType: z.enum(['rsi_bb_reversal', 'macd_cross', 'stochastic_cross', 'ema_cross']),
-      params: z.record(z.number()).optional(),
+      params: z.record(z.string(), z.number()).optional(),
     })).mutation(({ input }) => {
       switch (input.strategyType) {
         case 'rsi_bb_reversal': return { signals: generateRSIBBSignal(input.candles, input.params as any) };
