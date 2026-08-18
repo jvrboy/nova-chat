@@ -33,5 +33,6 @@
 - [x] Save a new checkpoint after the latest feature-expansion changes and verification run.
 - [x] Add custom prompt folders with create, rename, and delete controls.
 - [x] Add prompt-to-folder assignment, folder filtering, and locally persisted prompt organization.
-- [ ] Verify prompt-library interactions, responsive styling, tests, and save a checkpoint.
+- [x] Verify prompt-library interactions, responsive styling, tests, and save a checkpoint.
 - [x] Ensure deleted-folder prompts retain a valid selectable assignment and re-verify the folder flows.
+- [x] Verify prompt-folder lifecycle implementation, live folder selection/deletion behavior, and mobile-sized layout.
