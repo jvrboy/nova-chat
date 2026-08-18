@@ -62,6 +62,8 @@ import {
   SCALES,
   CHORD_TYPES,
 } from "./_core/music";
+import { analyzeSynthPatch, createModulationMatrix, createSerumStylePatch, type SynthPatch } from "./_core/synthTools";
+import { adx, cci, forexSignalSnapshot, marketStructure, multiTimeframeConfluence, obv, volatilityRegime, williamsR } from "./_core/forexAdvanced";
 import {
   analyzeMetrics,
   detectIssues,
@@ -437,6 +439,15 @@ export const appRouter = router({
       .mutation(({ ctx, input }) => createMessage(input)),
   }),
   forex: router({
+    advancedIndicators: protectedProcedure
+      .input(z.object({ data: z.array(z.object({ timestamp: z.number(), open: z.number(), high: z.number(), low: z.number(), close: z.number(), volume: z.number() })).min(30).max(5000), period: z.number().int().min(2).max(100).default(14) }))
+      .mutation(({ input }) => ({ adx: adx(input.data, input.period), cci: cci(input.data), williamsR: williamsR(input.data, input.period), obv: obv(input.data), volatility: volatilityRegime(input.data, input.period), structure: marketStructure(input.data) })),
+    signalSnapshot: protectedProcedure
+      .input(z.object({ data: z.array(z.object({ timestamp: z.number(), open: z.number(), high: z.number(), low: z.number(), close: z.number(), volume: z.number() })).min(30).max(5000), period: z.number().int().min(2).max(100).default(14) }))
+      .mutation(({ input }) => forexSignalSnapshot(input.data, input.period)),
+    multiTimeframe: protectedProcedure
+      .input(z.object({ frames: z.array(z.object({ timeframe: z.string().min(1).max(20), data: z.array(z.object({ timestamp: z.number(), open: z.number(), high: z.number(), low: z.number(), close: z.number(), volume: z.number() })).min(20).max(5000) })).min(1).max(10) }))
+      .mutation(({ input }) => multiTimeframeConfluence(input.frames)),
     analyze: protectedProcedure
       .input(
         z.object({
@@ -587,6 +598,18 @@ export const appRouter = router({
       .query(({ input }) => {
         return { correlation: correlation(input.seriesA, input.seriesB) };
       }),
+  }),
+  soundDesign: router({
+    createPatch: protectedProcedure
+      .input(z.object({ name: z.string().min(1).max(160), genre: z.string().max(80).optional(), mood: z.enum(["dark", "bright", "aggressive", "organic", "ambient"]).optional(), tempo: z.number().min(20).max(300).optional(), rootNote: z.string().max(4).optional(), wavetable: z.string().max(120).optional() }))
+      .mutation(({ input }) => createSerumStylePatch(input)),
+    analyzePatch: protectedProcedure
+      .input(z.object({ patch: z.record(z.string(), z.unknown()) }))
+      .mutation(({ input }) => analyzeSynthPatch(input.patch as unknown as SynthPatch)),
+    modulationMatrix: protectedProcedure
+      .input(z.object({ patch: z.record(z.string(), z.unknown()) }))
+      .mutation(({ input }) => createModulationMatrix(input.patch as unknown as SynthPatch)),
+    patchCapabilities: protectedProcedure.query(() => ({ formats: ["serum-style-json", "modulation-matrix", "macro-map"], categories: ["bass", "lead", "pad", "pluck", "fx", "drum-synth", "atmosphere"], note: "The backend returns an engine-neutral patch specification that can be adapted to Xfer Serum or another synth adapter." })),
   }),
   music: router({
     scales: protectedProcedure

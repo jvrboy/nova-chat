@@ -4,6 +4,8 @@
  */
 
 import { invokeLLM, type Message, type Tool } from "./llm";
+import { forexSignalSnapshot, multiTimeframeConfluence } from "./forexAdvanced";
+import { analyzeSynthPatch, createModulationMatrix, createSerumStylePatch } from "./synthTools";
 
 export type AgentRole =
   | "forex_analyst"
@@ -103,6 +105,30 @@ const dataProcessingTool: Tool = {
   },
 };
 
+const advancedForexTool: Tool = {
+  type: "function",
+  function: {
+    name: "forex_signal_snapshot",
+    description: "Analyze OHLCV candles with ADX, CCI, Williams %R, OBV, market structure, volatility regime, and a non-guaranteed directional snapshot.",
+    parameters: { type: "object", properties: { data: { type: "array", description: "OHLCV candles" }, period: { type: "number" } }, required: ["data"] },
+  },
+};
+const multiTimeframeTool: Tool = {
+  type: "function",
+  function: {
+    name: "forex_multi_timeframe",
+    description: "Compare several OHLCV timeframes and calculate confluence.",
+    parameters: { type: "object", properties: { frames: { type: "array", description: "Timeframe/data objects" } }, required: ["frames"] },
+  },
+};
+const synthPatchTool: Tool = {
+  type: "function",
+  function: {
+    name: "create_synth_patch",
+    description: "Create a Serum/Xfer-style engine-neutral synth patch with oscillators, filter, envelopes, LFOs, modulation, effects, and macros.",
+    parameters: { type: "object", properties: { name: { type: "string" }, genre: { type: "string" }, mood: { type: "string", enum: ["dark", "bright", "aggressive", "organic", "ambient"] }, tempo: { type: "number" }, wavetable: { type: "string" } }, required: ["name"] },
+  },
+};
 // --- Agent Configurations ---
 
 export const AGENTS: Record<AgentRole, AgentConfig> = {
@@ -123,7 +149,7 @@ Your analysis includes:
 Always provide specific price levels, risk/reward ratios, and clear actionable recommendations.
 Format your responses with clear headers and use markdown tables when presenting data.
 Never provide financial advice as guarantees - always include appropriate disclaimers.`,
-    tools: [calculatorTool, webSearchTool, dataProcessingTool],
+    tools: [calculatorTool, webSearchTool, dataProcessingTool, advancedForexTool, multiTimeframeTool],
     maxTokens: 4000,
   },
 
@@ -173,7 +199,7 @@ When composing, always specify:
 
 Provide music in both descriptive and notation formats (chord charts, ABC notation when appropriate).
 Consider genre conventions and emotional intent.`,
-    tools: [calculatorTool, dataProcessingTool],
+    tools: [calculatorTool, dataProcessingTool, synthPatchTool],
     maxTokens: 4000,
   },
 
@@ -375,6 +401,18 @@ async function executeToolCall(
   args: Record<string, unknown>
 ): Promise<string> {
   switch (toolName) {
+    case "forex_signal_snapshot": {
+      const data = Array.isArray(args.data) ? args.data as Parameters<typeof forexSignalSnapshot>[0] : [];
+      return JSON.stringify(forexSignalSnapshot(data, Number(args.period ?? 14)));
+    }
+    case "forex_multi_timeframe": {
+      const frames = Array.isArray(args.frames) ? args.frames as Parameters<typeof multiTimeframeConfluence>[0] : [];
+      return JSON.stringify(multiTimeframeConfluence(frames));
+    }
+    case "create_synth_patch": {
+      const patch = createSerumStylePatch({ name: String(args.name ?? "Nova Patch"), genre: args.genre ? String(args.genre) : undefined, mood: args.mood as "dark" | "bright" | "aggressive" | "organic" | "ambient" | undefined, tempo: args.tempo ? Number(args.tempo) : undefined, wavetable: args.wavetable ? String(args.wavetable) : undefined });
+      return JSON.stringify({ patch, analysis: analyzeSynthPatch(patch), modulationMatrix: createModulationMatrix(patch) });
+    }
     case "calculator": {
       const expr = String(args.expression ?? "");
       // Safe math evaluation (only numbers and operators)
