@@ -1,20 +1,29 @@
 import { describe, expect, it } from "vitest";
 import {
+  analyzeDependencyRisk,
   buildAuditEvent,
   buildCachePolicy,
   chunkText,
   createIdempotencyKey,
   createRunbook,
+  buildRetryPolicy,
+  compareApiVersions,
+  evaluateAccessPolicy,
   evaluateCircuitBreaker,
   evaluateFeatureFlag,
   evaluateServiceHealth,
   evaluateSlo,
   evaluateTokenBucket,
+  forecastUsageCost,
   generateFeatureCatalog,
   planCapacity,
+  planMaintenanceWindow,
+  planPagination,
   planWorkflowExecution,
   redactSensitiveText,
+  scanSecrets,
   scoreDataQuality,
+  summarizeEventStream,
 } from "./_core/backendTools";
 
 describe("advanced backend tools", () => {
@@ -118,5 +127,74 @@ describe("advanced backend tools", () => {
     expect(
       evaluateSlo({ target: 0.99, goodEvents: 990, totalEvents: 1000 }).status
     ).toBe("within_budget");
+  });
+
+  it("builds retry, access, pagination, API compatibility, and maintenance plans", () => {
+    expect(
+      buildRetryPolicy({ maxAttempts: 3, baseDelayMs: 100, maxDelayMs: 1000 })
+        .schedule
+    ).toHaveLength(3);
+    expect(
+      evaluateAccessPolicy({
+        subject: { id: "user-1", roles: ["editor"] },
+        action: "update",
+        resource: { id: "doc-1", requiredRoles: ["editor"] },
+      }).allowed
+    ).toBe(true);
+    expect(
+      planPagination({ totalItems: 101, page: 2, pageSize: 25 }).offset
+    ).toBe(25);
+    expect(
+      compareApiVersions({
+        previous: [
+          { method: "GET", path: "/items", responseFields: ["id", "name"] },
+        ],
+        next: [{ method: "GET", path: "/items", responseFields: ["id"] }],
+      }).breaking
+    ).toBe(true);
+    expect(
+      planMaintenanceWindow({
+        durationMinutes: 60,
+        impactedUsers: 1000,
+        regions: ["us"],
+      }).phases
+    ).toHaveLength(4);
+  });
+
+  it("scans secrets, forecasts costs, scores dependencies, and summarizes streams", () => {
+    expect(scanSecrets("password='super-secret-token'").safe).toBe(false);
+    expect(
+      forecastUsageCost({
+        unitCost: 0.5,
+        currentUnits: 10,
+        growthRate: 0.1,
+        months: 2,
+      }).totalCost
+    ).toBe(10.5);
+    expect(
+      analyzeDependencyRisk([
+        {
+          name: "critical-lib",
+          version: "1.0.0",
+          daysSinceUpdate: 400,
+          criticalVulnerabilities: 1,
+          direct: true,
+        },
+      ]).requiresAction
+    ).toBe(true);
+    expect(
+      summarizeEventStream([
+        {
+          type: "deploy",
+          timestamp: "2026-08-18T00:00:00.000Z",
+          severity: "info",
+        },
+        {
+          type: "error",
+          timestamp: "2026-08-18T00:01:00.000Z",
+          severity: "critical",
+        },
+      ]).bySeverity.critical
+    ).toBe(1);
   });
 });

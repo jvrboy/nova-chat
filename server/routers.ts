@@ -5,21 +5,30 @@ import { transcribeAudio } from "./_core/voiceTranscription";
 import { runAgent, listAgents, type AgentRole } from "./_core/agents";
 import { executePipeline, listPipelines, getPipeline } from "./_core/pipelines";
 import {
+  analyzeDependencyRisk,
   buildAuditEvent,
   buildCachePolicy,
   chunkText,
   createIdempotencyKey,
   createRunbook,
+  buildRetryPolicy,
+  compareApiVersions,
+  evaluateAccessPolicy,
   evaluateCircuitBreaker,
   evaluateFeatureFlag,
   evaluateServiceHealth,
   evaluateSlo,
   evaluateTokenBucket,
+  forecastUsageCost,
   generateFeatureCatalog,
   planCapacity,
+  planMaintenanceWindow,
+  planPagination,
   planWorkflowExecution,
   redactSensitiveText,
+  scanSecrets,
   scoreDataQuality,
+  summarizeEventStream,
 } from "./_core/backendTools";
 import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
@@ -981,6 +990,135 @@ export const appRouter = router({
         })
       )
       .query(({ input }) => evaluateSlo(input)),
+    retryPolicy: protectedProcedure
+      .input(
+        z.object({
+          maxAttempts: z.number().int().min(1).max(20),
+          baseDelayMs: z.number().int().min(1),
+          maxDelayMs: z.number().int().min(1),
+          jitterRatio: z.number().min(0).max(1).optional(),
+        })
+      )
+      .query(({ input }) => buildRetryPolicy(input)),
+    accessPolicy: protectedProcedure
+      .input(
+        z.object({
+          subject: z.object({
+            id: z.string().min(1),
+            roles: z.array(z.string()).max(100),
+            attributes: z
+              .record(
+                z.string(),
+                z.union([z.string(), z.number(), z.boolean()])
+              )
+              .optional(),
+          }),
+          action: z.string().min(1).max(160),
+          resource: z.object({
+            id: z.string().min(1),
+            ownerId: z.string().optional(),
+            requiredRoles: z.array(z.string()).max(100).optional(),
+            attributes: z
+              .record(
+                z.string(),
+                z.union([z.string(), z.number(), z.boolean()])
+              )
+              .optional(),
+          }),
+        })
+      )
+      .query(({ input }) => evaluateAccessPolicy(input)),
+    secretScan: protectedProcedure
+      .input(z.object({ text: z.string().min(1).max(200000) }))
+      .mutation(({ input }) => scanSecrets(input.text)),
+    pagination: protectedProcedure
+      .input(
+        z.object({
+          totalItems: z.number().int().min(0),
+          page: z.number().int().min(1),
+          pageSize: z.number().int().min(1),
+          maxPageSize: z.number().int().min(1).max(5000).optional(),
+        })
+      )
+      .query(({ input }) => planPagination(input)),
+    apiCompatibility: protectedProcedure
+      .input(
+        z.object({
+          previous: z
+            .array(
+              z.object({
+                path: z.string(),
+                method: z.string(),
+                responseFields: z.array(z.string()),
+              })
+            )
+            .max(1000),
+          next: z
+            .array(
+              z.object({
+                path: z.string(),
+                method: z.string(),
+                responseFields: z.array(z.string()),
+              })
+            )
+            .max(1000),
+        })
+      )
+      .mutation(({ input }) => compareApiVersions(input)),
+    usageCost: protectedProcedure
+      .input(
+        z.object({
+          unitCost: z.number().min(0),
+          currentUnits: z.number().min(0),
+          growthRate: z.number().min(-0.99).max(10),
+          months: z.number().int().min(1).max(60),
+        })
+      )
+      .query(({ input }) => forecastUsageCost(input)),
+    dependencyRisk: protectedProcedure
+      .input(
+        z.object({
+          dependencies: z
+            .array(
+              z.object({
+                name: z.string().min(1),
+                version: z.string().min(1),
+                daysSinceUpdate: z.number().int().min(0),
+                criticalVulnerabilities: z.number().int().min(0).optional(),
+                direct: z.boolean().optional(),
+              })
+            )
+            .max(5000),
+        })
+      )
+      .mutation(({ input }) => analyzeDependencyRisk(input.dependencies)),
+    maintenanceWindow: protectedProcedure
+      .input(
+        z.object({
+          durationMinutes: z.number().int().min(1).max(10080),
+          impactedUsers: z.number().int().min(0),
+          regions: z.array(z.string().min(1)).min(1).max(100),
+          canaryPercent: z.number().min(0).max(100).optional(),
+        })
+      )
+      .query(({ input }) => planMaintenanceWindow(input)),
+    eventSummary: protectedProcedure
+      .input(
+        z.object({
+          events: z
+            .array(
+              z.object({
+                type: z.string().min(1),
+                timestamp: z.string().datetime(),
+                severity: z
+                  .enum(["info", "warning", "error", "critical"])
+                  .optional(),
+              })
+            )
+            .max(10000),
+        })
+      )
+      .mutation(({ input }) => summarizeEventStream(input.events)),
   }),
   agents: router({
     list: protectedProcedure.query(() => listAgents()),

@@ -557,3 +557,283 @@ export function evaluateSlo(input: {
     windowDays: input.windowDays ?? 30,
   };
 }
+
+export function buildRetryPolicy(input: {
+  maxAttempts: number;
+  baseDelayMs: number;
+  maxDelayMs: number;
+  jitterRatio?: number;
+}) {
+  if (input.maxAttempts < 1) throw new Error("maxAttempts must be positive");
+  if (input.baseDelayMs < 1 || input.maxDelayMs < input.baseDelayMs) {
+    throw new Error("delay bounds are invalid");
+  }
+  const jitterRatio = input.jitterRatio ?? 0.2;
+  const schedule = Array.from({ length: input.maxAttempts }, (_, index) => {
+    const delayMs = Math.min(input.maxDelayMs, input.baseDelayMs * 2 ** index);
+    return {
+      attempt: index + 1,
+      delayMs: index === 0 ? 0 : delayMs,
+      minDelayMs:
+        index === 0 ? 0 : Math.max(0, Math.round(delayMs * (1 - jitterRatio))),
+      maxDelayMs: index === 0 ? 0 : Math.round(delayMs * (1 + jitterRatio)),
+    };
+  });
+  return { maxAttempts: input.maxAttempts, schedule };
+}
+
+export function evaluateAccessPolicy(input: {
+  subject: {
+    id: string;
+    roles: string[];
+    attributes?: Record<string, string | number | boolean>;
+  };
+  action: string;
+  resource: {
+    id: string;
+    ownerId?: string;
+    requiredRoles?: string[];
+    attributes?: Record<string, string | number | boolean>;
+  };
+}) {
+  const reasons: string[] = [];
+  if (input.resource.ownerId && input.resource.ownerId === input.subject.id)
+    reasons.push("subject owns resource");
+  const matchingRoles = (input.resource.requiredRoles ?? []).filter(role =>
+    input.subject.roles.includes(role)
+  );
+  if (matchingRoles.length > 0)
+    reasons.push(`subject has required role(s): ${matchingRoles.join(", ")}`);
+  if (input.subject.roles.includes("admin")) reasons.push("subject is admin");
+  const allowed = reasons.length > 0;
+  return {
+    allowed,
+    effect: allowed ? "allow" : "deny",
+    action: input.action,
+    reasons: allowed
+      ? reasons
+      : ["no ownership, admin role, or required role matched"],
+  };
+}
+
+export function scanSecrets(text: string) {
+  const patterns: Array<[string, RegExp]> = [
+    ["aws_access_key", /\bAKIA[0-9A-Z]{16}\b/g],
+    ["jwt", /\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g],
+    ["private_key", /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/g],
+    [
+      "generic_token",
+      /\b(?:token|secret|password)\s*[:=]\s*["']?[A-Za-z0-9_./+=-]{12,}/gi,
+    ],
+  ];
+  const findings = patterns.flatMap(([type, pattern]) => {
+    const matches = Array.from(text.matchAll(pattern));
+    return matches.map(match => ({
+      type,
+      index: match.index ?? 0,
+      preview: `${match[0].slice(0, 6)}…${match[0].slice(-4)}`,
+    }));
+  });
+  return { safe: findings.length === 0, findings, count: findings.length };
+}
+
+export function planPagination(input: {
+  totalItems: number;
+  page: number;
+  pageSize: number;
+  maxPageSize?: number;
+}) {
+  const maxPageSize = input.maxPageSize ?? 500;
+  const pageSize = Math.min(Math.max(1, input.pageSize), maxPageSize);
+  const totalPages = Math.max(1, Math.ceil(input.totalItems / pageSize));
+  const page = Math.min(Math.max(1, input.page), totalPages);
+  const offset = (page - 1) * pageSize;
+  return {
+    page,
+    pageSize,
+    totalItems: input.totalItems,
+    totalPages,
+    offset,
+    limit: pageSize,
+    hasPrevious: page > 1,
+    hasNext: page < totalPages,
+  };
+}
+
+export function compareApiVersions(input: {
+  previous: Array<{ path: string; method: string; responseFields: string[] }>;
+  next: Array<{ path: string; method: string; responseFields: string[] }>;
+}) {
+  const key = (endpoint: { path: string; method: string }) =>
+    `${endpoint.method.toUpperCase()} ${endpoint.path}`;
+  const previous = new Map(
+    input.previous.map(endpoint => [key(endpoint), endpoint])
+  );
+  const next = new Map(input.next.map(endpoint => [key(endpoint), endpoint]));
+  const removedEndpoints = Array.from(previous.keys()).filter(
+    endpointKey => !next.has(endpointKey)
+  );
+  const addedEndpoints = Array.from(next.keys()).filter(
+    endpointKey => !previous.has(endpointKey)
+  );
+  const fieldChanges = Array.from(next.entries()).flatMap(
+    ([endpointKey, endpoint]) => {
+      const oldEndpoint = previous.get(endpointKey);
+      if (!oldEndpoint) return [];
+      const removedFields = oldEndpoint.responseFields.filter(
+        field => !endpoint.responseFields.includes(field)
+      );
+      const addedFields = endpoint.responseFields.filter(
+        field => !oldEndpoint.responseFields.includes(field)
+      );
+      return removedFields.length || addedFields.length
+        ? [{ endpoint: endpointKey, removedFields, addedFields }]
+        : [];
+    }
+  );
+  return {
+    breaking:
+      removedEndpoints.length > 0 ||
+      fieldChanges.some(change => change.removedFields.length > 0),
+    removedEndpoints,
+    addedEndpoints,
+    fieldChanges,
+  };
+}
+
+export function forecastUsageCost(input: {
+  unitCost: number;
+  currentUnits: number;
+  growthRate: number;
+  months: number;
+}) {
+  if (input.months < 1 || input.months > 60)
+    throw new Error("months must be between 1 and 60");
+  const forecast = Array.from({ length: input.months }, (_, index) => {
+    const month = index + 1;
+    const units = input.currentUnits * (1 + input.growthRate) ** index;
+    return {
+      month,
+      units: Math.round(units),
+      cost: Number((units * input.unitCost).toFixed(2)),
+    };
+  });
+  const totalCost = Number(
+    forecast.reduce((sum, item) => sum + item.cost, 0).toFixed(2)
+  );
+  return {
+    forecast,
+    totalCost,
+    averageMonthlyCost: Number((totalCost / input.months).toFixed(2)),
+  };
+}
+
+export function analyzeDependencyRisk(
+  dependencies: Array<{
+    name: string;
+    version: string;
+    daysSinceUpdate: number;
+    criticalVulnerabilities?: number;
+    direct?: boolean;
+  }>
+) {
+  const results = dependencies.map(dependency => {
+    const vulnerabilityPenalty = (dependency.criticalVulnerabilities ?? 0) * 35;
+    const freshnessPenalty =
+      dependency.daysSinceUpdate > 365
+        ? 25
+        : dependency.daysSinceUpdate > 180
+          ? 15
+          : dependency.daysSinceUpdate > 90
+            ? 5
+            : 0;
+    const transitivePenalty = dependency.direct === false ? 5 : 0;
+    const riskScore = Math.min(
+      100,
+      vulnerabilityPenalty + freshnessPenalty + transitivePenalty
+    );
+    const risk =
+      riskScore >= 70
+        ? "critical"
+        : riskScore >= 35
+          ? "high"
+          : riskScore >= 15
+            ? "medium"
+            : "low";
+    return { ...dependency, riskScore, risk };
+  });
+  return {
+    dependencies: results,
+    highestRisk: results.reduce(
+      (max, item) => Math.max(max, item.riskScore),
+      0
+    ),
+    requiresAction: results.some(item => item.riskScore >= 35),
+  };
+}
+
+export function planMaintenanceWindow(input: {
+  durationMinutes: number;
+  impactedUsers: number;
+  regions: string[];
+  canaryPercent?: number;
+}) {
+  const canaryPercent = input.canaryPercent ?? 5;
+  const canaryUsers = Math.ceil(input.impactedUsers * (canaryPercent / 100));
+  return {
+    durationMinutes: input.durationMinutes,
+    regions: input.regions,
+    phases: [
+      {
+        name: "preflight",
+        durationMinutes: Math.max(5, Math.round(input.durationMinutes * 0.15)),
+        users: 0,
+      },
+      {
+        name: "canary",
+        durationMinutes: Math.max(5, Math.round(input.durationMinutes * 0.25)),
+        users: canaryUsers,
+      },
+      {
+        name: "regional_rollout",
+        durationMinutes: Math.max(5, Math.round(input.durationMinutes * 0.45)),
+        users: input.impactedUsers - canaryUsers,
+      },
+      {
+        name: "validation",
+        durationMinutes: Math.max(5, Math.round(input.durationMinutes * 0.15)),
+        users: input.impactedUsers,
+      },
+    ],
+    rollbackTrigger:
+      "Rollback if error rate doubles, p95 latency increases by 50%, or canary health checks fail twice.",
+  };
+}
+
+export function summarizeEventStream(
+  events: Array<{
+    type: string;
+    timestamp: string;
+    severity?: "info" | "warning" | "error" | "critical";
+  }>
+) {
+  const byType = events.reduce<Record<string, number>>((acc, event) => {
+    acc[event.type] = (acc[event.type] ?? 0) + 1;
+    return acc;
+  }, {});
+  const bySeverity = events.reduce<Record<string, number>>((acc, event) => {
+    const severity = event.severity ?? "info";
+    acc[severity] = (acc[severity] ?? 0) + 1;
+    return acc;
+  }, {});
+  const sorted = [...events].sort((a, b) =>
+    a.timestamp.localeCompare(b.timestamp)
+  );
+  return {
+    total: events.length,
+    byType,
+    bySeverity,
+    firstEventAt: sorted[0]?.timestamp ?? null,
+    lastEventAt: sorted.at(-1)?.timestamp ?? null,
+  };
+}
