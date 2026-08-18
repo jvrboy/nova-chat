@@ -1179,9 +1179,9 @@ function stochastic(highs, lows, closes, kPeriod = 14, dPeriod = 3) {
   for (let i = kPeriod - 1; i < closes.length; i++) {
     const highSlice = highs.slice(i - kPeriod + 1, i + 1);
     const lowSlice = lows.slice(i - kPeriod + 1, i + 1);
-    const highest = Math.max(...highSlice);
-    const lowest = Math.min(...lowSlice);
-    const k = highest === lowest ? 50 : (closes[i] - lowest) / (highest - lowest) * 100;
+    const highest2 = Math.max(...highSlice);
+    const lowest2 = Math.min(...lowSlice);
+    const k = highest2 === lowest2 ? 50 : (closes[i] - lowest2) / (highest2 - lowest2) * 100;
     kValues.push(k);
   }
   const dValues = sma(kValues, dPeriod);
@@ -1612,7 +1612,12 @@ var TOOL_POLICIES = {
   web_search: { name: "web_search", description: "Request current web research.", risk: "external", allowedAgents: ["forex_analyst", "research_agent", "brainstormer"], maxCallsPerMinute: 30, failureThreshold: 0.5, minimumSamples: 5, cooldownMs: 2e4 },
   forex_signal_snapshot: { name: "forex_signal_snapshot", description: "Compute advanced forex indicators and a non-guaranteed snapshot.", risk: "compute", allowedAgents: ["forex_analyst", "quant_researcher", "risk_manager"], maxCallsPerMinute: 30, failureThreshold: 0.5, minimumSamples: 5, cooldownMs: 2e4 },
   forex_multi_timeframe: { name: "forex_multi_timeframe", description: "Calculate timeframe confluence.", risk: "compute", allowedAgents: ["forex_analyst", "quant_researcher", "risk_manager"], maxCallsPerMinute: 20, failureThreshold: 0.5, minimumSamples: 5, cooldownMs: 2e4 },
-  create_synth_patch: { name: "create_synth_patch", description: "Generate a Serum/Xfer-style engine-neutral synth patch.", risk: "compute", allowedAgents: ["music_composer", "sound_designer", "brainstormer"], maxCallsPerMinute: 30, failureThreshold: 0.5, minimumSamples: 5, cooldownMs: 15e3 }
+  create_synth_patch: { name: "create_synth_patch", description: "Generate a Serum/Xfer-style engine-neutral synth patch.", risk: "compute", allowedAgents: ["music_composer", "sound_designer", "brainstormer", "music_producer", "audio_engineer"], maxCallsPerMinute: 30, failureThreshold: 0.5, minimumSamples: 5, cooldownMs: 15e3 },
+  advanced_market_structure: { name: "advanced_market_structure", description: "Compute pivots, Fibonacci, Ichimoku, Supertrend, divergence, volume profile, and confluence.", risk: "compute", allowedAgents: ["forex_analyst", "quant_researcher", "risk_manager", "market_microstructure"], maxCallsPerMinute: 20, failureThreshold: 0.5, minimumSamples: 5, cooldownMs: 2e4 },
+  music_quantize: { name: "music_quantize", description: "Quantize note events to a bounded musical grid.", risk: "compute", allowedAgents: ["music_composer", "music_producer", "audio_engineer"], maxCallsPerMinute: 60, failureThreshold: 0.5, minimumSamples: 5, cooldownMs: 15e3 },
+  music_rhythm: { name: "music_rhythm", description: "Generate deterministic Euclidean and drum-grid patterns.", risk: "compute", allowedAgents: ["music_composer", "music_producer", "audio_engineer"], maxCallsPerMinute: 60, failureThreshold: 0.5, minimumSamples: 5, cooldownMs: 15e3 },
+  persistent_remember: { name: "persistent_remember", description: "Persist scoped memory with embeddings and retention metadata.", risk: "external", allowedAgents: ["memory_architect", "automation_orchestrator"], maxCallsPerMinute: 30, failureThreshold: 0.4, minimumSamples: 5, cooldownMs: 3e4 },
+  persistent_recall: { name: "persistent_recall", description: "Recall durable memories using scoped cosine similarity.", risk: "external", allowedAgents: ["memory_architect", "ml_engineer", "automation_orchestrator"], maxCallsPerMinute: 60, failureThreshold: 0.5, minimumSamples: 5, cooldownMs: 2e4 }
 };
 var runtime = /* @__PURE__ */ new Map();
 var callWindow = /* @__PURE__ */ new Map();
@@ -1881,6 +1886,46 @@ Consider genre conventions and emotional intent.`,
     systemPrompt: "You are a senior music producer. Use structured music tools and synth tools to create playable, mix-aware arrangements and automation.",
     tools: [calculatorTool, dataProcessingTool, synthPatchTool],
     maxTokens: 4500
+  },
+  audio_engineer: {
+    id: "audio_engineer",
+    name: "Audio Engineer",
+    description: "Designs signal chains, mix diagnostics, spatial systems, and loudness-safe production workflows.",
+    systemPrompt: "You are an audio engineer. Design practical signal chains, gain staging, dynamics, spatial placement, and export checks. Keep recommendations measurable and compatible with common DAWs.",
+    tools: [calculatorTool, dataProcessingTool, synthPatchTool],
+    maxTokens: 4200
+  },
+  market_microstructure: {
+    id: "market_microstructure",
+    name: "Market Microstructure Analyst",
+    description: "Studies spread, liquidity proxies, volatility clustering, session behavior, and execution assumptions.",
+    systemPrompt: "You are a market microstructure analyst. Separate price-pattern observations from execution assumptions, quantify spread and slippage sensitivity, and never promise trading outcomes.",
+    tools: [calculatorTool, dataProcessingTool, advancedForexTool, multiTimeframeTool],
+    maxTokens: 4200
+  },
+  data_engineer: {
+    id: "data_engineer",
+    name: "Data Engineer",
+    description: "Designs ingestion, normalization, quality checks, feature stores, and reproducible research datasets.",
+    systemPrompt: "You are a data engineer. Focus on schemas, provenance, validation, idempotency, partitioning, and reproducible pipelines.",
+    tools: [calculatorTool, dataProcessingTool, codeExecTool],
+    maxTokens: 4200
+  },
+  automation_orchestrator: {
+    id: "automation_orchestrator",
+    name: "Automation Orchestrator",
+    description: "Plans governed multi-step workflows with retries, approvals, observability, and rollback boundaries.",
+    systemPrompt: "You are an automation architect. Design explicit stages, permissions, retries, circuit breakers, idempotency keys, and human confirmation gates for high-impact actions.",
+    tools: [calculatorTool, dataProcessingTool, textAnalysisTool],
+    maxTokens: 4200
+  },
+  qa_engineer: {
+    id: "qa_engineer",
+    name: "QA Engineer",
+    description: "Builds unit, integration, contract, regression, and production smoke-test plans.",
+    systemPrompt: "You are a QA engineer. Turn requirements into deterministic test cases, failure matrices, contract checks, and deployment gates.",
+    tools: [calculatorTool, dataProcessingTool, codeExecTool, textAnalysisTool],
+    maxTokens: 4200
   },
   data_analyst: {
     id: "data_analyst",
@@ -2338,6 +2383,59 @@ var BUILTIN_PIPELINES = [
     steps: [
       { id: "scenario", name: "Scenario Review", type: "agent", agentRole: "risk_manager", prompt: "{input}", outputKey: "scenario" },
       { id: "research", name: "Quantitative Challenge", type: "agent", agentRole: "quant_researcher", prompt: "Challenge the following scenario with quantitative assumptions and failure cases:\n{scenario}", outputKey: "challenge" }
+    ],
+    variables: {}
+  },
+  {
+    id: "music-production-pipeline",
+    name: "Music Production Pipeline",
+    description: "Musical brief \u2192 composition architecture \u2192 sound design \u2192 mix and export checklist",
+    steps: [
+      { id: "brief", name: "Production Brief", type: "agent", agentRole: "music_producer", prompt: "{input}", outputKey: "brief" },
+      { id: "sound", name: "Sound Design", type: "agent", agentRole: "audio_engineer", prompt: "Turn this production brief into signal-chain, synth, spatial, and automation recommendations:\n{brief}", outputKey: "sound" },
+      { id: "qa", name: "Export QA", type: "agent", agentRole: "qa_engineer", prompt: "Create a deterministic DAW export and mix QA checklist for:\n{sound}", outputKey: "qa" }
+    ],
+    variables: {}
+  },
+  {
+    id: "market-structure-pipeline",
+    name: "Market Structure Pipeline",
+    description: "OHLCV brief \u2192 microstructure review \u2192 confluence \u2192 risk challenge",
+    steps: [
+      { id: "structure", name: "Structure Review", type: "agent", agentRole: "market_microstructure", prompt: "{input}", outputKey: "structure" },
+      { id: "quant", name: "Quant Challenge", type: "agent", agentRole: "quant_researcher", prompt: "Challenge these observations with data-quality, regime, and execution assumptions:\n{structure}", outputKey: "quant" },
+      { id: "risk", name: "Risk Review", type: "agent", agentRole: "risk_manager", prompt: "Summarize uncertainty and non-guaranteed risk controls for:\n{quant}", outputKey: "risk" }
+    ],
+    variables: {}
+  },
+  {
+    id: "data-quality-pipeline",
+    name: "Data Quality Pipeline",
+    description: "Dataset intake \u2192 schema and quality review \u2192 reproducibility plan",
+    steps: [
+      { id: "profile", name: "Dataset Profile", type: "agent", agentRole: "data_engineer", prompt: "{input}", outputKey: "profile" },
+      { id: "review", name: "Quality Review", type: "agent", agentRole: "data_analyst", prompt: "Identify missingness, outliers, leakage, and measurement risks in:\n{profile}", outputKey: "review" },
+      { id: "plan", name: "Reproducibility Plan", type: "agent", agentRole: "data_engineer", prompt: "Create a versioned ingestion and validation plan based on:\n{review}", outputKey: "plan" }
+    ],
+    variables: {}
+  },
+  {
+    id: "memory-curation-pipeline",
+    name: "Memory Curation Pipeline",
+    description: "Candidate context \u2192 privacy and retention review \u2192 durable-memory proposal",
+    steps: [
+      { id: "classify", name: "Classify Context", type: "agent", agentRole: "memory_architect", prompt: "{input}", outputKey: "classification" },
+      { id: "privacy", name: "Privacy Review", type: "agent", agentRole: "qa_engineer", prompt: "Review this memory proposal for secrets, over-retention, and testable deletion requirements:\n{classification}", outputKey: "privacy" }
+    ],
+    variables: {}
+  },
+  {
+    id: "release-qa-pipeline",
+    name: "Release QA Pipeline",
+    description: "Release brief \u2192 test matrix \u2192 deployment smoke checks \u2192 rollback criteria",
+    steps: [
+      { id: "matrix", name: "Test Matrix", type: "agent", agentRole: "qa_engineer", prompt: "{input}", outputKey: "matrix" },
+      { id: "ops", name: "Operations Review", type: "agent", agentRole: "automation_orchestrator", prompt: "Turn this test matrix into deployment gates, observability, rollback, and human approval steps:\n{matrix}", outputKey: "ops" }
     ],
     variables: {}
   },
@@ -3289,14 +3387,14 @@ function generateChordProgression(root, scaleName, degrees = [1, 4, 5, 1], varia
   });
 }
 function generateMelody(root, scaleName, length = 16, octaveRange = [4, 5]) {
-  const scaleNotes = getScaleNotes(root, scaleName);
+  const scaleNotes2 = getScaleNotes(root, scaleName);
   const durations = ["quarter", "quarter", "quarter", "eighth", "eighth", "half", "quarter"];
   const melody = [];
-  let prevNoteIndex = Math.floor(scaleNotes.length / 2);
+  let prevNoteIndex = Math.floor(scaleNotes2.length / 2);
   for (let i = 0; i < length; i++) {
     const step = Math.random() < 0.7 ? Math.random() < 0.5 ? 1 : -1 : Math.random() < 0.5 ? 2 : -2;
-    prevNoteIndex = Math.max(0, Math.min(scaleNotes.length - 1, prevNoteIndex + step));
-    const note = scaleNotes[prevNoteIndex];
+    prevNoteIndex = Math.max(0, Math.min(scaleNotes2.length - 1, prevNoteIndex + step));
+    const note = scaleNotes2[prevNoteIndex];
     const octave = octaveRange[0] + Math.floor(Math.random() * (octaveRange[1] - octaveRange[0] + 1));
     const midi = noteToMidi(`${note}${octave}`);
     melody.push({
@@ -3306,7 +3404,7 @@ function generateMelody(root, scaleName, length = 16, octaveRange = [4, 5]) {
       velocity: 60 + Math.floor(Math.random() * 40)
     });
   }
-  const lastNote = scaleNotes[0];
+  const lastNote = scaleNotes2[0];
   melody[melody.length - 1] = { note: `${lastNote}${octaveRange[0]}`, midi: noteToMidi(`${lastNote}${octaveRange[0]}`), duration: "half", velocity: 70 };
   return melody;
 }
@@ -4473,9 +4571,9 @@ function executeAgent(agent, data) {
       const vals = atr2(data, agent.params.period);
       if (vals.length > 0) {
         value = vals[vals.length - 1];
-        const avg = vals.reduce((a, b) => a + b, 0) / vals.length;
-        strength = Math.min(value / (avg || 1), 1);
-        signal = value > avg ? "SELL" : "BUY";
+        const avg2 = vals.reduce((a, b) => a + b, 0) / vals.length;
+        strength = Math.min(value / (avg2 || 1), 1);
+        signal = value > avg2 ? "SELL" : "BUY";
       }
       break;
     }
@@ -4495,8 +4593,8 @@ function executeAgent(agent, data) {
       const bb = bollingerBands2(closes, agent.params.period, agent.params.stdDev);
       if (bb.bandwidth.length > 0) {
         value = bb.bandwidth[bb.bandwidth.length - 1];
-        const avg = bb.bandwidth.reduce((a, b) => a + b, 0) / bb.bandwidth.length;
-        strength = Math.min(value / (avg || 1) / 2, 1);
+        const avg2 = bb.bandwidth.reduce((a, b) => a + b, 0) / bb.bandwidth.length;
+        strength = Math.min(value / (avg2 || 1) / 2, 1);
         signal = "NEUTRAL";
       }
       break;
@@ -5634,6 +5732,174 @@ function generateMidiAutomation(input) {
   return { destination: input.destination, bars, resolution, values };
 }
 
+// server/_core/musicPro.ts
+var SCALE_INTERVALS = { major: [0, 2, 4, 5, 7, 9, 11], minor: [0, 2, 3, 5, 7, 8, 10], dorian: [0, 2, 3, 5, 7, 9, 10], pentatonic: [0, 2, 4, 7, 9], blues: [0, 3, 5, 6, 7, 10] };
+function scaleNotes(root = 60, scale = "major", octaves = 2) {
+  const intervals = SCALE_INTERVALS[scale] ?? SCALE_INTERVALS.major;
+  return Array.from({ length: Math.max(1, octaves) }, (_, octave) => intervals.map((interval) => root + octave * 12 + interval)).flat();
+}
+function chordExtensions(root, quality = "major", extensions = [7, 9]) {
+  const base = quality === "minor" ? [0, 3, 7] : quality === "dominant" ? [0, 4, 7, 10] : quality === "diminished" ? [0, 3, 6] : [0, 4, 7];
+  const extra = extensions.map((extension) => extension === 7 ? quality === "major" ? 11 : 10 : extension === 9 ? 14 : extension === 11 ? 17 : 21);
+  return [...base, ...extra].map((interval) => root + interval);
+}
+function quantizeNotes(events, grid = 0.25, strength = 1) {
+  const safeGrid = Math.max(1e-3, grid);
+  return events.map((event) => ({ ...event, start: event.start + (Math.round(event.start / safeGrid) * safeGrid - event.start) * Math.max(0, Math.min(1, strength)) }));
+}
+function euclideanRhythm(steps, pulses, rotation = 0) {
+  const n = Math.max(1, Math.floor(steps));
+  const k = Math.max(0, Math.min(n, Math.floor(pulses)));
+  const pattern = Array.from({ length: n }, (_, i) => Math.floor(i * k / n) !== Math.floor((i - 1 + n) % n * k / n));
+  const shift = (rotation % n + n) % n;
+  return pattern.map((_, i) => pattern[(i - shift + n) % n]);
+}
+function drumGrid(steps = 16, density = 0.5, seed = 7) {
+  const safeSteps = Math.max(1, Math.min(128, Math.floor(steps)));
+  let state = Math.abs(seed) || 7;
+  const next = () => {
+    state = state * 1664525 + 1013904223 >>> 0;
+    return state / 4294967296;
+  };
+  return { kick: Array.from({ length: safeSteps }, (_, i) => i % 4 === 0 || next() < density * 0.12), snare: Array.from({ length: safeSteps }, (_, i) => i % 8 === 4 || next() < density * 0.05), hat: Array.from({ length: safeSteps }, () => next() < Math.min(0.98, density + 0.25)) };
+}
+function shapeAutomation(points, curve = "linear", samples = points.length) {
+  const source = points.length ? points : [0, 1];
+  const count = Math.max(2, samples);
+  const at = (t2) => {
+    const scaled = t2 * (source.length - 1);
+    const left = Math.floor(scaled);
+    const right = Math.min(source.length - 1, left + 1);
+    const local = scaled - left;
+    let eased = local;
+    if (curve === "ease-in") eased = local * local;
+    if (curve === "ease-out") eased = 1 - (1 - local) * (1 - local);
+    if (curve === "sine") eased = (1 - Math.cos(local * Math.PI)) / 2;
+    return source[left] + (source[right] - source[left]) * eased;
+  };
+  return Array.from({ length: count }, (_, i) => at(i / (count - 1)));
+}
+
+// server/_core/technicalAdvanced.ts
+function avg(values) {
+  return values.length ? values.reduce((a, b) => a + b, 0) / values.length : 0;
+}
+function highest(values) {
+  return values.length ? Math.max(...values) : 0;
+}
+function lowest(values) {
+  return values.length ? Math.min(...values) : 0;
+}
+function clamp5(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+function pivotPoints2(candle) {
+  const p = (candle.high + candle.low + candle.close) / 3;
+  return { pivot: p, r1: 2 * p - candle.low, r2: p + candle.high - candle.low, r3: candle.high + 2 * (p - candle.low), s1: 2 * p - candle.high, s2: p - candle.high + candle.low, s3: candle.low - 2 * (candle.high - p) };
+}
+function fibonacciLevels(candles, lookback = 50) {
+  const sample = candles.slice(-lookback);
+  if (!sample.length) throw new Error("At least one candle is required");
+  const high = highest(sample.map((c) => c.high));
+  const low = lowest(sample.map((c) => c.low));
+  const range = high - low;
+  const direction = sample.at(-1).close >= sample[0].close ? "up" : "down";
+  const ratios = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1, 1.618];
+  return { high, low, direction, levels: ratios.map((ratio) => ({ ratio, price: direction === "up" ? high - range * ratio : low + range * ratio })) };
+}
+function ichimoku(candles, conversionPeriod = 9, basePeriod = 26, spanPeriod = 52, displacement = 26) {
+  const highs = candles.map((c) => c.high);
+  const lows = candles.map((c) => c.low);
+  const midpoint = (period, end2) => {
+    const h = highest(highs.slice(Math.max(0, end2 - period + 1), end2 + 1));
+    const l = lowest(lows.slice(Math.max(0, end2 - period + 1), end2 + 1));
+    return (h + l) / 2;
+  };
+  const end = candles.length - 1;
+  const conversion = midpoint(conversionPeriod, end);
+  const base = midpoint(basePeriod, end);
+  const spanB = midpoint(spanPeriod, end);
+  return { conversion, base, spanA: (conversion + base) / 2, spanB, displacement, close: candles[end]?.close ?? 0, cloudBias: (candles[end]?.close ?? 0) > Math.max((conversion + base) / 2, spanB) ? "bullish" : (candles[end]?.close ?? 0) < Math.min((conversion + base) / 2, spanB) ? "bearish" : "inside-cloud" };
+}
+function supertrend(candles, period = 10, multiplier = 3) {
+  if (candles.length < period + 1) throw new Error(`At least ${period + 1} candles are required`);
+  const trs = candles.map((c, i) => i === 0 ? c.high - c.low : Math.max(c.high - c.low, Math.abs(c.high - candles[i - 1].close), Math.abs(c.low - candles[i - 1].close)));
+  const atr4 = avg(trs.slice(-period));
+  const last = candles.at(-1);
+  const mid = (last.high + last.low) / 2;
+  const upper = mid + multiplier * atr4;
+  const lower = mid - multiplier * atr4;
+  const trend = last.close >= mid ? "up" : "down";
+  return { atr: atr4, upperBand: upper, lowerBand: lower, trend, distanceToBand: trend === "up" ? last.close - lower : upper - last.close };
+}
+function volumeProfile(candles, bins = 12) {
+  const sample = candles.slice(-Math.max(1, Math.min(500, candles.length)));
+  if (!sample.length) return { bins: [], pointOfControl: null, valueArea: null };
+  const min = lowest(sample.map((c) => c.low));
+  const max = highest(sample.map((c) => c.high));
+  const width = (max - min) / bins || 1;
+  const buckets = Array.from({ length: bins }, (_, i) => ({ index: i, low: min + i * width, high: i === bins - 1 ? max : min + (i + 1) * width, volume: 0 }));
+  for (const candle of sample) {
+    const index2 = clamp5(Math.floor((candle.close - min) / width), 0, bins - 1);
+    buckets[index2].volume += candle.volume;
+  }
+  const total = buckets.reduce((s, b) => s + b.volume, 0);
+  const poc = buckets.reduce((a, b) => b.volume > a.volume ? b : a, buckets[0]);
+  const ranked = [...buckets].sort((a, b) => b.volume - a.volume);
+  let covered = 0;
+  const value = ranked.filter((b) => {
+    if (covered / Math.max(total, 1) >= 0.7) return false;
+    covered += b.volume;
+    return true;
+  });
+  return { bins: buckets, pointOfControl: poc, valueArea: { low: lowest(value.map((b) => b.low)), high: highest(value.map((b) => b.high)), coverage: covered / Math.max(total, 1) } };
+}
+function rsiDivergence(candles, period = 14, window = 30) {
+  const sample = candles.slice(-window);
+  if (sample.length < period + 4) throw new Error("More candles are required for divergence analysis");
+  const changes = sample.slice(1).map((c, i) => c.close - sample[i].close);
+  const gains = changes.map((v) => Math.max(0, v));
+  const losses = changes.map((v) => Math.max(0, -v));
+  const rsiAt = (end) => {
+    const g = avg(gains.slice(Math.max(0, end - period), end));
+    const l = avg(losses.slice(Math.max(0, end - period), end));
+    return l === 0 ? 100 : 100 - 100 / (1 + g / l);
+  };
+  const half = Math.floor(sample.length / 2);
+  const firstPrice = avg(sample.slice(0, 3).map((c) => c.close));
+  const secondPrice = avg(sample.slice(-3).map((c) => c.close));
+  const firstRsi = rsiAt(Math.max(period, half - 1));
+  const secondRsi = rsiAt(changes.length - 1);
+  const type = secondPrice < firstPrice && secondRsi > firstRsi ? "bullish" : secondPrice > firstPrice && secondRsi < firstRsi ? "bearish" : "none";
+  return { type, firstPrice, secondPrice, firstRsi, secondRsi, confidence: type === "none" ? 0 : clamp5(Math.abs((secondRsi - firstRsi) / 50), 0, 1) };
+}
+function confluenceSnapshot(candles) {
+  const last = candles.at(-1);
+  if (!last) throw new Error("At least one candle is required");
+  const fib = fibonacciLevels(candles);
+  const ichi = ichimoku(candles);
+  const st = supertrend(candles, Math.min(10, Math.max(2, Math.floor(candles.length / 4))), 3);
+  const votes = [ichi.cloudBias === "bullish" ? 1 : ichi.cloudBias === "bearish" ? -1 : 0, st.trend === "up" ? 1 : -1, last.close >= fib.levels[4].price ? 1 : -1];
+  const score = avg(votes);
+  return { score, bias: score > 0.33 ? "bullish" : score < -0.33 ? "bearish" : "neutral", components: { ichimoku: ichi, supertrend: st, fibonacci: fib } };
+}
+
+// server/_core/skillRegistry.ts
+var BACKEND_SKILLS = [
+  { id: "market-structure", name: "Market Structure Analysis", category: "trading", description: "Pivots, Fibonacci, Ichimoku, Supertrend, divergence, volume profile, and confluence snapshots.", tools: ["advanced_market_structure", "forex_signal_snapshot"], risk: "high", requiresAuth: true },
+  { id: "research-validation", name: "Research Validation", category: "research", description: "Backtest, forward-test, walk-forward, cost modeling, and uncertainty reporting.", tools: ["research_backtest", "forward_test", "walk_forward"], risk: "high", requiresAuth: true },
+  { id: "music-production", name: "Music Production", category: "music", description: "Scales, chord extensions, quantization, Euclidean rhythms, drum grids, automation, and synth patch design.", tools: ["music_scale", "music_quantize", "music_rhythm", "create_synth_patch"], risk: "low", requiresAuth: true },
+  { id: "durable-memory", name: "Durable Memory", category: "memory", description: "Retention-aware persistent embeddings with scoped recall and deletion.", tools: ["persistent_remember", "persistent_recall", "purge_expired"], risk: "medium", requiresAuth: true },
+  { id: "agent-swarms", name: "Agent Swarms", category: "agentic", description: "Role-scoped parallel analysis with synthesis and governance controls.", tools: ["agent_swarm", "pipeline_execute"], risk: "medium", requiresAuth: true },
+  { id: "sandbox-engineering", name: "Bounded Engineering Sandbox", category: "engineering", description: "Short, import-free calculations for safe lightweight transformations.", tools: ["sandbox_execute", "sandbox_capabilities"], risk: "medium", requiresAuth: true }
+];
+function listSkills(category) {
+  return category ? BACKEND_SKILLS.filter((skill) => skill.category === category) : BACKEND_SKILLS;
+}
+function getSkill(id) {
+  return BACKEND_SKILLS.find((skill) => skill.id === id);
+}
+
 // server/routers.ts
 var projectInput = z2.object({
   name: z2.string().min(1).max(160),
@@ -5919,6 +6185,8 @@ ${input.context ?? "No additional context."}`
     indicatorCatalog: protectedProcedure.input(z2.object({ category: z2.enum(["trend", "momentum", "volatility", "volume", "price"]).optional() })).query(({ input }) => listIndicators(input.category)),
     batchIndicators: protectedProcedure.input(z2.object({ ids: z2.array(z2.string()).min(1).max(240), data: z2.array(z2.object({ timestamp: z2.number(), open: z2.number(), high: z2.number(), low: z2.number(), close: z2.number(), volume: z2.number() })).min(5).max(1e4) })).mutation(({ input }) => computeIndicators(input.ids, input.data)),
     indicatorSnapshot: protectedProcedure.input(z2.object({ data: z2.array(z2.object({ timestamp: z2.number(), open: z2.number(), high: z2.number(), low: z2.number(), close: z2.number(), volume: z2.number() })).min(5).max(1e4), ids: z2.array(z2.string()).max(240).optional() })).mutation(({ input }) => indicatorSnapshot(input.data, input.ids)),
+    advancedStructure: protectedProcedure.input(z2.object({ candles: z2.array(z2.object({ timestamp: z2.number(), open: z2.number(), high: z2.number(), low: z2.number(), close: z2.number(), volume: z2.number() })).min(20).max(5e3), lookback: z2.number().int().min(5).max(500).default(50) })).mutation(({ input }) => ({ fibonacci: fibonacciLevels(input.candles, input.lookback), ichimoku: ichimoku(input.candles), supertrend: supertrend(input.candles), divergence: rsiDivergence(input.candles), volumeProfile: volumeProfile(input.candles), confluence: confluenceSnapshot(input.candles) })),
+    pivotLevels: protectedProcedure.input(z2.object({ candle: z2.object({ timestamp: z2.number(), open: z2.number(), high: z2.number(), low: z2.number(), close: z2.number(), volume: z2.number() }) })).query(({ input }) => pivotPoints2(input.candle)),
     analyze: protectedProcedure.input(
       z2.object({
         pair: z2.string().default("EUR/USD"),
@@ -6240,7 +6508,13 @@ ${input.context ?? "No additional context."}`
     ).mutation(({ input }) => {
       const melody = generateMelody(input.root, input.scale, 32);
       return { abc: melodyToABC(melody, input.title) };
-    })
+    }),
+    proScale: protectedProcedure.input(z2.object({ root: z2.number().int().min(0).max(127).default(60), scale: z2.enum(["major", "minor", "dorian", "pentatonic", "blues"]).default("major"), octaves: z2.number().int().min(1).max(4).default(2) })).query(({ input }) => ({ notes: scaleNotes(input.root, input.scale, input.octaves) })),
+    chordExtensions: protectedProcedure.input(z2.object({ root: z2.number().int().min(0).max(127), quality: z2.enum(["major", "minor", "dominant", "diminished"]).default("major"), extensions: z2.array(z2.number().int()).max(8).default([7, 9]) })).query(({ input }) => ({ notes: chordExtensions(input.root, input.quality, input.extensions) })),
+    quantize: protectedProcedure.input(z2.object({ events: z2.array(z2.object({ note: z2.number(), start: z2.number(), duration: z2.number(), velocity: z2.number() })).max(2e4), grid: z2.number().positive().max(64).default(0.25), strength: z2.number().min(0).max(1).default(1) })).mutation(({ input }) => quantizeNotes(input.events, input.grid, input.strength)),
+    euclidean: protectedProcedure.input(z2.object({ steps: z2.number().int().min(1).max(128), pulses: z2.number().int().min(0).max(128), rotation: z2.number().int().optional() })).query(({ input }) => euclideanRhythm(input.steps, input.pulses, input.rotation)),
+    drumGrid: protectedProcedure.input(z2.object({ steps: z2.number().int().min(1).max(128).default(16), density: z2.number().min(0).max(1).default(0.5), seed: z2.number().int().optional() })).query(({ input }) => drumGrid(input.steps, input.density, input.seed)),
+    automationShape: protectedProcedure.input(z2.object({ points: z2.array(z2.number()).min(1).max(512), curve: z2.enum(["linear", "ease-in", "ease-out", "sine"]).default("linear"), samples: z2.number().int().min(2).max(4096).default(64) })).query(({ input }) => shapeAutomation(input.points, input.curve, input.samples))
   }),
   codeTools: router({
     metrics: protectedProcedure.input(
@@ -6524,9 +6798,13 @@ ${input.context ?? "No additional context."}`
       })
     ).mutation(({ input }) => summarizeEventStream(input.events))
   }),
+  skills: router({
+    list: protectedProcedure.input(z2.object({ category: z2.enum(["research", "trading", "music", "engineering", "memory", "agentic"]).optional() })).query(({ input }) => listSkills(input.category)),
+    get: protectedProcedure.input(z2.object({ id: z2.string().min(1).max(100) })).query(({ input }) => getSkill(input.id) ?? null)
+  }),
   agents: router({
     list: protectedProcedure.query(() => listAgents()),
-    swarm: protectedProcedure.input(z2.object({ roles: z2.array(z2.enum(["forex_analyst", "code_reviewer", "music_composer", "data_analyst", "research_agent", "writing_assistant", "math_tutor", "translator", "summarizer", "brainstormer", "sound_designer", "quant_researcher", "risk_manager", "memory_architect", "ml_engineer", "music_producer"])).min(2).max(6), prompt: z2.string().min(1).max(12e3), model: z2.string().optional(), maxSteps: z2.number().int().min(1).max(8).default(3) })).mutation(({ input }) => runAgentSwarm(input)),
+    swarm: protectedProcedure.input(z2.object({ roles: z2.array(z2.enum(["forex_analyst", "code_reviewer", "music_composer", "data_analyst", "research_agent", "writing_assistant", "math_tutor", "translator", "summarizer", "brainstormer", "sound_designer", "quant_researcher", "risk_manager", "memory_architect", "ml_engineer", "music_producer", "audio_engineer", "market_microstructure", "data_engineer", "automation_orchestrator", "qa_engineer"])).min(2).max(6), prompt: z2.string().min(1).max(12e3), model: z2.string().optional(), maxSteps: z2.number().int().min(1).max(8).default(3) })).mutation(({ input }) => runAgentSwarm(input)),
     run: protectedProcedure.input(
       z2.object({
         agentId: z2.enum([
