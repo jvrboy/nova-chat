@@ -32,6 +32,8 @@ export const TOOL_POLICIES: Record<string, ToolPolicy> = {
   music_rhythm: { name: "music_rhythm", description: "Generate deterministic Euclidean and drum-grid patterns.", risk: "compute", allowedAgents: ["music_composer", "music_producer", "audio_engineer"], maxCallsPerMinute: 60, failureThreshold: .5, minimumSamples: 5, cooldownMs: 15_000 },
   persistent_remember: { name: "persistent_remember", description: "Persist scoped memory with embeddings and retention metadata.", risk: "external", allowedAgents: ["memory_architect", "automation_orchestrator"], maxCallsPerMinute: 30, failureThreshold: .4, minimumSamples: 5, cooldownMs: 30_000 },
   persistent_recall: { name: "persistent_recall", description: "Recall durable memories using scoped cosine similarity.", risk: "external", allowedAgents: ["memory_architect", "ml_engineer", "automation_orchestrator"], maxCallsPerMinute: 60, failureThreshold: .5, minimumSamples: 5, cooldownMs: 20_000 },
+  technical_indicator_suite: { name: "technical_indicator_suite", description: "Compute a bounded suite of deterministic technical-analysis indicators.", risk: "compute", allowedAgents: ["forex_analyst", "quant_researcher", "risk_manager", "market_microstructure", "data_analyst", "ui_architect", "multimodal_curator"], maxCallsPerMinute: 30, failureThreshold: .5, minimumSamples: 5, cooldownMs: 20_000 },
+  agentic_workflow_plan: { name: "agentic_workflow_plan", description: "Create a safe role-aware workflow plan with verification and rollback gates.", risk: "compute", allowedAgents: ["brainstormer", "research_agent", "automation_orchestrator", "qa_engineer", "ui_architect", "multimodal_curator", "observability_engineer", "security_reviewer"], maxCallsPerMinute: 30, failureThreshold: .5, minimumSamples: 5, cooldownMs: 15_000 },
 };
 
 const runtime = new Map<string, RuntimeState>();
@@ -59,6 +61,7 @@ export function recordToolSuccess(toolName: string) { const state = stateFor(too
 export function recordToolFailure(toolName: string, error: string) { const policy = TOOL_POLICIES[toolName]; if (!policy) return; const state = stateFor(toolName); state.failures += 1; state.lastUsedAt = Date.now(); state.lastError = error.slice(0, 500); const total = state.successes + state.failures; if (total >= policy.minimumSamples && state.failures / total >= policy.failureThreshold) state.openedAt = Date.now(); }
 
 export function listToolPolicies() { return Object.values(TOOL_POLICIES).map(policy => ({ ...policy })); }
+export function getToolPolicy(toolName: string) { return TOOL_POLICIES[toolName] ? { ...TOOL_POLICIES[toolName] } : undefined; }
 
 export function listToolRuntime() { return Object.values(TOOL_POLICIES).map(policy => { const state = stateFor(policy.name); const decision = canInvokeTool(policy.name, policy.allowedAgents === "all" ? "brainstormer" : policy.allowedAgents[0]); return { toolName: policy.name, state: state.openedAt ? (Date.now() - state.openedAt >= policy.cooldownMs ? "half_open" : "open") : "closed" as ToolCircuitState, successes: state.successes, failures: state.failures, lastError: state.lastError ?? null, lastUsedAt: state.lastUsedAt ?? null, allowedNow: decision.allowed }; }); }
 

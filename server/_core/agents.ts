@@ -5,6 +5,7 @@
 
 import { invokeLLM, type Message, type Tool } from "./llm";
 import { forexSignalSnapshot, multiTimeframeConfluence } from "./forexAdvanced";
+import { indicatorSuite } from "./technicalIndicators";
 import { analyzeSynthPatch, createModulationMatrix, createSerumStylePatch } from "./synthTools";
 import { canInvokeTool, recordToolFailure, recordToolSuccess } from "./toolRegistry";
 
@@ -101,6 +102,15 @@ const codeExecTool: Tool = {
       required: ["code"],
     },
   },
+};
+
+const technicalIndicatorSuiteTool: Tool = {
+  type: "function",
+  function: { name: "technical_indicator_suite", description: "Compute a bounded deterministic suite of technical-analysis indicators from OHLCV candles.", parameters: { type: "object", properties: { data: { type: "array" }, indicators: { type: "array" } }, required: ["data"] } },
+};
+const agenticWorkflowPlanTool: Tool = {
+  type: "function",
+  function: { name: "agentic_workflow_plan", description: "Create a safe role-aware workflow plan with verification and rollback gates.", parameters: { type: "object", properties: { goal: { type: "string" }, constraints: { type: "array" }, riskLevel: { type: "string", enum: ["low", "medium", "high"] } }, required: ["goal"] } },
 };
 
 const dataProcessingTool: Tool = {
@@ -461,7 +471,7 @@ Adapt length and format to the user's needs.`,
     name: "UI Architect",
     description: "Designs responsive, accessible, stateful interfaces and theme systems.",
     systemPrompt: "You are a senior UI architect. Produce implementation-ready interaction contracts, responsive layouts, accessible states, design tokens, and performance-conscious animation plans. Prefer progressive enhancement and reduced-motion fallbacks.",
-    tools: [textAnalysisTool, dataProcessingTool],
+    tools: [textAnalysisTool, dataProcessingTool, technicalIndicatorSuiteTool, agenticWorkflowPlanTool],
     maxTokens: 3500,
   },
   multimodal_curator: {
@@ -469,7 +479,7 @@ Adapt length and format to the user's needs.`,
     name: "Multimodal Curator",
     description: "Organizes attachment, transcript, image, and artifact context with provenance and privacy safeguards.",
     systemPrompt: "You are a multimodal information curator. Extract structured context from supplied material, preserve provenance, flag uncertainty, redact secrets, and propose artifact-ready summaries without inventing missing content.",
-    tools: [textAnalysisTool, dataProcessingTool],
+    tools: [textAnalysisTool, dataProcessingTool, technicalIndicatorSuiteTool, agenticWorkflowPlanTool],
     maxTokens: 4000,
   },
   observability_engineer: {
@@ -477,7 +487,7 @@ Adapt length and format to the user's needs.`,
     name: "Observability Engineer",
     description: "Analyzes latency, error, health, and circuit-breaker signals and produces cautious remediation plans.",
     systemPrompt: "You are an observability engineer. Separate measured facts from hypotheses, assess latency and error budgets, identify instrumentation gaps, and propose reversible mitigations with rollback criteria.",
-    tools: [dataProcessingTool, calculatorTool],
+    tools: [dataProcessingTool, calculatorTool, agenticWorkflowPlanTool],
     maxTokens: 3500,
   },
   security_reviewer: {
@@ -485,10 +495,9 @@ Adapt length and format to the user's needs.`,
     name: "Security Reviewer",
     description: "Reviews authentication, attachments, tools, sandbox boundaries, and privacy controls for exploitable gaps.",
     systemPrompt: "You are a defensive application security reviewer. Inspect supplied designs or code for auth bypasses, secret exposure, injection, unsafe file handling, insecure defaults, and missing rate limits. Recommend fixes and safe tests; do not provide exploit instructions.",
-    tools: [textAnalysisTool, codeExecTool],
+        tools: [textAnalysisTool, codeExecTool, agenticWorkflowPlanTool],
     maxTokens: 4000,
   },
-
   brainstormer: {
     id: "brainstormer",
     name: "Brainstormer",
@@ -542,6 +551,19 @@ async function executeToolCall(
   if (!permission.allowed) return `Permission denied: ${permission.reason}`;
   try {
     switch (toolName) {
+    case "technical_indicator_suite": {
+      const data = Array.isArray(args.data) ? args.data as Parameters<typeof indicatorSuite>[0] : [];
+      if (!data.length || data.length > 2000) return "Error: data must contain between 1 and 2000 candles";
+      const indicators = Array.isArray(args.indicators) ? args.indicators.map(String).slice(0, 30) : undefined;
+      return JSON.stringify(indicatorSuite(data, indicators));
+    }
+    case "agentic_workflow_plan": {
+      const goal = String(args.goal ?? "").trim();
+      if (!goal || goal.length > 2000) return "Error: goal must be between 1 and 2000 characters";
+      const riskLevel = String(args.riskLevel ?? "medium");
+      const constraints = Array.isArray(args.constraints) ? args.constraints.map(String).slice(0, 12) : [];
+      return JSON.stringify({ goal, riskLevel, constraints, steps: [{ id: "scope", action: "Clarify objective, inputs, and success criteria", verification: "Inputs are explicit" }, { id: "plan", action: "Select the minimum permitted tools and specialist roles", verification: "All tools pass governance checks" }, { id: "execute", action: "Run bounded steps with observable outputs", verification: "Each step records success or failure" }, { id: "review", action: "Review uncertainty and side effects", verification: "No unsupported claims or unapproved mutations" }, { id: "rollback", action: "Prepare rollback or human approval when risk is non-low", verification: "A reversible fallback exists" }] });
+    }
     case "forex_signal_snapshot": {
       const data = Array.isArray(args.data) ? args.data as Parameters<typeof forexSignalSnapshot>[0] : [];
       return JSON.stringify(forexSignalSnapshot(data, Number(args.period ?? 14)));

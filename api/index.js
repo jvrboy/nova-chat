@@ -1175,14 +1175,14 @@ function bollingerBands(data, period = 20, stdDev = 2) {
   }
   return { upper, middle, lower };
 }
-function stochastic(highs, lows, closes, kPeriod = 14, dPeriod = 3) {
+function stochastic(highs, lows, closes2, kPeriod = 14, dPeriod = 3) {
   const kValues = [];
-  for (let i = kPeriod - 1; i < closes.length; i++) {
+  for (let i = kPeriod - 1; i < closes2.length; i++) {
     const highSlice = highs.slice(i - kPeriod + 1, i + 1);
     const lowSlice = lows.slice(i - kPeriod + 1, i + 1);
     const highest2 = Math.max(...highSlice);
     const lowest2 = Math.min(...lowSlice);
-    const k = highest2 === lowest2 ? 50 : (closes[i] - lowest2) / (highest2 - lowest2) * 100;
+    const k = highest2 === lowest2 ? 50 : (closes2[i] - lowest2) / (highest2 - lowest2) * 100;
     kValues.push(k);
   }
   const dValues = sma(kValues, dPeriod);
@@ -1225,12 +1225,12 @@ function pivotPoints(high, low, close) {
     s3: low - 2 * (high - pp)
   };
 }
-function analyzeSentiment(closes, highs, lows) {
+function analyzeSentiment(closes2, highs, lows) {
   const signals = [];
   let weightedScore = 0;
   let totalWeight = 0;
-  const last = closes[closes.length - 1];
-  const rsiValues = rsi(closes, 14);
+  const last = closes2[closes2.length - 1];
+  const rsiValues = rsi(closes2, 14);
   if (rsiValues.length > 0) {
     const rsiLast = rsiValues[rsiValues.length - 1];
     let signal;
@@ -1255,7 +1255,7 @@ function analyzeSentiment(closes, highs, lows) {
     weightedScore += score * 2;
     totalWeight += 2;
   }
-  const macdResult = macd(closes);
+  const macdResult = macd(closes2);
   if (macdResult.histogram.length > 0) {
     const histLast = macdResult.histogram[macdResult.histogram.length - 1];
     const histPrev = macdResult.histogram[macdResult.histogram.length - 2];
@@ -1278,7 +1278,7 @@ function analyzeSentiment(closes, highs, lows) {
     weightedScore += score * 2;
     totalWeight += 2;
   }
-  const bb = bollingerBands(closes);
+  const bb = bollingerBands(closes2);
   if (bb.upper.length > 0) {
     const upper = bb.upper[bb.upper.length - 1];
     const lower = bb.lower[bb.lower.length - 1];
@@ -1298,8 +1298,8 @@ function analyzeSentiment(closes, highs, lows) {
     weightedScore += score * 1.5;
     totalWeight += 1.5;
   }
-  const sma20 = sma(closes, 20);
-  const sma50 = sma(closes, 50);
+  const sma20 = sma(closes2, 20);
+  const sma50 = sma(closes2, 50);
   if (sma20.length > 0 && sma50.length > 0) {
     const s20 = sma20[sma20.length - 1];
     const s50 = sma50[sma50.length - 1];
@@ -1316,8 +1316,8 @@ function analyzeSentiment(closes, highs, lows) {
     weightedScore += score * 1.5;
     totalWeight += 1.5;
   }
-  if (highs.length === closes.length && lows.length === closes.length) {
-    const stoch = stochastic(highs, lows, closes);
+  if (highs.length === closes2.length && lows.length === closes2.length) {
+    const stoch = stochastic(highs, lows, closes2);
     if (stoch.k.length > 0) {
       const kLast = stoch.k[stoch.k.length - 1];
       let signal;
@@ -1392,16 +1392,16 @@ function correlation(seriesA, seriesB) {
   return denom === 0 ? 0 : cov / denom;
 }
 function fullAnalysis(data, pair = "EUR/USD") {
-  const closes = data.map((d) => d.close);
+  const closes2 = data.map((d) => d.close);
   const highs = data.map((d) => d.high);
   const lows = data.map((d) => d.low);
-  const currentPrice = closes[closes.length - 1];
-  const sma20Val = sma(closes, 20);
-  const sma50Val = sma(closes, 50);
-  const rsiVal = rsi(closes, 14);
-  const macdVal = macd(closes);
-  const bbVal = bollingerBands(closes);
-  const stochVal = stochastic(highs, lows, closes);
+  const currentPrice = closes2[closes2.length - 1];
+  const sma20Val = sma(closes2, 20);
+  const sma50Val = sma(closes2, 50);
+  const rsiVal = rsi(closes2, 14);
+  const macdVal = macd(closes2);
+  const bbVal = bollingerBands(closes2);
+  const stochVal = stochastic(highs, lows, closes2);
   const atrVal = atr(data, 14);
   const fibVal = fibonacciRetracement(Math.max(...highs.slice(-100)), Math.min(...lows.slice(-100)));
   const pivotVal = pivotPoints(
@@ -1409,7 +1409,7 @@ function fullAnalysis(data, pair = "EUR/USD") {
     Math.min(...lows.slice(-1)),
     currentPrice
   );
-  const sentimentVal = analyzeSentiment(closes, highs, lows);
+  const sentimentVal = analyzeSentiment(closes2, highs, lows);
   const last = (arr) => arr.length > 0 ? arr[arr.length - 1] : null;
   return {
     timestamp: (/* @__PURE__ */ new Date()).toISOString(),
@@ -1503,9 +1503,9 @@ function marketStructure(data, lookback = 3) {
   return { trend, swings, support: lows.length ? Math.min(...lows.map((item) => item.price)) : null, resistance: highs.length ? Math.max(...highs.map((item) => item.price)) : null };
 }
 function volatilityRegime(data, period = 14) {
-  const closes = data.map((bar) => bar.close);
+  const closes2 = data.map((bar) => bar.close);
   const atrValues = atr(data, period);
-  const returns = closes.slice(1).map((close, index2) => Math.log(close / closes[index2]));
+  const returns = closes2.slice(1).map((close, index2) => Math.log(close / closes2[index2]));
   const realized = returns.length >= period ? Math.sqrt(mean(returns.slice(-period).map((value) => value ** 2))) : 0;
   const currentAtr = atrValues.at(-1) ?? 0;
   const baselineAtr = mean(atrValues.slice(-Math.min(50, atrValues.length)));
@@ -1514,11 +1514,11 @@ function volatilityRegime(data, period = 14) {
 }
 function multiTimeframeConfluence(frames) {
   const analyses = frames.map((frame) => {
-    const closes = frame.data.map((bar) => bar.close);
-    const fast = ema(closes, Math.min(20, Math.max(2, Math.floor(closes.length / 4))));
-    const slow = ema(closes, Math.min(50, Math.max(3, Math.floor(closes.length / 2))));
-    const rsiValues = rsi(closes, Math.min(14, Math.max(2, Math.floor(closes.length / 5))));
-    const lastClose = closes.at(-1) ?? 0;
+    const closes2 = frame.data.map((bar) => bar.close);
+    const fast = ema(closes2, Math.min(20, Math.max(2, Math.floor(closes2.length / 4))));
+    const slow = ema(closes2, Math.min(50, Math.max(3, Math.floor(closes2.length / 2))));
+    const rsiValues = rsi(closes2, Math.min(14, Math.max(2, Math.floor(closes2.length / 5))));
+    const lastClose = closes2.at(-1) ?? 0;
     const fastLast = fast.at(-1) ?? lastClose, slowLast = slow.at(-1) ?? lastClose;
     const score = clamp((fastLast > slowLast ? 1 : -1) + ((rsiValues.at(-1) ?? 50) - 50) / 50, -2, 2);
     return { timeframe: frame.timeframe, score, bias: score > 0.35 ? "bullish" : score < -0.35 ? "bearish" : "neutral", rsi: rsiValues.at(-1) ?? null, fastMA: fastLast, slowMA: slowLast };
@@ -1527,12 +1527,262 @@ function multiTimeframeConfluence(frames) {
   return { analyses, aggregateScore: aggregate, consensus: aggregate > 0.35 ? "bullish" : aggregate < -0.35 ? "bearish" : "mixed" };
 }
 function forexSignalSnapshot(data, period = 14) {
-  const closes = data.map((bar) => bar.close), highs = data.map((bar) => bar.high), lows = data.map((bar) => bar.low);
-  const adxResult = adx(data, period), cciValues = cci(data, 20), wrValues = williamsR(data, period), obvValues = obv(data), stoch = stochastic(highs, lows, closes, period, 3);
+  const closes2 = data.map((bar) => bar.close), highs = data.map((bar) => bar.high), lows = data.map((bar) => bar.low);
+  const adxResult = adx(data, period), cciValues = cci(data, 20), wrValues = williamsR(data, period), obvValues = obv(data), stoch = stochastic(highs, lows, closes2, period, 3);
   const structure = marketStructure(data), volatility = volatilityRegime(data, period);
   const adxLast = adxResult.adx.at(-1) ?? 0, plus = adxResult.plusDI.at(-1) ?? 0, minus = adxResult.minusDI.at(-1) ?? 0;
   const score = clamp((plus > minus ? 0.35 : -0.35) + (adxLast > 25 ? plus > minus ? 0.25 : -0.25 : 0) + ((cciValues.at(-1) ?? 0) > 100 ? 0.2 : (cciValues.at(-1) ?? 0) < -100 ? -0.2 : 0) + ((wrValues.at(-1) ?? -50) > -20 ? -0.15 : (wrValues.at(-1) ?? -50) < -80 ? 0.15 : 0), -1, 1);
   return { score, bias: score > 0.2 ? "bullish" : score < -0.2 ? "bearish" : "neutral", trendStrength: adxLast, directionalMovement: { plusDI: plus, minusDI: minus }, cci: cciValues.at(-1) ?? null, williamsR: wrValues.at(-1) ?? null, obv: obvValues.at(-1) ?? 0, stochastic: { k: stoch.k.at(-1) ?? null, d: stoch.d.at(-1) ?? null }, structure, volatility, disclaimer: "This is an analytical snapshot, not a trade recommendation or guarantee of future results." };
+}
+
+// server/_core/technicalIndicators.ts
+var closes = (data) => data.map((c) => c.close);
+var avg = (values) => values.length ? values.reduce((a, b) => a + b, 0) / values.length : 0;
+var trueRange = (data) => data.map((c, i) => i === 0 ? c.high - c.low : Math.max(c.high - c.low, Math.abs(c.high - data[i - 1].close), Math.abs(c.low - data[i - 1].close)));
+var sma3 = (values, period) => values.slice(-Math.max(1, period)).reduce((a, b) => a + b, 0) / Math.max(1, Math.min(period, values.length));
+var ema2 = (values, period) => {
+  if (!values.length) return 0;
+  const k = 2 / (period + 1);
+  let result = values[0];
+  for (const value of values.slice(1)) result = value * k + result * (1 - k);
+  return result;
+};
+var stdev = (values) => {
+  const mean4 = avg(values);
+  return Math.sqrt(avg(values.map((v) => (v - mean4) ** 2)));
+};
+var pct = (a, b) => b === 0 ? 0 : (a - b) / b * 100;
+function smaIndicator(data, period = 20) {
+  return { period, value: sma3(closes(data), period) };
+}
+function emaIndicator(data, period = 20) {
+  return { period, value: ema2(closes(data), period) };
+}
+function wmaIndicator(data, period = 20) {
+  const values = closes(data).slice(-period);
+  const denom = values.length * (values.length + 1) / 2 || 1;
+  return { period, value: values.reduce((sum, value, i) => sum + value * (i + 1), 0) / denom };
+}
+function hmaIndicator(data, period = 20) {
+  const half = Math.max(2, Math.floor(period / 2));
+  const wmaHalf = wmaIndicator(data, half).value;
+  const wmaFull = wmaIndicator(data, period).value;
+  return { period, value: 2 * wmaHalf - wmaFull };
+}
+function macdIndicator(data, fast = 12, slow = 26, signal = 9) {
+  const values = closes(data);
+  const macd3 = ema2(values, fast) - ema2(values, slow);
+  return { fast, slow, signal, macd: macd3, signalLine: ema2(values.slice(-signal).map((_, i, a) => ema2(values.slice(0, values.length - signal + i + 1), fast) - ema2(values.slice(0, values.length - signal + i + 1), slow)), signal), histogram: macd3 - ema2(values.slice(-signal).map((_, i, a) => ema2(values.slice(0, values.length - signal + i + 1), fast) - ema2(values.slice(0, values.length - signal + i + 1), slow)), signal) };
+}
+function stochasticIndicator(data, period = 14, smooth = 3) {
+  const sample = data.slice(-period);
+  const high = Math.max(...sample.map((c) => c.high), 0);
+  const low = Math.min(...sample.map((c) => c.low), 0);
+  const close = sample.at(-1)?.close ?? 0;
+  const k = high === low ? 50 : (close - low) / (high - low) * 100;
+  return { period, smooth, k, d: k };
+}
+function atrIndicator(data, period = 14) {
+  return { period, value: sma3(trueRange(data), period) };
+}
+function bollingerIndicator(data, period = 20, multiplier = 2) {
+  const values = closes(data).slice(-period);
+  const middle = avg(values);
+  const deviation = stdev(values);
+  return { period, multiplier, middle, upper: middle + multiplier * deviation, lower: middle - multiplier * deviation, bandwidth: middle === 0 ? 0 : 2 * multiplier * deviation / middle * 100 };
+}
+function keltnerIndicator(data, period = 20, multiplier = 2) {
+  const middle = ema2(closes(data), period);
+  const atr4 = atrIndicator(data, Math.min(period, 14)).value;
+  return { period, multiplier, middle, upper: middle + multiplier * atr4, lower: middle - multiplier * atr4 };
+}
+function donchianIndicator(data, period = 20) {
+  const sample = data.slice(-period);
+  return { period, upper: Math.max(...sample.map((c) => c.high), 0), lower: Math.min(...sample.map((c) => c.low), 0), middle: avg([Math.max(...sample.map((c) => c.high), 0), Math.min(...sample.map((c) => c.low), 0)]) };
+}
+function rocIndicator(data, period = 12) {
+  const values = closes(data);
+  return { period, value: pct(values.at(-1) ?? 0, values[Math.max(0, values.length - 1 - period)] ?? 0) };
+}
+function momentumIndicator(data, period = 10) {
+  const values = closes(data);
+  return { period, value: (values.at(-1) ?? 0) - (values[Math.max(0, values.length - 1 - period)] ?? 0) };
+}
+function mfiIndicator(data, period = 14) {
+  const sample = data.slice(-(period + 1));
+  let positive = 0;
+  let negative = 0;
+  sample.slice(1).forEach((c, i) => {
+    const prev = sample[i];
+    const flow = (c.high + c.low + c.close) / 3 * c.volume;
+    if (c.close >= prev.close) positive += flow;
+    else negative += flow;
+  });
+  const ratio = negative === 0 ? 100 : positive / negative;
+  return { period, value: 100 - 100 / (1 + ratio) };
+}
+function obvIndicator(data) {
+  let value = 0;
+  data.slice(1).forEach((c, i) => {
+    if (c.close > data[i].close) value += c.volume;
+    else if (c.close < data[i].close) value -= c.volume;
+  });
+  return { value };
+}
+function vwapIndicator(data) {
+  let pv = 0;
+  let volume = 0;
+  for (const c of data) {
+    pv += (c.high + c.low + c.close) / 3 * c.volume;
+    volume += c.volume;
+  }
+  return { value: volume ? pv / volume : 0 };
+}
+function adxIndicator(data, period = 14) {
+  const trs = trueRange(data);
+  const plus = [];
+  const minus = [];
+  for (let i = 1; i < data.length; i++) {
+    const up = data[i].high - data[i - 1].high;
+    const down = data[i - 1].low - data[i].low;
+    plus.push(up > down && up > 0 ? up : 0);
+    minus.push(down > up && down > 0 ? down : 0);
+  }
+  const atr4 = sma3(trs, period) || 1;
+  const pdi = sma3(plus, period) / atr4 * 100;
+  const mdi = sma3(minus, period) / atr4 * 100;
+  return { period, plusDI: pdi, minusDI: mdi, adx: pdi + mdi === 0 ? 0 : Math.abs(pdi - mdi) / (pdi + mdi) * 100 };
+}
+function cmoIndicator(data, period = 14) {
+  const changes = closes(data).slice(1).map((v, i) => v - closes(data)[i]).slice(-period);
+  const up = changes.filter((v) => v > 0).reduce((a, b) => a + b, 0);
+  const down = Math.abs(changes.filter((v) => v < 0).reduce((a, b) => a + b, 0));
+  return { period, value: up + down === 0 ? 0 : (up - down) / (up + down) * 100 };
+}
+function ulcerIndexIndicator(data, period = 14) {
+  const sample = closes(data).slice(-period);
+  const max = Math.max(...sample, 0);
+  const squared = sample.map((v) => ((v - max) / (max || 1) * 100) ** 2);
+  return { period, value: Math.sqrt(avg(squared)) };
+}
+function zScoreIndicator(data, period = 20) {
+  const sample = closes(data).slice(-period);
+  const mean4 = avg(sample);
+  const deviation = stdev(sample);
+  return { period, value: deviation === 0 ? 0 : ((sample.at(-1) ?? 0) - mean4) / deviation };
+}
+function realizedVolatilityIndicator(data, period = 20) {
+  const values = closes(data).slice(-period);
+  const returns = values.slice(1).map((v, i) => Math.log(v / (values[i] || v)));
+  return { period, value: stdev(returns) * Math.sqrt(252) * 100 };
+}
+function heikinAshiIndicator(data) {
+  let previousOpen = data[0]?.open ?? 0;
+  let previousClose = data[0]?.close ?? 0;
+  const result = data.map((c) => {
+    const close = (c.open + c.high + c.low + c.close) / 4;
+    const open = (previousOpen + previousClose) / 2;
+    previousOpen = open;
+    previousClose = close;
+    return { open, high: Math.max(c.high, open, close), low: Math.min(c.low, open, close), close };
+  });
+  return result.at(-1) ?? { open: 0, high: 0, low: 0, close: 0 };
+}
+function pivotRangeIndicator(data) {
+  const c = data.at(-1);
+  if (!c) return { top: 0, bottom: 0, width: 0 };
+  const pivot = (c.high + c.low + c.close) / 3;
+  const bottom = (c.high + c.low) / 2;
+  const top = 2 * pivot - bottom;
+  return { top, bottom, width: top - bottom };
+}
+function indicatorSuite(data, requested) {
+  const names = requested?.length ? requested : ["sma", "ema", "macd", "rsi", "bollinger", "atr", "adx", "stochastic", "vwap", "obv", "mfi", "donchian", "roc", "zscore", "volatility"];
+  const output = {};
+  for (const name of names) {
+    switch (name) {
+      case "sma":
+        output.sma = smaIndicator(data);
+        break;
+      case "ema":
+        output.ema = emaIndicator(data);
+        break;
+      case "wma":
+        output.wma = wmaIndicator(data);
+        break;
+      case "hma":
+        output.hma = hmaIndicator(data);
+        break;
+      case "macd":
+        output.macd = macdIndicator(data);
+        break;
+      case "rsi":
+        output.rsi = rsiValue(data);
+        break;
+      case "bollinger":
+        output.bollinger = bollingerIndicator(data);
+        break;
+      case "keltner":
+        output.keltner = keltnerIndicator(data);
+        break;
+      case "donchian":
+        output.donchian = donchianIndicator(data);
+        break;
+      case "stochastic":
+        output.stochastic = stochasticIndicator(data);
+        break;
+      case "atr":
+        output.atr = atrIndicator(data);
+        break;
+      case "adx":
+        output.adx = adxIndicator(data);
+        break;
+      case "mfi":
+        output.mfi = mfiIndicator(data);
+        break;
+      case "obv":
+        output.obv = obvIndicator(data);
+        break;
+      case "vwap":
+        output.vwap = vwapIndicator(data);
+        break;
+      case "roc":
+        output.roc = rocIndicator(data);
+        break;
+      case "momentum":
+        output.momentum = momentumIndicator(data);
+        break;
+      case "cmo":
+        output.cmo = cmoIndicator(data);
+        break;
+      case "ulcer":
+        output.ulcer = ulcerIndexIndicator(data);
+        break;
+      case "zscore":
+        output.zscore = zScoreIndicator(data);
+        break;
+      case "volatility":
+        output.volatility = realizedVolatilityIndicator(data);
+        break;
+      case "heikinAshi":
+        output.heikinAshi = heikinAshiIndicator(data);
+        break;
+      case "pivotRange":
+        output.pivotRange = pivotRangeIndicator(data);
+        break;
+      default:
+        output[name] = { error: "Unknown indicator" };
+    }
+  }
+  return output;
+}
+function rsiValue(data, period = 14) {
+  const values = closes(data);
+  const changes = values.slice(1).map((v, i) => v - values[i]);
+  const recent = changes.slice(-period);
+  const gains = avg(recent.map((v) => Math.max(v, 0)));
+  const losses = avg(recent.map((v) => Math.max(-v, 0)));
+  return { period, value: losses === 0 ? 100 : 100 - 100 / (1 + gains / losses) };
 }
 
 // server/_core/synthTools.ts
@@ -1618,7 +1868,9 @@ var TOOL_POLICIES = {
   music_quantize: { name: "music_quantize", description: "Quantize note events to a bounded musical grid.", risk: "compute", allowedAgents: ["music_composer", "music_producer", "audio_engineer"], maxCallsPerMinute: 60, failureThreshold: 0.5, minimumSamples: 5, cooldownMs: 15e3 },
   music_rhythm: { name: "music_rhythm", description: "Generate deterministic Euclidean and drum-grid patterns.", risk: "compute", allowedAgents: ["music_composer", "music_producer", "audio_engineer"], maxCallsPerMinute: 60, failureThreshold: 0.5, minimumSamples: 5, cooldownMs: 15e3 },
   persistent_remember: { name: "persistent_remember", description: "Persist scoped memory with embeddings and retention metadata.", risk: "external", allowedAgents: ["memory_architect", "automation_orchestrator"], maxCallsPerMinute: 30, failureThreshold: 0.4, minimumSamples: 5, cooldownMs: 3e4 },
-  persistent_recall: { name: "persistent_recall", description: "Recall durable memories using scoped cosine similarity.", risk: "external", allowedAgents: ["memory_architect", "ml_engineer", "automation_orchestrator"], maxCallsPerMinute: 60, failureThreshold: 0.5, minimumSamples: 5, cooldownMs: 2e4 }
+  persistent_recall: { name: "persistent_recall", description: "Recall durable memories using scoped cosine similarity.", risk: "external", allowedAgents: ["memory_architect", "ml_engineer", "automation_orchestrator"], maxCallsPerMinute: 60, failureThreshold: 0.5, minimumSamples: 5, cooldownMs: 2e4 },
+  technical_indicator_suite: { name: "technical_indicator_suite", description: "Compute a bounded suite of deterministic technical-analysis indicators.", risk: "compute", allowedAgents: ["forex_analyst", "quant_researcher", "risk_manager", "market_microstructure", "data_analyst", "ui_architect", "multimodal_curator"], maxCallsPerMinute: 30, failureThreshold: 0.5, minimumSamples: 5, cooldownMs: 2e4 },
+  agentic_workflow_plan: { name: "agentic_workflow_plan", description: "Create a safe role-aware workflow plan with verification and rollback gates.", risk: "compute", allowedAgents: ["brainstormer", "research_agent", "automation_orchestrator", "qa_engineer", "ui_architect", "multimodal_curator", "observability_engineer", "security_reviewer"], maxCallsPerMinute: 30, failureThreshold: 0.5, minimumSamples: 5, cooldownMs: 15e3 }
 };
 var runtime = /* @__PURE__ */ new Map();
 var callWindow = /* @__PURE__ */ new Map();
@@ -1729,6 +1981,14 @@ var codeExecTool = {
       required: ["code"]
     }
   }
+};
+var technicalIndicatorSuiteTool = {
+  type: "function",
+  function: { name: "technical_indicator_suite", description: "Compute a bounded deterministic suite of technical-analysis indicators from OHLCV candles.", parameters: { type: "object", properties: { data: { type: "array" }, indicators: { type: "array" } }, required: ["data"] } }
+};
+var agenticWorkflowPlanTool = {
+  type: "function",
+  function: { name: "agentic_workflow_plan", description: "Create a safe role-aware workflow plan with verification and rollback gates.", parameters: { type: "object", properties: { goal: { type: "string" }, constraints: { type: "array" }, riskLevel: { type: "string", enum: ["low", "medium", "high"] } }, required: ["goal"] } }
 };
 var dataProcessingTool = {
   type: "function",
@@ -2076,7 +2336,7 @@ Adapt length and format to the user's needs.`,
     name: "UI Architect",
     description: "Designs responsive, accessible, stateful interfaces and theme systems.",
     systemPrompt: "You are a senior UI architect. Produce implementation-ready interaction contracts, responsive layouts, accessible states, design tokens, and performance-conscious animation plans. Prefer progressive enhancement and reduced-motion fallbacks.",
-    tools: [textAnalysisTool, dataProcessingTool],
+    tools: [textAnalysisTool, dataProcessingTool, technicalIndicatorSuiteTool, agenticWorkflowPlanTool],
     maxTokens: 3500
   },
   multimodal_curator: {
@@ -2084,7 +2344,7 @@ Adapt length and format to the user's needs.`,
     name: "Multimodal Curator",
     description: "Organizes attachment, transcript, image, and artifact context with provenance and privacy safeguards.",
     systemPrompt: "You are a multimodal information curator. Extract structured context from supplied material, preserve provenance, flag uncertainty, redact secrets, and propose artifact-ready summaries without inventing missing content.",
-    tools: [textAnalysisTool, dataProcessingTool],
+    tools: [textAnalysisTool, dataProcessingTool, technicalIndicatorSuiteTool, agenticWorkflowPlanTool],
     maxTokens: 4e3
   },
   observability_engineer: {
@@ -2092,7 +2352,7 @@ Adapt length and format to the user's needs.`,
     name: "Observability Engineer",
     description: "Analyzes latency, error, health, and circuit-breaker signals and produces cautious remediation plans.",
     systemPrompt: "You are an observability engineer. Separate measured facts from hypotheses, assess latency and error budgets, identify instrumentation gaps, and propose reversible mitigations with rollback criteria.",
-    tools: [dataProcessingTool, calculatorTool],
+    tools: [dataProcessingTool, calculatorTool, agenticWorkflowPlanTool],
     maxTokens: 3500
   },
   security_reviewer: {
@@ -2100,7 +2360,7 @@ Adapt length and format to the user's needs.`,
     name: "Security Reviewer",
     description: "Reviews authentication, attachments, tools, sandbox boundaries, and privacy controls for exploitable gaps.",
     systemPrompt: "You are a defensive application security reviewer. Inspect supplied designs or code for auth bypasses, secret exposure, injection, unsafe file handling, insecure defaults, and missing rate limits. Recommend fixes and safe tests; do not provide exploit instructions.",
-    tools: [textAnalysisTool, codeExecTool],
+    tools: [textAnalysisTool, codeExecTool, agenticWorkflowPlanTool],
     maxTokens: 4e3
   },
   brainstormer: {
@@ -2141,6 +2401,19 @@ async function executeToolCall(toolName, args, agentRole) {
   if (!permission.allowed) return `Permission denied: ${permission.reason}`;
   try {
     switch (toolName) {
+      case "technical_indicator_suite": {
+        const data = Array.isArray(args.data) ? args.data : [];
+        if (!data.length || data.length > 2e3) return "Error: data must contain between 1 and 2000 candles";
+        const indicators = Array.isArray(args.indicators) ? args.indicators.map(String).slice(0, 30) : void 0;
+        return JSON.stringify(indicatorSuite(data, indicators));
+      }
+      case "agentic_workflow_plan": {
+        const goal = String(args.goal ?? "").trim();
+        if (!goal || goal.length > 2e3) return "Error: goal must be between 1 and 2000 characters";
+        const riskLevel = String(args.riskLevel ?? "medium");
+        const constraints = Array.isArray(args.constraints) ? args.constraints.map(String).slice(0, 12) : [];
+        return JSON.stringify({ goal, riskLevel, constraints, steps: [{ id: "scope", action: "Clarify objective, inputs, and success criteria", verification: "Inputs are explicit" }, { id: "plan", action: "Select the minimum permitted tools and specialist roles", verification: "All tools pass governance checks" }, { id: "execute", action: "Run bounded steps with observable outputs", verification: "Each step records success or failure" }, { id: "review", action: "Review uncertainty and side effects", verification: "No unsupported claims or unapproved mutations" }, { id: "rollback", action: "Prepare rollback or human approval when risk is non-low", verification: "A reversible fallback exists" }] });
+      }
       case "forex_signal_snapshot": {
         const data = Array.isArray(args.data) ? args.data : [];
         return JSON.stringify(forexSignalSnapshot(data, Number(args.period ?? 14)));
@@ -3983,14 +4256,14 @@ function regexHelper(input) {
 }
 
 // server/_core/tradingStrategy.ts
-function sma3(data, period) {
+function sma4(data, period) {
   const result = [];
   for (let i = period - 1; i < data.length; i++) {
     result.push(data.slice(i - period + 1, i + 1).reduce((a, b) => a + b, 0) / period);
   }
   return result;
 }
-function ema2(data, period) {
+function ema3(data, period) {
   const result = [];
   const k = 2 / (period + 1);
   let prev = data.slice(0, period).reduce((a, b) => a + b, 0) / period;
@@ -4020,7 +4293,7 @@ function rsi2(data, period = 14) {
   }
   return result;
 }
-function trueRange(data) {
+function trueRange2(data) {
   const result = [];
   for (let i = 1; i < data.length; i++) {
     result.push(Math.max(data[i].high - data[i].low, Math.abs(data[i].high - data[i - 1].close), Math.abs(data[i].low - data[i - 1].close)));
@@ -4028,7 +4301,7 @@ function trueRange(data) {
   return result;
 }
 function atr2(data, period = 14) {
-  const tr = trueRange(data);
+  const tr = trueRange2(data);
   const result = [];
   if (tr.length < period) return result;
   let prev = tr.slice(0, period).reduce((a, b) => a + b, 0) / period;
@@ -4040,7 +4313,7 @@ function atr2(data, period = 14) {
   return result;
 }
 function bollingerBands2(data, period = 20, stdMult = 2) {
-  const middle = sma3(data, period);
+  const middle = sma4(data, period);
   const upper = [];
   const lower = [];
   const pctB = [];
@@ -4060,12 +4333,12 @@ function bollingerBands2(data, period = 20, stdMult = 2) {
   return { upper, middle, lower, pctB, bandwidth };
 }
 function macd2(data, fast = 12, slow = 26, signal = 9) {
-  const fastEma = ema2(data, fast);
-  const slowEma = ema2(data, slow);
+  const fastEma = ema3(data, fast);
+  const slowEma = ema3(data, slow);
   const offset = slow - fast;
   const macdLine = [];
   for (let i = 0; i < slowEma.length; i++) macdLine.push(fastEma[i + offset] - slowEma[i]);
-  const signalLine = ema2(macdLine, signal);
+  const signalLine = ema3(macdLine, signal);
   const histOffset = signal - 1;
   const histogram = [];
   for (let i = 0; i < signalLine.length; i++) histogram.push(macdLine[i + histOffset] - signalLine[i]);
@@ -4080,11 +4353,11 @@ function stochastic2(data, kPeriod = 14, dPeriod = 3) {
     const ll = Math.min(...lows);
     kValues.push(hh === ll ? 50 : (data[i].close - ll) / (hh - ll) * 100);
   }
-  const dValues = sma3(kValues, dPeriod);
+  const dValues = sma4(kValues, dPeriod);
   return { k: kValues, d: dValues };
 }
 function adx2(data, period = 14) {
-  const tr = trueRange(data);
+  const tr = trueRange2(data);
   if (tr.length < period) return { adx: [], plusDI: [], minusDI: [] };
   const plusDM = [];
   const minusDM = [];
@@ -4117,7 +4390,7 @@ function adx2(data, period = 14) {
     const sum = v + minusDI[i];
     return sum === 0 ? 0 : Math.abs(v - minusDI[i]) / sum * 100;
   });
-  const adxValues = ema2(dx, period);
+  const adxValues = ema3(dx, period);
   return { adx: adxValues, plusDI, minusDI };
 }
 function williamsR2(data, period = 14) {
@@ -4133,7 +4406,7 @@ function williamsR2(data, period = 14) {
 }
 function cci2(data, period = 20) {
   const tp = data.map((d) => (d.high + d.low + d.close) / 3);
-  const tpSma = sma3(tp, period);
+  const tpSma = sma4(tp, period);
   const result = [];
   for (let i = 0; i < tpSma.length; i++) {
     const slice = tp.slice(i, i + period);
@@ -4170,9 +4443,9 @@ function generateRSIBBSignal(candles, params) {
   const rsiOverbought = params?.rsiOverbought ?? 65;
   const bbPeriod = params?.bbPeriod ?? 20;
   const bbStdDev = params?.bbStdDev ?? 2;
-  const closes = candles.map((c) => c.close);
-  const rsiVals = rsi2(closes, rsiPeriod);
-  const bb = bollingerBands2(closes, bbPeriod, bbStdDev);
+  const closes2 = candles.map((c) => c.close);
+  const rsiVals = rsi2(closes2, rsiPeriod);
+  const bb = bollingerBands2(closes2, bbPeriod, bbStdDev);
   const signals = [];
   const offset = Math.max(rsiPeriod, bbPeriod) - 1;
   for (let i = 0; i < candles.length; i++) {
@@ -4232,8 +4505,8 @@ function generateStochasticCrossSignal(candles, params) {
 function generateEMACrossSignal(candles, params) {
   const fast = params?.fast ?? 12;
   const slow = params?.slow ?? 26;
-  const fastEma = ema2(candles.map((c) => c.close), fast);
-  const slowEma = ema2(candles.map((c) => c.close), slow);
+  const fastEma = ema3(candles.map((c) => c.close), fast);
+  const slowEma = ema3(candles.map((c) => c.close), slow);
   const signals = [];
   const offset = slow - 1;
   const fastOffset = slow - fast;
@@ -4533,14 +4806,14 @@ var SWARM_AGENTS = [
   { id: "vol_mfi", name: "MFI(14)", category: "volume", indicator: "mfi", params: { period: 14 }, weight: 1.2 }
 ];
 function executeAgent(agent, data) {
-  const closes = data.map((d) => d.close);
-  const lastPrice = closes[closes.length - 1];
+  const closes2 = data.map((d) => d.close);
+  const lastPrice = closes2[closes2.length - 1];
   let signal = "NEUTRAL";
   let strength = 0;
   let value = 0;
   switch (agent.indicator) {
     case "sma": {
-      const vals = sma3(closes, agent.params.period);
+      const vals = sma4(closes2, agent.params.period);
       if (vals.length > 0) {
         value = vals[vals.length - 1];
         strength = Math.min(Math.abs(lastPrice - value) / value * 100, 1);
@@ -4549,7 +4822,7 @@ function executeAgent(agent, data) {
       break;
     }
     case "ema": {
-      const vals = ema2(closes, agent.params.period);
+      const vals = ema3(closes2, agent.params.period);
       if (vals.length > 0) {
         value = vals[vals.length - 1];
         strength = Math.min(Math.abs(lastPrice - value) / value * 100, 1);
@@ -4558,8 +4831,8 @@ function executeAgent(agent, data) {
       break;
     }
     case "ema_cross": {
-      const fast = ema2(closes, agent.params.fast);
-      const slow = ema2(closes, agent.params.slow);
+      const fast = ema3(closes2, agent.params.fast);
+      const slow = ema3(closes2, agent.params.slow);
       const offset = agent.params.slow - agent.params.fast;
       if (fast.length > offset + 1 && slow.length > 1) {
         const fastVal = fast[fast.length - 1];
@@ -4574,7 +4847,7 @@ function executeAgent(agent, data) {
       break;
     }
     case "rsi": {
-      const vals = rsi2(closes, agent.params.period);
+      const vals = rsi2(closes2, agent.params.period);
       if (vals.length > 0) {
         value = vals[vals.length - 1];
         strength = Math.abs(value - 50) / 50;
@@ -4584,7 +4857,7 @@ function executeAgent(agent, data) {
       break;
     }
     case "macd": {
-      const { histogram } = macd2(closes, agent.params.fast, agent.params.slow, agent.params.signal);
+      const { histogram } = macd2(closes2, agent.params.fast, agent.params.slow, agent.params.signal);
       if (histogram.length > 1) {
         value = histogram[histogram.length - 1];
         strength = Math.min(Math.abs(value) / lastPrice * 100, 1);
@@ -4637,14 +4910,14 @@ function executeAgent(agent, data) {
       const vals = atr2(data, agent.params.period);
       if (vals.length > 0) {
         value = vals[vals.length - 1];
-        const avg2 = vals.reduce((a, b) => a + b, 0) / vals.length;
-        strength = Math.min(value / (avg2 || 1), 1);
-        signal = value > avg2 ? "SELL" : "BUY";
+        const avg3 = vals.reduce((a, b) => a + b, 0) / vals.length;
+        strength = Math.min(value / (avg3 || 1), 1);
+        signal = value > avg3 ? "SELL" : "BUY";
       }
       break;
     }
     case "bollinger": {
-      const bb = bollingerBands2(closes, agent.params.period, agent.params.stdDev);
+      const bb = bollingerBands2(closes2, agent.params.period, agent.params.stdDev);
       if (bb.upper.length > 0 && bb.lower.length > 0) {
         const u = bb.upper[bb.upper.length - 1];
         const l = bb.lower[bb.lower.length - 1];
@@ -4656,17 +4929,17 @@ function executeAgent(agent, data) {
       break;
     }
     case "bb_width": {
-      const bb = bollingerBands2(closes, agent.params.period, agent.params.stdDev);
+      const bb = bollingerBands2(closes2, agent.params.period, agent.params.stdDev);
       if (bb.bandwidth.length > 0) {
         value = bb.bandwidth[bb.bandwidth.length - 1];
-        const avg2 = bb.bandwidth.reduce((a, b) => a + b, 0) / bb.bandwidth.length;
-        strength = Math.min(value / (avg2 || 1) / 2, 1);
+        const avg3 = bb.bandwidth.reduce((a, b) => a + b, 0) / bb.bandwidth.length;
+        strength = Math.min(value / (avg3 || 1) / 2, 1);
         signal = "NEUTRAL";
       }
       break;
     }
     case "keltner": {
-      const bb = bollingerBands2(closes, agent.params.period, 1.5);
+      const bb = bollingerBands2(closes2, agent.params.period, 1.5);
       if (bb.upper.length > 0 && bb.lower.length > 0) {
         value = bb.pctB[bb.pctB.length - 1];
         strength = Math.abs(value - 0.5) * 2;
@@ -5350,8 +5623,8 @@ var familyCatalog = [
 var INDICATOR_CATALOG = familyCatalog.flatMap((family) => PERIODS.map((period) => ({ id: `${family.key}_${period}`, label: `${family.label} (${period})`, category: family.category, period })));
 var mean2 = (values) => values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
 var rolling = (values, period, fn) => values.map((_, index2) => index2 < period - 1 ? NaN : fn(values.slice(index2 - period + 1, index2 + 1), index2));
-var sma4 = (values, period) => rolling(values, period, (window) => mean2(window));
-var ema3 = (values, period) => {
+var sma5 = (values, period) => rolling(values, period, (window) => mean2(window));
+var ema4 = (values, period) => {
   const result = [];
   const alpha = 2 / (period + 1);
   let previous = 0;
@@ -5396,55 +5669,55 @@ var cci3 = (data, period) => rolling(typical(data), period, (window, index2) => 
 });
 var obv3 = (data) => data.map((_, index2) => index2 === 0 ? 0 : data.slice(1, index2 + 1).reduce((sum, bar, offset) => sum + (bar.close > data[offset].close ? bar.volume : bar.close < data[offset].close ? -bar.volume : 0), 0));
 function calculate(family, period, data) {
-  const closes = data.map((bar) => bar.close);
+  const closes2 = data.map((bar) => bar.close);
   const tr = trueRanges(data);
-  if (family === "sma") return sma4(closes, period);
-  if (family === "ema") return ema3(closes, period);
-  if (family === "wma") return wma(closes, period);
+  if (family === "sma") return sma5(closes2, period);
+  if (family === "ema") return ema4(closes2, period);
+  if (family === "wma") return wma(closes2, period);
   if (family === "hma") {
-    const half = wma(closes, Math.max(2, Math.floor(period / 2)));
-    const full = wma(closes, period);
+    const half = wma(closes2, Math.max(2, Math.floor(period / 2)));
+    const full = wma(closes2, period);
     return wma(half.map((value, index2) => 2 * value - full[index2]), Math.max(2, Math.floor(Math.sqrt(period))));
   }
   if (family === "dema") {
-    const first = ema3(closes, period);
-    return first.map((value, index2) => 2 * value - ema3(first, period)[index2]);
+    const first = ema4(closes2, period);
+    return first.map((value, index2) => 2 * value - ema4(first, period)[index2]);
   }
   if (family === "tema") {
-    const first = ema3(closes, period);
-    const second = ema3(first, period);
-    const third = ema3(second, period);
+    const first = ema4(closes2, period);
+    const second = ema4(first, period);
+    const third = ema4(second, period);
     return first.map((value, index2) => 3 * value - 3 * second[index2] + third[index2]);
   }
-  if (family === "roc") return closes.map((value, index2) => index2 < period ? NaN : (value - closes[index2 - period]) / closes[index2 - period] * 100);
-  if (family === "momentum") return diff(closes, period);
-  if (family === "rsi") return rsi3(closes, period);
+  if (family === "roc") return closes2.map((value, index2) => index2 < period ? NaN : (value - closes2[index2 - period]) / closes2[index2 - period] * 100);
+  if (family === "momentum") return diff(closes2, period);
+  if (family === "rsi") return rsi3(closes2, period);
   if (family === "stoch") return stochastic3(data, period);
   if (family === "williams") return stochastic3(data, period).map((value) => Number.isNaN(value) ? NaN : value - 100);
-  if (family === "cmo") return closes.map((_, index2) => {
+  if (family === "cmo") return closes2.map((_, index2) => {
     if (index2 < period) return NaN;
-    const changes = diff(closes, 1).slice(index2 - period + 1, index2 + 1).filter((value) => !Number.isNaN(value));
+    const changes = diff(closes2, 1).slice(index2 - period + 1, index2 + 1).filter((value) => !Number.isNaN(value));
     const up = changes.filter((value) => value > 0).reduce((sum, value) => sum + value, 0);
     const down = changes.filter((value) => value < 0).reduce((sum, value) => sum - value, 0);
     return up + down === 0 ? 0 : (up - down) / (up + down) * 100;
   });
   if (family === "cci") return cci3(data, period);
-  if (family === "trix") return ema3(ema3(ema3(closes, period), period), period).map((value, index2, values) => index2 === 0 ? NaN : (value - values[index2 - 1]) / values[index2 - 1] * 100);
+  if (family === "trix") return ema4(ema4(ema4(closes2, period), period), period).map((value, index2, values) => index2 === 0 ? NaN : (value - values[index2 - 1]) / values[index2 - 1] * 100);
   if (family === "atr") return rolling(tr, period, (window) => mean2(window));
   if (family === "true_range") return tr;
-  if (family === "stdev") return rollingStd(closes, period);
-  if (family === "variance") return rollingStd(closes, period).map((value) => value ** 2);
-  if (family === "zscore") return rolling(closes, period, (window, index2) => {
+  if (family === "stdev") return rollingStd(closes2, period);
+  if (family === "variance") return rollingStd(closes2, period).map((value) => value ** 2);
+  if (family === "zscore") return rolling(closes2, period, (window, index2) => {
     const average = mean2(window);
     const sd = Math.sqrt(mean2(window.map((value) => (value - average) ** 2)));
-    return sd === 0 ? 0 : (closes[index2] - average) / sd;
+    return sd === 0 ? 0 : (closes2[index2] - average) / sd;
   });
-  if (family === "bb_position") return rolling(closes, period, (window, index2) => {
+  if (family === "bb_position") return rolling(closes2, period, (window, index2) => {
     const average = mean2(window), sd = Math.sqrt(mean2(window.map((value) => (value - average) ** 2)));
-    return sd === 0 ? 0.5 : (closes[index2] - (average - 2 * sd)) / (4 * sd);
+    return sd === 0 ? 0.5 : (closes2[index2] - (average - 2 * sd)) / (4 * sd);
   });
   if (family === "range_percent") return data.map((bar) => bar.close === 0 ? 0 : (bar.high - bar.low) / bar.close * 100);
-  if (family === "volume_sma") return sma4(data.map((bar) => bar.volume), period);
+  if (family === "volume_sma") return sma5(data.map((bar) => bar.volume), period);
   if (family === "volume_roc") {
     const volumes = data.map((bar) => bar.volume);
     return volumes.map((value, index2) => index2 < period ? NaN : volumes[index2 - period] === 0 ? 0 : (value - volumes[index2 - period]) / volumes[index2 - period] * 100);
@@ -5491,7 +5764,7 @@ function calculate(family, period, data) {
     return high === low ? 0.5 : (bar.close - low) / (high - low);
   });
   if (family === "keltner_position") return data.map((bar, index2) => {
-    const center = ema3(closes, period)[index2], width = (rolling(tr, period, (window) => mean2(window))[index2] ?? 0) * 2;
+    const center = ema4(closes2, period)[index2], width = (rolling(tr, period, (window) => mean2(window))[index2] ?? 0) * 2;
     return width ? (bar.close - (center - width)) / (2 * width) : 0.5;
   });
   if (family === "candle_body_pct") return data.map((bar) => bar.high === bar.low ? 0 : Math.abs(bar.close - bar.open) / (bar.high - bar.low));
@@ -5500,11 +5773,11 @@ function calculate(family, period, data) {
   if (family === "gap_pct") return data.map((bar, index2) => index2 === 0 || data[index2 - 1].close === 0 ? 0 : (bar.open - data[index2 - 1].close) / data[index2 - 1].close * 100);
   if (family === "hl2") return data.map((bar) => (bar.high + bar.low) / 2);
   if (family === "ohlc4") return data.map((bar) => (bar.open + bar.high + bar.low + bar.close) / 4);
-  if (family === "realized_vol") return rolling(closes.map((value, index2) => index2 === 0 ? 0 : Math.log(value / closes[index2 - 1])), period, (window) => Math.sqrt(mean2(window.map((value) => value ** 2))) * Math.sqrt(252));
-  if (family === "upside_vol" || family === "downside_vol") return rolling(closes.map((value, index2) => index2 === 0 ? 0 : Math.log(value / closes[index2 - 1])), period, (window) => Math.sqrt(mean2(window.filter((value) => family === "upside_vol" ? value > 0 : value < 0).map((value) => value ** 2))) * Math.sqrt(252));
-  if (family === "efficiency_ratio") return closes.map((value, index2) => {
+  if (family === "realized_vol") return rolling(closes2.map((value, index2) => index2 === 0 ? 0 : Math.log(value / closes2[index2 - 1])), period, (window) => Math.sqrt(mean2(window.map((value) => value ** 2))) * Math.sqrt(252));
+  if (family === "upside_vol" || family === "downside_vol") return rolling(closes2.map((value, index2) => index2 === 0 ? 0 : Math.log(value / closes2[index2 - 1])), period, (window) => Math.sqrt(mean2(window.filter((value) => family === "upside_vol" ? value > 0 : value < 0).map((value) => value ** 2))) * Math.sqrt(252));
+  if (family === "efficiency_ratio") return closes2.map((value, index2) => {
     if (index2 < period) return NaN;
-    const direction = Math.abs(value - closes[index2 - period]), noise = closes.slice(index2 - period + 1, index2 + 1).reduce((sum, close, offset) => sum + Math.abs(close - closes[index2 - period + offset]), 0);
+    const direction = Math.abs(value - closes2[index2 - period]), noise = closes2.slice(index2 - period + 1, index2 + 1).reduce((sum, close, offset) => sum + Math.abs(close - closes2[index2 - period + offset]), 0);
     return noise ? direction / noise : 0;
   });
   if (family === "choppiness") return data.map((_, index2) => {
@@ -5545,10 +5818,10 @@ var std = (values) => {
   return Math.sqrt(mean3(values.map((value) => (value - average) ** 2)));
 };
 function signalAt(index2, data, config) {
-  const closes = data.map((bar) => bar.close), fast = ema(closes, config.fastPeriod), slow = ema(closes, config.slowPeriod), momentum = rsi(closes, config.rsiPeriod);
-  const fastValue = fast[index2] ?? closes[index2], slowValue = slow[index2] ?? closes[index2], rsiValue = momentum[index2] ?? 50;
-  if (fastValue > slowValue && rsiValue >= config.longRsi) return "long";
-  if (fastValue < slowValue && rsiValue <= config.shortRsi) return "short";
+  const closes2 = data.map((bar) => bar.close), fast = ema(closes2, config.fastPeriod), slow = ema(closes2, config.slowPeriod), momentum = rsi(closes2, config.rsiPeriod);
+  const fastValue = fast[index2] ?? closes2[index2], slowValue = slow[index2] ?? closes2[index2], rsiValue2 = momentum[index2] ?? 50;
+  if (fastValue > slowValue && rsiValue2 >= config.longRsi) return "long";
+  if (fastValue < slowValue && rsiValue2 <= config.shortRsi) return "short";
   return "flat";
 }
 function runBacktest2(data, inputConfig = {}) {
@@ -5883,7 +6156,7 @@ function shapeAutomation(points, curve = "linear", samples = points.length) {
 }
 
 // server/_core/technicalAdvanced.ts
-function avg(values) {
+function avg2(values) {
   return values.length ? values.reduce((a, b) => a + b, 0) / values.length : 0;
 }
 function highest(values) {
@@ -5926,7 +6199,7 @@ function ichimoku(candles, conversionPeriod = 9, basePeriod = 26, spanPeriod = 5
 function supertrend(candles, period = 10, multiplier = 3) {
   if (candles.length < period + 1) throw new Error(`At least ${period + 1} candles are required`);
   const trs = candles.map((c, i) => i === 0 ? c.high - c.low : Math.max(c.high - c.low, Math.abs(c.high - candles[i - 1].close), Math.abs(c.low - candles[i - 1].close)));
-  const atr4 = avg(trs.slice(-period));
+  const atr4 = avg2(trs.slice(-period));
   const last = candles.at(-1);
   const mid = (last.high + last.low) / 2;
   const upper = mid + multiplier * atr4;
@@ -5963,13 +6236,13 @@ function rsiDivergence(candles, period = 14, window = 30) {
   const gains = changes.map((v) => Math.max(0, v));
   const losses = changes.map((v) => Math.max(0, -v));
   const rsiAt = (end) => {
-    const g = avg(gains.slice(Math.max(0, end - period), end));
-    const l = avg(losses.slice(Math.max(0, end - period), end));
+    const g = avg2(gains.slice(Math.max(0, end - period), end));
+    const l = avg2(losses.slice(Math.max(0, end - period), end));
     return l === 0 ? 100 : 100 - 100 / (1 + g / l);
   };
   const half = Math.floor(sample.length / 2);
-  const firstPrice = avg(sample.slice(0, 3).map((c) => c.close));
-  const secondPrice = avg(sample.slice(-3).map((c) => c.close));
+  const firstPrice = avg2(sample.slice(0, 3).map((c) => c.close));
+  const secondPrice = avg2(sample.slice(-3).map((c) => c.close));
   const firstRsi = rsiAt(Math.max(period, half - 1));
   const secondRsi = rsiAt(changes.length - 1);
   const type = secondPrice < firstPrice && secondRsi > firstRsi ? "bullish" : secondPrice > firstPrice && secondRsi < firstRsi ? "bearish" : "none";
@@ -5982,7 +6255,7 @@ function confluenceSnapshot(candles) {
   const ichi = ichimoku(candles);
   const st = supertrend(candles, Math.min(10, Math.max(2, Math.floor(candles.length / 4))), 3);
   const votes = [ichi.cloudBias === "bullish" ? 1 : ichi.cloudBias === "bearish" ? -1 : 0, st.trend === "up" ? 1 : -1, last.close >= fib.levels[4].price ? 1 : -1];
-  const score = avg(votes);
+  const score = avg2(votes);
   return { score, bias: score > 0.33 ? "bullish" : score < -0.33 ? "bearish" : "neutral", components: { ichimoku: ichi, supertrend: st, fibonacci: fib } };
 }
 
@@ -6352,25 +6625,25 @@ ${input.context ?? "No additional context."}`
         period: z2.number().int().min(2).max(200).default(14)
       })
     ).mutation(({ input }) => {
-      const { closes, highs, lows, indicator, period } = input;
+      const { closes: closes2, highs, lows, indicator, period } = input;
       switch (indicator) {
         case "sma":
-          return { indicator: "SMA", values: sma(closes, period) };
+          return { indicator: "SMA", values: sma(closes2, period) };
         case "ema":
-          return { indicator: "EMA", values: ema(closes, period) };
+          return { indicator: "EMA", values: ema(closes2, period) };
         case "rsi":
-          return { indicator: "RSI", values: rsi(closes, period) };
+          return { indicator: "RSI", values: rsi(closes2, period) };
         case "macd":
-          return { indicator: "MACD", values: macd(closes) };
+          return { indicator: "MACD", values: macd(closes2) };
         case "bollinger":
           return {
             indicator: "Bollinger Bands",
-            values: bollingerBands(closes, period)
+            values: bollingerBands(closes2, period)
           };
         case "stochastic":
           return {
             indicator: "Stochastic",
-            values: highs && lows ? stochastic(highs, lows, closes, period, 3) : { k: [], d: [] }
+            values: highs && lows ? stochastic(highs, lows, closes2, period, 3) : { k: [], d: [] }
           };
         default:
           throw new Error(`Unknown indicator: ${indicator}`);
@@ -7067,47 +7340,47 @@ ${input.context ?? "No additional context."}`
       period2: z2.number().int().min(2).max(200).optional(),
       period3: z2.number().int().min(2).max(200).optional()
     })).mutation(({ input }) => {
-      const { closes, highs, lows, volumes, indicator, period, period2, period3 } = input;
+      const { closes: closes2, highs, lows, volumes, indicator, period, period2, period3 } = input;
       switch (indicator) {
         case "sma":
-          return { indicator: "SMA", values: sma3(closes, period) };
+          return { indicator: "SMA", values: sma4(closes2, period) };
         case "ema":
-          return { indicator: "EMA", values: ema2(closes, period) };
+          return { indicator: "EMA", values: ema3(closes2, period) };
         case "rsi":
-          return { indicator: "RSI", values: rsi2(closes, period) };
+          return { indicator: "RSI", values: rsi2(closes2, period) };
         case "macd": {
-          const r = macd2(closes, period, period2 ?? 26, period3 ?? 9);
+          const r = macd2(closes2, period, period2 ?? 26, period3 ?? 9);
           return { indicator: "MACD", values: r };
         }
         case "stochastic": {
           if (!highs || !lows) throw new Error("highs and lows required");
-          return { indicator: "Stochastic", values: stochastic2(closes.map((c, i) => ({ timestamp: i, open: c, high: highs[i], low: lows[i], close: c, volume: 0 })), period, period2 ?? 3) };
+          return { indicator: "Stochastic", values: stochastic2(closes2.map((c, i) => ({ timestamp: i, open: c, high: highs[i], low: lows[i], close: c, volume: 0 })), period, period2 ?? 3) };
         }
         case "bollinger":
-          return { indicator: "Bollinger Bands", values: bollingerBands2(closes, period) };
+          return { indicator: "Bollinger Bands", values: bollingerBands2(closes2, period) };
         case "atr": {
           if (!highs || !lows) throw new Error("highs and lows required");
-          return { indicator: "ATR", values: atr2(closes.map((c, i) => ({ timestamp: i, open: c, high: highs[i], low: lows[i], close: c, volume: 0 })), period) };
+          return { indicator: "ATR", values: atr2(closes2.map((c, i) => ({ timestamp: i, open: c, high: highs[i], low: lows[i], close: c, volume: 0 })), period) };
         }
         case "adx": {
           if (!highs || !lows) throw new Error("highs and lows required");
-          return { indicator: "ADX", values: adx2(closes.map((c, i) => ({ timestamp: i, open: c, high: highs[i], low: lows[i], close: c, volume: 0 })), period) };
+          return { indicator: "ADX", values: adx2(closes2.map((c, i) => ({ timestamp: i, open: c, high: highs[i], low: lows[i], close: c, volume: 0 })), period) };
         }
         case "williams_r": {
           if (!highs || !lows) throw new Error("highs and lows required");
-          return { indicator: "Williams %R", values: williamsR2(closes.map((c, i) => ({ timestamp: i, open: c, high: highs[i], low: lows[i], close: c, volume: 0 })), period) };
+          return { indicator: "Williams %R", values: williamsR2(closes2.map((c, i) => ({ timestamp: i, open: c, high: highs[i], low: lows[i], close: c, volume: 0 })), period) };
         }
         case "cci": {
           if (!highs || !lows) throw new Error("highs and lows required");
-          return { indicator: "CCI", values: cci2(closes.map((c, i) => ({ timestamp: i, open: c, high: highs[i], low: lows[i], close: c, volume: 0 })), period) };
+          return { indicator: "CCI", values: cci2(closes2.map((c, i) => ({ timestamp: i, open: c, high: highs[i], low: lows[i], close: c, volume: 0 })), period) };
         }
         case "obv": {
           if (!volumes) throw new Error("volumes required");
-          return { indicator: "OBV", values: obv2(closes.map((c, i) => ({ timestamp: i, open: c, high: c, low: c, close: c, volume: volumes[i] }))) };
+          return { indicator: "OBV", values: obv2(closes2.map((c, i) => ({ timestamp: i, open: c, high: c, low: c, close: c, volume: volumes[i] }))) };
         }
         case "vwap": {
           if (!volumes) throw new Error("volumes required");
-          return { indicator: "VWAP", values: vwap(closes.map((c, i) => ({ timestamp: i, open: c, high: c, low: c, close: c, volume: volumes[i] }))) };
+          return { indicator: "VWAP", values: vwap(closes2.map((c, i) => ({ timestamp: i, open: c, high: c, low: c, close: c, volume: volumes[i] }))) };
         }
       }
     })
