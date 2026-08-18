@@ -1,4 +1,7 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useAuth } from "@/_core/hooks/useAuth";
+import { startLogin } from "@/const";
+import { trpc } from "@/lib/trpc";
 import {
   Archive,
   ArrowUp,
@@ -39,8 +42,9 @@ import { toast } from "sonner";
 
 type Message = { id: number; role: "user" | "assistant"; content: string; time: string };
 type Conversation = { id: number; title: string; date: string; active?: boolean; starred?: boolean };
+type LocalAttachment = { id: string; file: File; previewUrl?: string };
 
-const conversations: Conversation[] = [
+const demoConversations: Conversation[] = [
   { id: 1, title: "A calmer way to plan the week", date: "Today", active: true, starred: true },
   { id: 2, title: "Notes from the design review", date: "Yesterday" },
   { id: 3, title: "Turn this brief into a narrative", date: "Yesterday" },
@@ -62,9 +66,9 @@ function IconButton({ label, children, onClick, active = false }: { label: strin
   return <button aria-label={label} title={label} onClick={onClick} className={`icon-button ${active ? "is-active" : ""}`}>{children}</button>;
 }
 
-function Sidebar({ open, onClose, selected, onSelect, onNew }: { open: boolean; onClose: () => void; selected: number; onSelect: (id: number) => void; onNew: () => void }) {
+function Sidebar({ open, onClose, selected, onSelect, onNew, items, projectCount, onCreateProject }: { open: boolean; onClose: () => void; selected: number; onSelect: (id: number) => void; onNew: () => void; items: Conversation[]; projectCount: number; onCreateProject: () => void }) {
   const [query, setQuery] = useState("");
-  const filtered = useMemo(() => conversations.filter((item) => item.title.toLowerCase().includes(query.toLowerCase())), [query]);
+  const filtered = useMemo(() => items.filter((item) => item.title.toLowerCase().includes(query.toLowerCase())), [items, query]);
   return (
     <>
       {open && <button className="sidebar-scrim" aria-label="Close navigation" onClick={onClose} />}
@@ -79,7 +83,7 @@ function Sidebar({ open, onClose, selected, onSelect, onNew }: { open: boolean; 
           <div className="section-label"><span>Your space</span><Ellipsis size={15} /></div>
           <nav className="workspace-links">
             <button><MessageCircle size={16} />Chats</button>
-            <button><FolderOpen size={16} />Projects <span className="link-count">3</span></button>
+            <button onClick={onCreateProject}><FolderOpen size={16} />Projects <span className="link-count">{projectCount}</span></button>
             <button><Star size={16} />Starred</button>
           </nav>
           <div className="section-label conversations-label"><span>Recent chats</span><button aria-label="Sort conversations"><MoreHorizontal size={15} /></button></div>
@@ -98,28 +102,72 @@ function Sidebar({ open, onClose, selected, onSelect, onNew }: { open: boolean; 
 }
 
 export default function Home() {
+  const { user, loading, isAuthenticated } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [selected, setSelected] = useState(1);
+  const projectsQuery = trpc.projects.list.useQuery(undefined, { enabled: isAuthenticated, retry: false });
+  const persistedConversationsQuery = trpc.conversations.list.useQuery(undefined, { enabled: isAuthenticated, retry: false });
+  const createConversationMutation = trpc.conversations.create.useMutation();
+  const createProjectMutation = trpc.projects.create.useMutation();
+  const addMessageMutation = trpc.conversations.addMessage.useMutation();
+  const updateConversationMutation = trpc.conversations.update.useMutation();
+  const selectedConversationQuery = trpc.conversations.get.useQuery({ id: selected }, { enabled: isAuthenticated && selected > 0, retry: false });
+  const utils = trpc.useUtils();
   const [messages, setMessages] = useState<Message[]>(starterMessages);
   const [draft, setDraft] = useState("");
   const [modelOpen, setModelOpen] = useState(false);
   const [copied, setCopied] = useState(false);
-  const activeTitle = conversations.find((c) => c.id === selected)?.title ?? "New conversation";
+  const [attachments, setAttachments] = useState<LocalAttachment[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const conversationItems = persistedConversationsQuery.data?.map((item) => ({ id: item.id, title: item.title, date: new Date(item.updatedAt).toLocaleDateString([], { month: "short", day: "numeric" }), starred: item.isStarred })) ?? demoConversations;
+  const activeTitle = conversationItems.find((c) => c.id === selected)?.title ?? "New conversation";
+  useEffect(() => {
+    const thread = selectedConversationQuery.data?.messages;
+    if (thread?.length) setMessages(thread.map((message) => ({ id: message.id, role: message.role, content: message.content, time: new Date(message.createdAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) })));
+  }, [selectedConversationQuery.data]);
 
   const startNew = () => { setSelected(0); setMessages([]); setDraft(""); setSidebarOpen(false); };
-  const sendMessage = () => {
+  const createProjectFromSidebar = async () => {
+    if (!isAuthenticated) { toast("Sign in to create persistent projects."); startLogin(); return; }
+    const name = window.prompt("Name this project");
+    if (!name?.trim()) return;
+    await createProjectMutation.mutateAsync({ name: name.trim(), description: "A focused space for related conversations." });
+    await utils.projects.list.invalidate();
+    toast("Project created");
+  };
+  const sendMessage = async () => {
     const value = draft.trim();
     if (!value) return;
     const now = new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-    setMessages((items) => [...items, { id: Date.now(), role: "user", content: value, time: now }]);
+    const localUserMessage = { id: Date.now(), role: "user" as const, content: value, time: now };
+    setMessages((items) => [...items, localUserMessage]);
     setDraft("");
-    window.setTimeout(() => setMessages((items) => [...items, { id: Date.now() + 1, role: "assistant", content: "That’s a thoughtful place to begin. I’ll help you give it shape without adding unnecessary weight.\n\nWhat would feel like a useful next step?", time: now }]), 520);
+    setAttachments([]);
+    let conversationId = selected;
+    if (isAuthenticated && conversationId <= 0) {
+      const created = await createConversationMutation.mutateAsync({ title: value.slice(0, 72), model: "nova-2" });
+      conversationId = created.id;
+      setSelected(created.id);
+      await utils.conversations.list.invalidate();
+    }
+    if (isAuthenticated && conversationId > 0) await addMessageMutation.mutateAsync({ conversationId, role: "user", content: value });
+    window.setTimeout(async () => {
+      const assistantContent = "That’s a thoughtful place to begin. I’ll help you give it shape without adding unnecessary weight.\n\nWhat would feel like a useful next step?";
+      setMessages((items) => [...items, { id: Date.now() + 1, role: "assistant", content: assistantContent, time: now }]);
+      if (isAuthenticated && conversationId > 0) await addMessageMutation.mutateAsync({ conversationId, role: "assistant", content: assistantContent });
+    }, 520);
   };
   const copyLast = async () => { const text = messages.findLast((m) => m.role === "assistant")?.content ?? ""; await navigator.clipboard?.writeText(text); setCopied(true); toast("Response copied to clipboard"); window.setTimeout(() => setCopied(false), 1400); };
+  const handleFiles = (fileList: FileList | null) => {
+    if (!fileList) return;
+    const next = Array.from(fileList).slice(0, 5).map((file) => ({ id: `${file.name}-${file.lastModified}`, file, previewUrl: file.type.startsWith("image/") ? URL.createObjectURL(file) : undefined }));
+    setAttachments((current) => [...current, ...next].slice(0, 5));
+  };
+  const removeAttachment = (id: string) => setAttachments((current) => current.filter((item) => item.id !== id));
 
   return (
     <div className="app-shell">
-      <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} selected={selected} onSelect={(id) => { setSelected(id); if (id === 1) setMessages(starterMessages); }} onNew={startNew} />
+      <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} selected={selected} onSelect={(id) => { setSelected(id); if (id === 1 && !isAuthenticated) setMessages(starterMessages); }} onNew={startNew} items={conversationItems} projectCount={projectsQuery.data?.length ?? 0} onCreateProject={createProjectFromSidebar} />
       <main className="chat-area">
         <header className="chat-header">
           <div className="mobile-brand"><IconButton label="Open navigation" onClick={() => setSidebarOpen(true)}><Menu size={19} /></IconButton><NovaMark size={24} /><span>nova</span></div>
@@ -136,7 +184,8 @@ export default function Home() {
         </div>
         <div className="composer-dock">
           <div className="composer-wrap">
-            <div className="composer-tools"><IconButton label="Attach a file" onClick={() => toast("File attachments are coming soon.")}><Paperclip size={18} /></IconButton><IconButton label="Add an image" onClick={() => toast("Image input is coming soon.")}><ImagePlus size={18} /></IconButton></div>
+            {attachments.length > 0 && <div className="attachment-preview-row">{attachments.map((attachment) => <div className="attachment-preview" key={attachment.id}>{attachment.previewUrl ? <img src={attachment.previewUrl} alt="" /> : <div className="file-preview-icon"><FileText size={16} /></div>}<div className="attachment-copy"><strong>{attachment.file.name}</strong><span>{Math.max(1, Math.round(attachment.file.size / 1024))} KB</span></div><button aria-label={`Remove ${attachment.file.name}`} onClick={() => removeAttachment(attachment.id)}><X size={13} /></button></div>)}</div>}
+            <div className="composer-tools"><input ref={fileInputRef} className="sr-only" type="file" multiple accept="image/*,.pdf,.txt,.md,.doc,.docx,.xls,.xlsx,.csv" onChange={(event) => { handleFiles(event.target.files); event.currentTarget.value = ""; }} /><IconButton label="Attach files" onClick={() => fileInputRef.current?.click()}><Paperclip size={18} /></IconButton><IconButton label="Add an image" onClick={() => fileInputRef.current?.click()}><ImagePlus size={18} /></IconButton></div>
             <textarea value={draft} onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }} placeholder="Message Nova..." rows={1} aria-label="Message Nova" />
             <div className="composer-bottom"><div className="composer-context"><button className="model-selector" onClick={() => setModelOpen((value) => !value)}><Sparkles size={14} /><span>Nova 2</span><ChevronDown size={13} /></button>{modelOpen && <div className="model-menu"><button onClick={() => { setModelOpen(false); toast("Nova 2 selected"); }}><span className="model-dot" /><span><strong>Nova 2</strong><small>Balanced and thoughtful</small></span><Check size={15} /></button><button onClick={() => { setModelOpen(false); toast("Nova Fast selected"); }}><span className="model-dot fast" /><span><strong>Nova Fast</strong><small>Quick everyday help</small></span></button></div>}<span className="context-divider" /><button className="context-link" onClick={() => toast("Search the web is ready for your next question.")}><Globe2 size={14} />Web search</button></div><button className={`send-button ${draft.trim() ? "ready" : ""}`} onClick={sendMessage} aria-label="Send message"><Send size={17} /></button></div>
           </div>
