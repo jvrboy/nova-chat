@@ -30,4 +30,8 @@
 - [x] Make the command palette searchable and implement its advertised new-chat shortcut.
 - [x] Add a persisted workspace-preferences surface beyond project instructions.
 - [x] Wire the visible hints preference to actual hint visibility behavior.
-- [ ] Save a new checkpoint after the latest feature-expansion changes and verification run.
+- [x] Save a new checkpoint after the latest feature-expansion changes and verification run.
+- [x] Add custom prompt folders with create, rename, and delete controls.
+- [x] Add prompt-to-folder assignment, folder filtering, and locally persisted prompt organization.
+- [ ] Verify prompt-library interactions, responsive styling, tests, and save a checkpoint.
+- [x] Ensure deleted-folder prompts retain a valid selectable assignment and re-verify the folder flows.

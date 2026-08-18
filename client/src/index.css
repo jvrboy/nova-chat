@@ -53,7 +53,20 @@ button:focus-visible, textarea:focus-visible, input:focus-visible { outline: 2px
 .preference-row small { color: var(--ink-faint); font-size: 10px; }
 .preference-row input { width: 32px; height: 18px; accent-color: var(--accent); }
 .preference-footnote { padding: 11px 3px 3px; color: var(--ink-faint); font-size: 10px; }
+.prompt-library-toolbar { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; margin: 12px 0 10px; }
+.folder-tabs { display: flex; flex-wrap: wrap; gap: 5px; min-width: 0; }
+.folder-tab { display: inline-flex; align-items: center; gap: 5px; padding: 6px 8px; color: var(--ink-faint); background: transparent; border: 1px solid transparent; border-radius: 999px; font-size: 10px; }
+.folder-tab span { color: currentColor; opacity: .7; font-size: 9px; }
+.folder-tab:hover, .folder-tab.active { color: var(--accent-dark); background: var(--accent-wash); border-color: #e5c2b7; }
+.folder-actions { display: flex; gap: 4px; flex-shrink: 0; }
+.folder-actions button { display: inline-flex; align-items: center; gap: 5px; padding: 6px 7px; color: var(--accent-dark); background: transparent; border: 1px solid #e5c2b7; border-radius: 6px; font-size: 10px; }
+.folder-actions button:hover { background: var(--accent-wash); }
 .prompt-grid { display: grid; gap: 6px; }
+.prompt-card { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 6px; padding: 4px; background: #fbf8f3; border: 1px solid var(--line); border-radius: 7px; }
+.prompt-card-main { display: flex; align-items: center; gap: 9px; min-width: 0; padding: 7px 6px; color: var(--ink-soft); background: transparent; text-align: left; font-size: 12px; }
+.prompt-card-main:hover { color: var(--accent-dark); }
+.prompt-card-main span { min-width: 0; flex: 1; }
+.prompt-card select { max-width: 95px; padding: 5px 4px; color: var(--ink-faint); background: #fffefa; border: 1px solid var(--line); border-radius: 5px; font-size: 9px; }
 .prompt-grid button { display: flex; align-items: center; gap: 9px; padding: 11px 10px; color: var(--ink-soft); background: #fbf8f3; border: 1px solid var(--line); border-radius: 7px; text-align: left; font-size: 12px; }
 .prompt-grid button:hover { color: var(--accent-dark); border-color: #d9b2a5; background: var(--accent-wash); }
 .prompt-grid button span { flex: 1; }
