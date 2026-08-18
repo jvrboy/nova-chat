@@ -229,7 +229,9 @@ kbd { color: #aaa49b; font-size: 10px; }
 .response-actions .icon-button { width: 28px; height: 28px; }
 .action-separator { width: 1px; height: 15px; background: var(--line-strong); margin: 0 6px; }
 .composer-dock { position: absolute; right: 0; bottom: 0; left: 0; padding: 0 24px 17px; background: linear-gradient(to bottom, rgba(251,250,248,0), rgba(251,250,248,.96) 28%); }
-.composer-wrap { position: relative; width: min(760px, 100%); margin: 0 auto; padding: 15px 14px 11px; background: #fffefa; border: 1px solid #d6cfc4; border-radius: 12px; box-shadow: 0 12px 30px rgba(80,65,46,.09), 0 2px 4px rgba(80,65,46,.06), inset 0 1px 0 rgba(255,255,255,.9); }
+.composer-wrap { position: relative; width: min(760px, 100%); margin: 0 auto; padding: 15px 14px 11px; background: #fffefa; border: 1px solid #d6cfc4; border-radius: 12px; box-shadow: 0 12px 30px rgba(80,65,46,.09), 0 2px 4px rgba(80,65,46,.06), inset 0 1px 0 rgba(255,255,255,.9); transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease; }
+.composer-wrap.is-drag-active { border-color: var(--accent); box-shadow: 0 0 0 4px var(--accent-wash), 0 18px 40px rgba(216,90,58,.16); transform: translateY(-2px); }
+.composer-wrap.is-drag-active::after { content: "Drop files to attach"; position: absolute; inset: 8px; z-index: 4; display: grid; place-items: center; color: var(--accent-dark); background: color-mix(in srgb, var(--accent-wash) 88%, var(--paper)); border: 2px dashed var(--accent); border-radius: 9px; font-size: 13px; font-weight: 800; letter-spacing: .02em; pointer-events: none; }
 .composer-wrap textarea { display: block; width: 100%; min-height: 38px; max-height: 120px; padding: 0 2px 13px; resize: none; color: #3c3833; background: transparent; border: 0; outline: 0; font-size: 14px; line-height: 1.55; }
 .attachment-preview-row { display: flex; gap: 7px; overflow-x: auto; padding: 0 0 10px; margin-bottom: 2px; }
 .attachment-preview { min-width: 162px; max-width: 210px; display: flex; align-items: center; gap: 7px; padding: 6px 7px; background: #f4efe8; border: 1px solid #e3dbd0; border-radius: 8px; }
@@ -242,6 +244,12 @@ kbd { color: #aaa49b; font-size: 10px; }
 .attachment-preview > button:hover { color: var(--accent-dark); background: #fff; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
 .composer-wrap textarea::placeholder { color: #a7a097; }
+.composer-attachment-bar { display: flex; align-items: center; gap: 8px; min-height: 30px; margin: 0 0 8px; padding: 3px 0; }
+.composer-attachment-bar .composer-attach-button { flex: 0 0 auto; }
+.drop-hint { color: var(--ink-faint); font-size: 10px; }
+.attachment-count { margin-left: auto; color: var(--accent-dark); font-size: 10px; font-weight: 700; }
+.compact-composer .composer-wrap { padding-top: 9px; padding-bottom: 7px; }
+.compact-composer .composer-attachment-bar { margin-bottom: 3px; }
 .composer-tools { position: absolute; top: 9px; right: 50px; display: flex; align-items: center; gap: 3px; }
 .composer-tools .icon-button { width: 28px; height: 28px; }
 .composer-attach-button { height: 28px; display: inline-flex; align-items: center; gap: 5px; padding: 0 9px; color: var(--accent-dark); background: var(--accent-wash); border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent); border-radius: 7px; font-size: 10px; font-weight: 700; cursor: pointer; transition: background .16s ease, transform .16s ease, border-color .16s ease; }
@@ -309,6 +317,7 @@ kbd { color: #aaa49b; font-size: 10px; }
   .assistant-content p, .user-message-wrap p { font-size: 14px; }
   .user-message-wrap { max-width: 88%; }
   .composer-tools { display: none; }
+  .composer-attachment-bar { padding-right: 2px; }
   .composer-wrap textarea { padding-right: 0; }
 }
 
