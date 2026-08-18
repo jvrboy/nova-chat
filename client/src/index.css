@@ -33,6 +33,30 @@ button, textarea, input { font: inherit; }
 button { border: 0; }
 button:focus-visible, textarea:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
+.overlay-scrim { position: fixed; inset: 0; z-index: 30; display: grid; place-items: start center; padding-top: 92px; background: rgba(42,35,27,.18); backdrop-filter: blur(3px); }
+.command-palette, .prompt-library { width: min(520px, calc(100% - 32px)); padding: 12px; background: #fffefa; border: 1px solid #d9d1c7; border-radius: 12px; box-shadow: 0 24px 60px rgba(55,45,35,.22); }
+.command-search { display: flex; align-items: center; gap: 9px; padding: 10px 9px; color: var(--ink-faint); border-bottom: 1px solid var(--line); }
+.command-search input { flex: 1; min-width: 0; color: var(--ink); background: transparent; border: 0; outline: 0; font-size: 13px; }
+.command-search kbd, .command-group kbd { padding: 3px 5px; color: var(--ink-faint); background: #f1eee8; border: 1px solid var(--line); border-radius: 4px; font-size: 9px; }
+.command-group { display: grid; gap: 3px; padding: 14px 2px 3px; }
+.command-group > span { padding: 0 8px 6px; color: var(--ink-faint); font-size: 10px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
+.command-group button { display: flex; align-items: center; gap: 9px; padding: 9px 8px; color: var(--ink-soft); background: transparent; border-radius: 6px; text-align: left; font-size: 12px; }
+.command-group button:hover { color: var(--accent-dark); background: var(--accent-wash); }
+.command-group button kbd { margin-left: auto; }
+.modal-head { display: flex; align-items: flex-start; justify-content: space-between; padding: 5px 2px 12px; border-bottom: 1px solid var(--line); }
+.modal-head h2 { margin: 4px 0 0; color: var(--ink); font: 23px/1 Newsreader, Georgia, serif; }
+.prompt-library > p, .preferences-card > p { margin: 12px 2px; color: var(--ink-faint); font-size: 12px; }
+.preferences-card { width: min(460px, calc(100% - 32px)); padding: 14px; background: #fffefa; border: 1px solid #d9d1c7; border-radius: 12px; box-shadow: 0 24px 60px rgba(55,45,35,.22); }
+.preference-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 13px 3px; border-top: 1px solid var(--line); color: var(--ink-soft); cursor: pointer; }
+.preference-row span { display: grid; gap: 3px; }
+.preference-row strong { color: var(--ink); font-size: 12px; }
+.preference-row small { color: var(--ink-faint); font-size: 10px; }
+.preference-row input { width: 32px; height: 18px; accent-color: var(--accent); }
+.preference-footnote { padding: 11px 3px 3px; color: var(--ink-faint); font-size: 10px; }
+.prompt-grid { display: grid; gap: 6px; }
+.prompt-grid button { display: flex; align-items: center; gap: 9px; padding: 11px 10px; color: var(--ink-soft); background: #fbf8f3; border: 1px solid var(--line); border-radius: 7px; text-align: left; font-size: 12px; }
+.prompt-grid button:hover { color: var(--accent-dark); border-color: #d9b2a5; background: var(--accent-wash); }
+.prompt-grid button span { flex: 1; }
 .app-loading { min-height: 100vh; display: grid; place-content: center; justify-items: center; gap: 12px; color: var(--ink-soft); background: var(--paper); font-size: 13px; }
 .artifact-panel { position: absolute; z-index: 4; top: 64px; right: 22px; width: min(330px, calc(100% - 44px)); padding: 17px; background: rgba(255,254,250,.97); border: 1px solid #d9d1c7; border-radius: 12px; box-shadow: 0 18px 45px rgba(80,65,46,.14); }
 .artifact-panel-head { display: flex; align-items: flex-start; justify-content: space-between; padding-bottom: 13px; border-bottom: 1px solid var(--line); }

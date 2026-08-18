@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { invokeLLM, listLLMModels } from "./_core/llm";
 import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
@@ -33,6 +34,22 @@ export const appRouter = router({
     update: protectedProcedure.input(z.object({ id: z.number().int().positive(), name: z.string().min(1).max(160).optional(), description: z.string().max(2000).optional(), instructions: z.string().max(10000).optional() })).mutation(({ ctx, input }) => {
       const { id, ...values } = input;
       return updateProject(ctx.user.id, id, values);
+    }),
+  }),
+  web: router({
+    search: protectedProcedure.input(z.object({ query: z.string().min(2).max(240) })).mutation(async ({ input }) => {
+      const response = await fetch(`https://api.duckduckgo.com/?q=${encodeURIComponent(input.query)}&format=json&no_html=1&skip_disambig=1`);
+      if (!response.ok) throw new Error(`Web search failed (${response.status})`);
+      const payload = await response.json() as { Heading?: string; AbstractText?: string; AbstractURL?: string; RelatedTopics?: Array<{ Text?: string; FirstURL?: string }> };
+      return { heading: payload.Heading ?? input.query, abstractText: payload.AbstractText ?? "No direct summary was found. Try a more specific query.", abstractUrl: payload.AbstractURL ?? null, relatedTopics: (payload.RelatedTopics ?? []).filter((topic) => topic.Text).slice(0, 5).map((topic) => ({ text: topic.Text!, url: topic.FirstURL ?? null })) };
+    }),
+  }),
+  ai: router({
+    models: protectedProcedure.query(async () => (await listLLMModels()).data),
+    complete: protectedProcedure.input(z.object({ model: z.string().optional(), system: z.string().optional(), messages: z.array(z.object({ role: z.enum(["user", "assistant"]), content: z.string().min(1) })).min(1) })).mutation(async ({ input }) => {
+      const response = await invokeLLM({ model: input.model, messages: [{ role: "system", content: input.system ?? "You are Nova, a thoughtful and concise AI assistant. Use markdown when it improves clarity." }, ...input.messages] });
+      const content = response.choices[0]?.message.content;
+      return { model: response.model, content: typeof content === "string" ? content : content.map((part) => part.type === "text" ? part.text : "").join("\n") };
     }),
   }),
   conversations: router({

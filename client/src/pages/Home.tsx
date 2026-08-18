@@ -5,6 +5,11 @@ import { trpc } from "@/lib/trpc";
 import {
   Archive,
   ArrowUp,
+  Command,
+  Download,
+  Link2,
+  Mic,
+  PanelRight,
   ArrowUpRight,
   Bell,
   BookOpen,
@@ -44,6 +49,7 @@ import { toast } from "sonner";
 type Message = { id: number; role: "user" | "assistant"; content: string; time: string };
 type Conversation = { id: number; title: string; date: string; active?: boolean; starred?: boolean };
 type LocalAttachment = { id: string; file: File; previewUrl?: string };
+type SearchResult = { heading: string; abstractText: string; abstractUrl: string | null; relatedTopics: Array<{ text: string; url: string | null }> };
 
 const demoConversations: Conversation[] = [
   { id: 1, title: "A calmer way to plan the week", date: "Today", active: true, starred: true },
@@ -67,7 +73,7 @@ function IconButton({ label, children, onClick, active = false }: { label: strin
   return <button aria-label={label} title={label} onClick={onClick} className={`icon-button ${active ? "is-active" : ""}`}>{children}</button>;
 }
 
-function Sidebar({ open, onClose, selected, onSelect, onNew, items, projectCount, projects, activeProject, onCreateProject, onSelectProject, onToggleStar }: { open: boolean; onClose: () => void; selected: number; onSelect: (id: number) => void; onNew: () => void; items: Conversation[]; projectCount: number; projects: Array<{ id: number; name: string }>; activeProject: number | null; onCreateProject: () => void; onSelectProject: (id: number | null) => void; onToggleStar: (id: number, starred: boolean) => void }) {
+function Sidebar({ open, onClose, selected, onSelect, onNew, items, projectCount, projects, activeProject, onCreateProject, onSelectProject, onToggleStar, onOpenPreferences, showHints }: { open: boolean; onClose: () => void; selected: number; onSelect: (id: number) => void; onNew: () => void; items: Conversation[]; projectCount: number; projects: Array<{ id: number; name: string }>; activeProject: number | null; onCreateProject: () => void; onSelectProject: (id: number | null) => void; onToggleStar: (id: number, starred: boolean) => void; onOpenPreferences: () => void; showHints: boolean }) {
   const [query, setQuery] = useState("");
   const [view, setView] = useState<"all" | "starred">("all");
   const filtered = useMemo(() => items.filter((item) => (view === "all" || item.starred) && item.title.toLowerCase().includes(query.toLowerCase())), [items, query, view]);
@@ -79,8 +85,8 @@ function Sidebar({ open, onClose, selected, onSelect, onNew, items, projectCount
           <div className="brand-lockup"><NovaMark size={28} /><span>nova</span></div>
           <IconButton label="Close navigation" onClick={onClose}><ChevronLeft size={17} /></IconButton>
         </div>
-        <button className="new-chat" onClick={onNew}><SquarePen size={17} /><span>New chat</span><span className="shortcut">⌘ K</span></button>
-        <div className="sidebar-search"><Search size={15} /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search chats" aria-label="Search chats" /><kbd>⌘ /</kbd></div>
+        <button className="new-chat" onClick={onNew}><SquarePen size={17} /><span>New chat</span>{showHints && <span className="shortcut">⌘ K</span>}</button>
+        <div className="sidebar-search"><Search size={15} /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search chats" aria-label="Search chats" />{showHints && <kbd>⌘ /</kbd>}</div>
         <div className="sidebar-scroll">
           <div className="section-label"><span>Your space</span><Ellipsis size={15} /></div>
           <nav className="workspace-links">
@@ -97,7 +103,7 @@ function Sidebar({ open, onClose, selected, onSelect, onNew, items, projectCount
         </div>
         <div className="sidebar-footer">
           <button className="upgrade-card" onClick={() => toast("Nova Pro is coming soon.")}><div className="upgrade-icon"><Zap size={15} /></div><div><strong>Make more room</strong><span>Explore Nova Pro</span></div><ChevronRight size={16} /></button>
-          <button className="profile-row" onClick={() => toast("Account settings are coming soon.")}><div className="avatar">AM</div><div className="profile-copy"><strong>Alex Morgan</strong><span>Personal workspace</span></div><Settings2 size={16} /></button>
+          <button className="profile-row" onClick={onOpenPreferences}><div className="avatar">AM</div><div className="profile-copy"><strong>Alex Morgan</strong><span>Workspace preferences</span></div><Settings2 size={16} /></button>
         </div>
       </aside>
     </>
@@ -119,6 +125,8 @@ export default function Home() {
   const createProjectMutation = trpc.projects.create.useMutation({ onError: (error) => setErrorNotice(error.message) });
   const updateProjectMutation = trpc.projects.update.useMutation({ onError: (error) => setErrorNotice(error.message) });
   const addMessageMutation = trpc.conversations.addMessage.useMutation({ onError: (error) => setErrorNotice(error.message) });
+  const completeMutation = trpc.ai.complete.useMutation({ onError: (error) => setErrorNotice(error.message) });
+  const searchMutation = trpc.web.search.useMutation({ onError: (error) => setErrorNotice(error.message) });
   const updateConversationMutation = trpc.conversations.update.useMutation({ onError: (error) => setErrorNotice(error.message) });
   const selectedConversationQuery = trpc.conversations.get.useQuery({ id: selected }, { enabled: isAuthenticated && selected > 0, retry: false });
   const utils = trpc.useUtils();
@@ -127,8 +135,19 @@ export default function Home() {
   const [modelOpen, setModelOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [artifactOpen, setArtifactOpen] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [promptLibraryOpen, setPromptLibraryOpen] = useState(false);
+  const [preferencesOpen, setPreferencesOpen] = useState(false);
+  const [paletteQuery, setPaletteQuery] = useState("");
+  const [enterToSend, setEnterToSend] = useState(() => typeof window === "undefined" ? true : localStorage.getItem("nova-enter-to-send") !== "false");
+  const [showHints, setShowHints] = useState(() => typeof window === "undefined" ? true : localStorage.getItem("nova-show-hints") !== "false");
+  const [isRecording, setIsRecording] = useState(false);
+  const [searchResults, setSearchResults] = useState<SearchResult | null>(null);
+  const [selectedModel, setSelectedModel] = useState("nova-2");
+  const modelsQuery = trpc.ai.models.useQuery(undefined, { enabled: isAuthenticated, retry: false });
   const [attachments, setAttachments] = useState<LocalAttachment[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const recognitionRef = useRef<any>(null);
   const conversationItems = persistedConversationsQuery.data?.map((item) => ({ id: item.id, title: item.title, date: new Date(item.updatedAt).toLocaleDateString([], { month: "short", day: "numeric" }), starred: item.isStarred })) ?? demoConversations;
   const activeTitle = conversationItems.find((c) => c.id === selected)?.title ?? "New conversation";
   const currentProject = projectsQuery.data?.find((project) => project.id === activeProject);
@@ -142,6 +161,16 @@ export default function Home() {
     const error = projectsQuery.error ?? persistedConversationsQuery.error ?? selectedConversationQuery.error;
     if (error) setErrorNotice(error.message);
   }, [projectsQuery.error, persistedConversationsQuery.error, selectedConversationQuery.error]);
+  useEffect(() => { localStorage.setItem("nova-enter-to-send", String(enterToSend)); localStorage.setItem("nova-show-hints", String(showHints)); }, [enterToSend, showHints]);
+  useEffect(() => {
+    const onShortcut = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") { event.preventDefault(); setPaletteOpen(true); setPaletteQuery(""); }
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "n") { event.preventDefault(); startNew(); }
+      if (event.key === "Escape") { setPaletteOpen(false); setPromptLibraryOpen(false); setArtifactOpen(false); setInstructionsOpen(false); setPreferencesOpen(false); }
+    };
+    window.addEventListener("keydown", onShortcut);
+    return () => window.removeEventListener("keydown", onShortcut);
+  }, []);
 
   const startNew = () => { setSelected(0); setMessages([]); setDraft(""); setSidebarOpen(false); };
   const retryQueries = async () => { setErrorNotice(null); await Promise.all([utils.projects.list.invalidate(), utils.conversations.list.invalidate(), selected > 0 ? utils.conversations.get.invalidate({ id: selected }) : Promise.resolve()]); };
@@ -199,21 +228,51 @@ export default function Home() {
       try { await addMessageMutation.mutateAsync(userPayload); await utils.conversations.get.invalidate({ id: conversationId }); }
       catch { setErrorNotice("Couldn’t save your message. Try again."); setRetryAction(() => async () => { await addMessageMutation.mutateAsync(userPayload); await utils.conversations.get.invalidate({ id: conversationId }); setErrorNotice(null); setRetryAction(null); }); }
     }
-    window.setTimeout(async () => {
-      const assistantContent = "That’s a thoughtful place to begin. I’ll help you give it shape without adding unnecessary weight.\n\nWhat would feel like a useful next step?";
+    try {
+      const completion = await completeMutation.mutateAsync({ model: selectedModel, system: currentProject?.instructions ?? undefined, messages: [...messages.filter((message) => message.content.trim()).map((message) => ({ role: message.role, content: message.content })), { role: "user", content: value }] });
+      const assistantContent = completion.content || "I’m ready to help with that.";
       setMessages((items) => [...items, { id: Date.now() + 1, role: "assistant", content: assistantContent, time: now }]);
       if (isAuthenticated && conversationId > 0) {
         const assistantPayload = { conversationId, role: "assistant" as const, content: assistantContent };
         try { await addMessageMutation.mutateAsync(assistantPayload); await utils.conversations.get.invalidate({ id: conversationId }); await utils.conversations.list.invalidate(); }
         catch { setErrorNotice("Couldn’t save Nova’s response. Try again."); setRetryAction(() => async () => { await addMessageMutation.mutateAsync(assistantPayload); await utils.conversations.get.invalidate({ id: conversationId }); await utils.conversations.list.invalidate(); setErrorNotice(null); setRetryAction(null); }); }
       }
-    }, 520);
+    } catch { setErrorNotice("Nova couldn’t complete that response. Retry when ready."); setRetryAction(() => async () => { await sendMessage(); }); }
   };
   const copyLast = async () => { const text = messages.findLast((m) => m.role === "assistant")?.content ?? ""; await navigator.clipboard?.writeText(text); setCopied(true); toast("Response copied to clipboard"); window.setTimeout(() => setCopied(false), 1400); };
-  const handleFiles = (fileList: FileList | null) => {
+  const exportConversation = () => { const text = [`# ${activeTitle}`, "", ...messages.map((message) => `**${message.role === "user" ? "You" : "Nova"}** · ${message.time}\n\n${message.content}`)].join("\n\n"); const blob = new Blob([text], { type: "text/markdown" }); const url = URL.createObjectURL(blob); const anchor = document.createElement("a"); anchor.href = url; anchor.download = `${activeTitle.replace(/[^a-z0-9]+/gi, "-").toLowerCase() || "nova-conversation"}.md`; anchor.click(); URL.revokeObjectURL(url); toast("Conversation exported"); };
+  const shareConversation = async () => { const shareText = `${activeTitle} · Nova Chat`; if (navigator.share) await navigator.share({ title: shareText, text: shareText }); else { await navigator.clipboard?.writeText(window.location.href); toast("Conversation link copied"); } };
+  const applyPrompt = (prompt: string) => { setDraft(prompt); setPromptLibraryOpen(false); setPaletteOpen(false); };
+  const runWebSearch = async () => {
+    if (!isAuthenticated) { toast("Sign in to use web search."); startLogin(); return; }
+    const query = window.prompt("Search the web", draft.trim() || "");
+    if (!query?.trim()) return;
+    try { const result = await searchMutation.mutateAsync({ query: query.trim() }); setSearchResults(result); setArtifactOpen(true); setErrorNotice(null); } catch { setErrorNotice("Web search failed. Try a more specific query."); }
+  };
+  const startVoiceInput = () => {
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) { toast("Voice input is not supported in this browser."); return; }
+    if (isRecording) { recognitionRef.current?.stop(); setIsRecording(false); return; }
+    const recognition = new SpeechRecognition();
+    recognition.lang = "en-US";
+    recognition.interimResults = true;
+    recognition.onresult = (event: any) => { const transcript = Array.from(event.results).map((result: any) => result[0]?.transcript ?? "").join(""); setDraft(transcript); };
+    recognition.onerror = () => { setIsRecording(false); toast("Voice input stopped unexpectedly."); };
+    recognition.onend = () => setIsRecording(false);
+    recognitionRef.current = recognition;
+    recognition.start();
+    setIsRecording(true);
+  };
+  const promptTemplates = ["Turn these notes into a clear outline", "Rewrite this with a calmer, more direct tone", "Help me compare these options", "Create a focused plan for the next seven days"];
+  const paletteCommands = [{ label: "Start a new chat", hint: "⌘ N", icon: <SquarePen size={15} />, action: startNew }, { label: "Open prompt library", hint: "", icon: <BookOpen size={15} />, action: () => { setPromptLibraryOpen(true); setPaletteOpen(false); } }, { label: "Export this conversation", hint: "", icon: <Download size={15} />, action: exportConversation }, { label: "Open artifacts", hint: "", icon: <PanelRight size={15} />, action: () => setArtifactOpen(true) }, { label: "Open workspace preferences", hint: "", icon: <Settings2 size={15} />, action: () => setPreferencesOpen(true) }];
+  const visiblePaletteCommands = paletteCommands.filter((command) => command.label.toLowerCase().includes(paletteQuery.toLowerCase()));
+  const handleFiles = async (fileList: FileList | null) => {
     if (!fileList) return;
-    const next = Array.from(fileList).slice(0, 5).map((file) => ({ id: `${file.name}-${file.lastModified}`, file, previewUrl: file.type.startsWith("image/") ? URL.createObjectURL(file) : undefined }));
+    const files = Array.from(fileList).slice(0, 5);
+    const next = files.map((file) => ({ id: `${file.name}-${file.lastModified}`, file, previewUrl: file.type.startsWith("image/") ? URL.createObjectURL(file) : undefined }));
     setAttachments((current) => [...current, ...next].slice(0, 5));
+    const textFile = files.find((file) => /text|json|csv|markdown/.test(file.type) || /\.(txt|md|csv|json)$/i.test(file.name));
+    if (textFile) { const text = (await textFile.text()).slice(0, 12000); setDraft((current) => current || `Analyze ${textFile.name} and summarize the most important points.\n\n${text}`); }
   };
   const removeAttachment = (id: string) => setAttachments((current) => current.filter((item) => item.id !== id));
 
@@ -221,12 +280,15 @@ export default function Home() {
 
   return (
     <div className="app-shell">
-      <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} selected={selected} onSelect={(id) => { setSelected(id); if (id === 1 && !isAuthenticated) setMessages(starterMessages); }} onNew={startNew} items={conversationItems} projectCount={projectsQuery.data?.length ?? 0} projects={projectsQuery.data ?? []} activeProject={activeProject} onCreateProject={createProjectFromSidebar} onSelectProject={(id) => { setActiveProject(id); setSelected(0); setMessages([]); setSidebarOpen(false); }} onToggleStar={toggleStar} />
+      {paletteOpen && <div className="overlay-scrim" onClick={() => setPaletteOpen(false)}><section className="command-palette" role="dialog" aria-label="Command palette" onClick={(event) => event.stopPropagation()}><div className="command-search"><Command size={16} /><input autoFocus value={paletteQuery} onChange={(event) => setPaletteQuery(event.target.value)} placeholder="Search commands" /><kbd>ESC</kbd></div><div className="command-group"><span>Quick actions</span>{visiblePaletteCommands.map((command) => <button key={command.label} onClick={() => { command.action(); setPaletteOpen(false); }} aria-label={command.label}>{command.icon}<span>{command.label}</span>{showHints && command.hint && <kbd>{command.hint}</kbd>}</button>)}{!visiblePaletteCommands.length && <p className="empty-search">No commands found.</p>}</div></section></div>}
+      {preferencesOpen && <div className="overlay-scrim" onClick={() => setPreferencesOpen(false)}><section className="preferences-card" role="dialog" aria-label="Workspace preferences" onClick={(event) => event.stopPropagation()}><div className="modal-head"><div><span className="eyebrow">Personal workspace</span><h2>Preferences</h2></div><IconButton label="Close preferences" onClick={() => setPreferencesOpen(false)}><X size={17} /></IconButton></div><p>Choose how Nova behaves while you work.</p><label className="preference-row"><span><strong>Send with Enter</strong><small>Use Shift + Enter for a new line.</small></span><input type="checkbox" checked={enterToSend} onChange={(event) => setEnterToSend(event.target.checked)} /></label><label className="preference-row"><span><strong>Show helpful hints</strong><small>Keep keyboard and workspace tips visible.</small></span><input type="checkbox" checked={showHints} onChange={(event) => setShowHints(event.target.checked)} /></label><div className="preference-footnote">Saved automatically on this device.</div></section></div>}
+      {promptLibraryOpen && <div className="overlay-scrim" onClick={() => setPromptLibraryOpen(false)}><section className="prompt-library" role="dialog" aria-label="Prompt library" onClick={(event) => event.stopPropagation()}><div className="modal-head"><div><span className="eyebrow">Nova toolkit</span><h2>Prompt library</h2></div><IconButton label="Close prompt library" onClick={() => setPromptLibraryOpen(false)}><X size={17} /></IconButton></div><p>Start from a reusable prompt, then make it your own.</p><div className="prompt-grid">{promptTemplates.map((prompt) => <button key={prompt} onClick={() => applyPrompt(prompt)}><Sparkles size={15} /><span>{prompt}</span><ArrowUpRight size={14} /></button>)}</div></section></div>}
+      <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} selected={selected} onSelect={(id) => { setSelected(id); if (id === 1 && !isAuthenticated) setMessages(starterMessages); }} onNew={startNew} items={conversationItems} projectCount={projectsQuery.data?.length ?? 0} projects={projectsQuery.data ?? []} activeProject={activeProject} onCreateProject={createProjectFromSidebar} onSelectProject={(id) => { setActiveProject(id); setSelected(0); setMessages([]); setSidebarOpen(false); }} onToggleStar={toggleStar} onOpenPreferences={() => setPreferencesOpen(true)} showHints={showHints} />
       <main className="chat-area">
         <header className="chat-header">
           <div className="mobile-brand"><IconButton label="Open navigation" onClick={() => setSidebarOpen(true)}><Menu size={19} /></IconButton><NovaMark size={24} /><span>nova</span></div>
           <div className="conversation-heading"><span>{activeTitle}</span>{currentProject && <button className="project-context-pill" onClick={() => setInstructionsOpen((open) => !open)}><FolderOpen size={13} />{currentProject.name}</button>}<button className="header-caret" aria-label="Conversation options"><ChevronDown size={15} /></button></div>
-          <div className="header-actions"><IconButton label="Search conversation" onClick={() => toast("Conversation search is ready for your next question.")}><Search size={17} /></IconButton><IconButton label="Open artifacts" active={artifactOpen} onClick={() => setArtifactOpen((open) => !open)}><FileText size={17} /></IconButton><IconButton label="Archive conversation" onClick={archiveSelected}><Archive size={17} /></IconButton><IconButton label="Conversation details" onClick={() => toast("This conversation is private to your workspace.")}><Ellipsis size={18} /></IconButton></div>
+          <div className="header-actions"><IconButton label="Search conversation" onClick={() => toast("Conversation search is ready for your next question.")}><Search size={17} /></IconButton><IconButton label="Open artifacts" active={artifactOpen} onClick={() => setArtifactOpen((open) => !open)}><FileText size={17} /></IconButton><IconButton label="Export conversation" onClick={exportConversation}><Download size={17} /></IconButton><IconButton label="Share conversation" onClick={() => void shareConversation()}><Link2 size={17} /></IconButton><IconButton label="Archive conversation" onClick={archiveSelected}><Archive size={17} /></IconButton><IconButton label="Conversation details" onClick={() => toast("This conversation is private to your workspace.")}><Ellipsis size={18} /></IconButton></div>
         </header>
         <div className="chat-scroll">
           {errorNotice && <div className="workspace-error" role="alert"><span>{errorNotice}</span><button onClick={() => void (retryAction ? retryAction() : retryQueries())}>Retry</button></div>}
@@ -238,15 +300,15 @@ export default function Home() {
             </article>)}
           </div>}
         </div>
-        {artifactOpen && <aside className="artifact-panel">        <div className="artifact-panel-head"><div><span className="eyebrow">Workspace tools</span><h2>Artifacts</h2></div><IconButton label="Close artifacts" onClick={() => setArtifactOpen(false)}><X size={17} /></IconButton></div><div className="artifact-empty"><div className="artifact-icon"><FileText size={19} /></div>{attachments.length > 0 ? <><strong>Attached to this draft</strong><div className="artifact-list">{attachments.map((attachment) => <div className="artifact-list-item" key={attachment.id}><FileText size={14} /><span>{attachment.file.name}</span><small>{Math.max(1, Math.round(attachment.file.size / 1024))} KB</small></div>)}</div><p>These files are ready to send with your next message.</p></> : <><strong>{messages.length ? "Conversation snapshot" : "Build alongside the conversation"}</strong><p>{messages.length ? `${messages.length} messages in “${activeTitle}”. Attach a document or image to see it summarized here.` : "Documents, code, and structured outputs will appear here as you work."}</p><button onClick={() => fileInputRef.current?.click()}>Add a document <ArrowUpRight size={14} /></button></>}</div></aside>}
+        {artifactOpen && <aside className="artifact-panel">        <div className="artifact-panel-head"><div><span className="eyebrow">Workspace tools</span><h2>Artifacts</h2></div><IconButton label="Close artifacts" onClick={() => setArtifactOpen(false)}><X size={17} /></IconButton></div><div className="artifact-empty"><div className="artifact-icon"><FileText size={19} /></div>{attachments.length > 0 ? <><strong>Attached to this draft</strong><div className="artifact-list">{attachments.map((attachment) => <div className="artifact-list-item" key={attachment.id}><FileText size={14} /><span>{attachment.file.name}</span><small>{Math.max(1, Math.round(attachment.file.size / 1024))} KB</small></div>)}</div><p>These files are ready to send with your next message.</p></> : searchResults ? <><strong>{searchResults.heading}</strong><p>{searchResults.abstractText}</p>{searchResults.abstractUrl && <a className="artifact-link" href={searchResults.abstractUrl} target="_blank" rel="noreferrer">Open source <ArrowUpRight size={14} /></a>}{searchResults.relatedTopics.length > 0 && <div className="artifact-list">{searchResults.relatedTopics.map((topic) => <a className="artifact-list-item" key={topic.text} href={topic.url ?? "#"} target={topic.url ? "_blank" : undefined} rel="noreferrer"><Globe2 size={14} /><span>{topic.text}</span><ArrowUpRight size={13} /></a>)}</div>}</> : <><strong>{messages.length ? "Conversation snapshot" : "Build alongside the conversation"}</strong><p>{messages.length ? `${messages.length} messages in “${activeTitle}”. Attach a document or image to see it summarized here.` : "Documents, code, and structured outputs will appear here as you work."}</p><button onClick={() => fileInputRef.current?.click()}>Add a document <ArrowUpRight size={14} /></button></>}</div></aside>}
         <div className="composer-dock">
           <div className="composer-wrap">
             {attachments.length > 0 && <div className="attachment-preview-row">{attachments.map((attachment) => <div className="attachment-preview" key={attachment.id}>{attachment.previewUrl ? <img src={attachment.previewUrl} alt="" /> : <div className="file-preview-icon"><FileText size={16} /></div>}<div className="attachment-copy"><strong>{attachment.file.name}</strong><span>{Math.max(1, Math.round(attachment.file.size / 1024))} KB</span></div><button aria-label={`Remove ${attachment.file.name}`} onClick={() => removeAttachment(attachment.id)}><X size={13} /></button></div>)}</div>}
-            <div className="composer-tools"><input ref={fileInputRef} className="sr-only" type="file" multiple accept="image/*,.pdf,.txt,.md,.doc,.docx,.xls,.xlsx,.csv" onChange={(event) => { handleFiles(event.target.files); event.currentTarget.value = ""; }} /><IconButton label="Attach files" onClick={() => fileInputRef.current?.click()}><Paperclip size={18} /></IconButton><IconButton label="Add an image" onClick={() => fileInputRef.current?.click()}><ImagePlus size={18} /></IconButton></div>
-            <textarea value={draft} onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }} placeholder="Message Nova..." rows={1} aria-label="Message Nova" />
-            <div className="composer-bottom"><div className="composer-context"><button className="model-selector" onClick={() => setModelOpen((value) => !value)}><Sparkles size={14} /><span>Nova 2</span><ChevronDown size={13} /></button>{modelOpen && <div className="model-menu"><button onClick={() => { setModelOpen(false); toast("Nova 2 selected"); }}><span className="model-dot" /><span><strong>Nova 2</strong><small>Balanced and thoughtful</small></span><Check size={15} /></button><button onClick={() => { setModelOpen(false); toast("Nova Fast selected"); }}><span className="model-dot fast" /><span><strong>Nova Fast</strong><small>Quick everyday help</small></span></button></div>}<span className="context-divider" /><button className="context-link" onClick={() => toast("Search the web is ready for your next question.")}><Globe2 size={14} />Web search</button></div><button className={`send-button ${draft.trim() ? "ready" : ""}`} onClick={sendMessage} aria-label="Send message"><Send size={17} /></button></div>
+            <div className="composer-tools"><IconButton label="Voice input" active={isRecording} onClick={startVoiceInput}><Mic size={18} /></IconButton><input ref={fileInputRef} className="sr-only" type="file" multiple accept="image/*,.pdf,.txt,.md,.doc,.docx,.xls,.xlsx,.csv" onChange={(event) => { void handleFiles(event.target.files); event.currentTarget.value = ""; }} /><IconButton label="Attach files" onClick={() => fileInputRef.current?.click()}><Paperclip size={18} /></IconButton><IconButton label="Add an image" onClick={() => fileInputRef.current?.click()}><ImagePlus size={18} /></IconButton></div>
+            <textarea value={draft} onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && enterToSend) { e.preventDefault(); sendMessage(); } }} placeholder="Message Nova..." rows={1} aria-label="Message Nova" />
+            <div className="composer-bottom"><div className="composer-context"><button className="model-selector" onClick={() => setModelOpen((value) => !value)}><Sparkles size={14} /><span>{selectedModel === "nova-2" ? "Nova 2" : selectedModel}</span><ChevronDown size={13} /></button>{modelOpen && <div className="model-menu"><button onClick={() => { setSelectedModel("nova-2"); setModelOpen(false); }}><span className="model-dot" /><span><strong>Nova 2</strong><small>Balanced and thoughtful</small></span>{selectedModel === "nova-2" && <Check size={15} />}</button><button onClick={() => { setSelectedModel("nova-fast"); setModelOpen(false); }}><span className="model-dot fast" /><span><strong>Nova Fast</strong><small>Quick everyday help</small></span>{selectedModel === "nova-fast" && <Check size={15} />}</button>{modelsQuery.data?.slice(0, 3).filter((model) => !["nova-2", "nova-fast"].includes(model.id)).map((model) => <button key={model.id} onClick={() => { setSelectedModel(model.id); setModelOpen(false); }}><span className="model-dot" /><span><strong>{model.id}</strong><small>Available model</small></span>{selectedModel === model.id && <Check size={15} />}</button>)}</div>}<span className="context-divider" /><button className="context-link" onClick={() => void runWebSearch()}><Globe2 size={14} />{searchMutation.isPending ? "Searching…" : "Web search"}</button></div><button className={`send-button ${draft.trim() ? "ready" : ""}`} onClick={sendMessage} aria-label="Send message"><Send size={17} /></button></div>
           </div>
-          <p className="composer-note">Nova can make mistakes. Check important information.</p>
+          {showHints && <p className="composer-note">Nova can make mistakes. Check important information.</p>}
         </div>
       </main>
     </div>

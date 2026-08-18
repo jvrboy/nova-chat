@@ -21,3 +21,13 @@
 - [x] Add active-thread retry and operation-specific recovery actions for failed star/archive and other mutations.
 - [x] Add exact retry actions for failed conversation creation, project creation, instruction saves, and message writes.
 - [x] Create a new private GitHub repository and push the current project to the main branch.
+- [x] Add command palette, keyboard shortcuts, prompt library, export/share controls, and richer conversation management.
+- [x] Add project settings surface with editable instructions and workspace preferences.
+- [x] Add voice input capture and transcription workflow using supported-browser speech recognition.
+- [x] Add real AI response generation, model discovery, web-search flow, and local text-file analysis workflow.
+- [x] Improve artifacts with attached-file and web-search result previews plus conversation export actions.
+- [x] Add tests, error states, responsive verification, and save an updated checkpoint.
+- [x] Make the command palette searchable and implement its advertised new-chat shortcut.
+- [x] Add a persisted workspace-preferences surface beyond project instructions.
+- [x] Wire the visible hints preference to actual hint visibility behavior.
+- [ ] Save a new checkpoint after the latest feature-expansion changes and verification run.
