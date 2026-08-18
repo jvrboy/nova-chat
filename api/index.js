@@ -1770,6 +1770,30 @@ function indicatorSuite(data, requested) {
       case "pivotRange":
         output.pivotRange = pivotRangeIndicator(data);
         break;
+      case "awesomeOscillator":
+        output.awesomeOscillator = awesomeOscillatorIndicator(data);
+        break;
+      case "forceIndex":
+        output.forceIndex = forceIndexIndicator(data);
+        break;
+      case "cmf":
+        output.cmf = chaikinMoneyFlowIndicator(data);
+        break;
+      case "vortex":
+        output.vortex = vortexIndicator(data);
+        break;
+      case "fisher":
+        output.fisher = fisherTransformIndicator(data);
+        break;
+      case "rvi":
+        output.rvi = relativeVigorIndexIndicator(data);
+        break;
+      case "massIndex":
+        output.massIndex = massIndexIndicator(data);
+        break;
+      case "chandelier":
+        output.chandelier = chandelierExitIndicator(data);
+        break;
       default:
         output[name] = { error: "Unknown indicator" };
     }
@@ -1783,6 +1807,143 @@ function rsiValue(data, period = 14) {
   const gains = avg(recent.map((v) => Math.max(v, 0)));
   const losses = avg(recent.map((v) => Math.max(-v, 0)));
   return { period, value: losses === 0 ? 100 : 100 - 100 / (1 + gains / losses) };
+}
+function awesomeOscillatorIndicator(data, fast = 5, slow = 34) {
+  const median = data.map((c) => (c.high + c.low) / 2);
+  return { fast, slow, value: sma3(median, fast) - sma3(median, slow) };
+}
+function forceIndexIndicator(data, period = 13) {
+  const values = data.slice(1).map((c, i) => (c.close - data[i].close) * c.volume);
+  return { period, value: ema2(values, period) };
+}
+function chaikinMoneyFlowIndicator(data, period = 20) {
+  const sample = data.slice(-period);
+  const volume = sample.reduce((s, c) => s + c.volume, 0);
+  const flow = sample.reduce((s, c) => s + (c.high === c.low ? 0 : (2 * c.close - c.low - c.high) / (c.high - c.low) * c.volume), 0);
+  return { period, value: volume ? flow / volume : 0 };
+}
+function vortexIndicator(data, period = 14) {
+  let plus = 0;
+  let minus = 0;
+  let tr = 0;
+  for (let i = Math.max(1, data.length - period); i < data.length; i++) {
+    plus += Math.abs(data[i].high - data[i - 1].low);
+    minus += Math.abs(data[i].low - data[i - 1].high);
+    tr += trueRange(data)[i];
+  }
+  return { period, plus: tr ? plus / tr : 0, minus: tr ? minus / tr : 0 };
+}
+function fisherTransformIndicator(data, period = 10) {
+  const sample = data.slice(-period);
+  const high = Math.max(...sample.map((c) => c.high), 0);
+  const low = Math.min(...sample.map((c) => c.low), 0);
+  const price = (sample.at(-1)?.high ?? 0 + (sample.at(-1)?.low ?? 0)) / 2;
+  const normalized = Math.max(-0.999, Math.min(0.999, high === low ? 0 : 2 * ((price - low) / (high - low) - 0.5)));
+  return { period, value: 0.5 * Math.log((1 + normalized) / (1 - normalized)) };
+}
+function relativeVigorIndexIndicator(data, period = 10) {
+  const sample = data.slice(-period);
+  const numerator = avg(sample.map((c) => c.close - c.open));
+  const denominator = avg(sample.map((c) => c.high - c.low));
+  return { period, value: denominator === 0 ? 0 : numerator / denominator };
+}
+function massIndexIndicator(data, period = 25) {
+  const ranges = data.map((c) => c.high - c.low);
+  const ema1 = ranges.map((_, i) => ema2(ranges.slice(0, i + 1), 9));
+  const ema22 = ema1.map((_, i) => ema2(ema1.slice(0, i + 1), 9));
+  return { period, value: avg(ema22.slice(-period).map((v, i) => v === 0 ? 0 : ema1.slice(-period)[i] / v)) * period };
+}
+function chandelierExitIndicator(data, period = 22, multiplier = 3) {
+  const sample = data.slice(-period);
+  const atr4 = atrIndicator(data, Math.min(14, period)).value;
+  return { period, multiplier, long: Math.max(...sample.map((c) => c.high), 0) - atr4 * multiplier, short: Math.min(...sample.map((c) => c.low), 0) + atr4 * multiplier };
+}
+
+// server/_core/musicPro.ts
+var SCALE_INTERVALS = { major: [0, 2, 4, 5, 7, 9, 11], minor: [0, 2, 3, 5, 7, 8, 10], dorian: [0, 2, 3, 5, 7, 9, 10], pentatonic: [0, 2, 4, 7, 9], blues: [0, 3, 5, 6, 7, 10] };
+function scaleNotes(root = 60, scale = "major", octaves = 2) {
+  const intervals = SCALE_INTERVALS[scale] ?? SCALE_INTERVALS.major;
+  return Array.from({ length: Math.max(1, octaves) }, (_, octave) => intervals.map((interval) => root + octave * 12 + interval)).flat();
+}
+function chordExtensions(root, quality = "major", extensions = [7, 9]) {
+  const base = quality === "minor" ? [0, 3, 7] : quality === "dominant" ? [0, 4, 7, 10] : quality === "diminished" ? [0, 3, 6] : [0, 4, 7];
+  const extra = extensions.map((extension) => extension === 7 ? quality === "major" ? 11 : 10 : extension === 9 ? 14 : extension === 11 ? 17 : 21);
+  return [...base, ...extra].map((interval) => root + interval);
+}
+function quantizeNotes(events, grid = 0.25, strength = 1) {
+  const safeGrid = Math.max(1e-3, grid);
+  return events.map((event) => ({ ...event, start: event.start + (Math.round(event.start / safeGrid) * safeGrid - event.start) * Math.max(0, Math.min(1, strength)) }));
+}
+function euclideanRhythm(steps, pulses, rotation = 0) {
+  const n = Math.max(1, Math.floor(steps));
+  const k = Math.max(0, Math.min(n, Math.floor(pulses)));
+  const pattern = Array.from({ length: n }, (_, i) => Math.floor(i * k / n) !== Math.floor((i - 1 + n) % n * k / n));
+  const shift = (rotation % n + n) % n;
+  return pattern.map((_, i) => pattern[(i - shift + n) % n]);
+}
+function drumGrid(steps = 16, density = 0.5, seed = 7) {
+  const safeSteps = Math.max(1, Math.min(128, Math.floor(steps)));
+  let state = Math.abs(seed) || 7;
+  const next = () => {
+    state = state * 1664525 + 1013904223 >>> 0;
+    return state / 4294967296;
+  };
+  return { kick: Array.from({ length: safeSteps }, (_, i) => i % 4 === 0 || next() < density * 0.12), snare: Array.from({ length: safeSteps }, (_, i) => i % 8 === 4 || next() < density * 0.05), hat: Array.from({ length: safeSteps }, () => next() < Math.min(0.98, density + 0.25)) };
+}
+function shapeAutomation(points, curve = "linear", samples = points.length) {
+  const source = points.length ? points : [0, 1];
+  const count = Math.max(2, samples);
+  const at = (t2) => {
+    const scaled = t2 * (source.length - 1);
+    const left = Math.floor(scaled);
+    const right = Math.min(source.length - 1, left + 1);
+    const local = scaled - left;
+    let eased = local;
+    if (curve === "ease-in") eased = local * local;
+    if (curve === "ease-out") eased = 1 - (1 - local) * (1 - local);
+    if (curve === "sine") eased = (1 - Math.cos(local * Math.PI)) / 2;
+    return source[left] + (source[right] - source[left]) * eased;
+  };
+  return Array.from({ length: count }, (_, i) => at(i / (count - 1)));
+}
+function chordProgression(root = 60, quality = "major", degrees = [1, 5, 6, 4]) {
+  const scale = scaleNotes(root, quality === "minor" ? "minor" : "major", 3);
+  return degrees.map((degree) => scale[Math.max(0, degree - 1)] ?? root).map((note) => [note, note + (quality === "minor" ? 3 : 4), note + 7]);
+}
+function arpeggiate(notes, pattern = "up", octaves = 1) {
+  const source = notes.length ? notes : [60, 64, 67];
+  const order = pattern === "down" ? [...source].reverse() : pattern === "updown" ? [...source, ...source.slice(1, -1).reverse()] : source;
+  return Array.from({ length: Math.max(1, octaves) }, (_, octave) => order.map((note) => note + octave * 12)).flat();
+}
+function swingQuantize(events, grid = 0.25, swing = 0.5) {
+  const safeSwing = Math.max(0, Math.min(0.99, swing));
+  return events.map((event) => {
+    const slot = Math.round(event.start / Math.max(1e-3, grid));
+    const offset = slot % 2 ? grid * (safeSwing - 0.5) : 0;
+    return { ...event, start: Math.max(0, slot * grid + offset) };
+  });
+}
+function humanizeNotes(events, timing = 0.01, velocity = 5, seed = 17) {
+  let state = Math.abs(seed) || 17;
+  const next = () => {
+    state = state * 1664525 + 1013904223 >>> 0;
+    return state / 4294967296 - 0.5;
+  };
+  return events.map((event) => ({ ...event, start: Math.max(0, event.start + next() * timing), velocity: Math.max(1, Math.min(127, Math.round(event.velocity + next() * velocity))) }));
+}
+function velocityCurve(events, curve = "linear") {
+  if (!events.length) return [];
+  const max = Math.max(...events.map((e) => e.velocity), 1);
+  return events.map((event, i) => {
+    const t2 = events.length === 1 ? 1 : i / (events.length - 1);
+    const shaped = curve === "ease-in" ? t2 * t2 : curve === "ease-out" ? 1 - (1 - t2) ** 2 : t2;
+    return { ...event, velocity: Math.max(1, Math.min(127, Math.round(event.velocity * 0.5 + max * shaped * 0.5))) };
+  });
+}
+function midiNoteName(note) {
+  const names = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+  const safe = Math.round(note);
+  return `${names[(safe % 12 + 12) % 12]}${Math.floor(safe / 12) - 1}`;
 }
 
 // server/_core/synthTools.ts
@@ -1870,7 +2031,8 @@ var TOOL_POLICIES = {
   persistent_remember: { name: "persistent_remember", description: "Persist scoped memory with embeddings and retention metadata.", risk: "external", allowedAgents: ["memory_architect", "automation_orchestrator"], maxCallsPerMinute: 30, failureThreshold: 0.4, minimumSamples: 5, cooldownMs: 3e4 },
   persistent_recall: { name: "persistent_recall", description: "Recall durable memories using scoped cosine similarity.", risk: "external", allowedAgents: ["memory_architect", "ml_engineer", "automation_orchestrator"], maxCallsPerMinute: 60, failureThreshold: 0.5, minimumSamples: 5, cooldownMs: 2e4 },
   technical_indicator_suite: { name: "technical_indicator_suite", description: "Compute a bounded suite of deterministic technical-analysis indicators.", risk: "compute", allowedAgents: ["forex_analyst", "quant_researcher", "risk_manager", "market_microstructure", "data_analyst", "ui_architect", "multimodal_curator"], maxCallsPerMinute: 30, failureThreshold: 0.5, minimumSamples: 5, cooldownMs: 2e4 },
-  agentic_workflow_plan: { name: "agentic_workflow_plan", description: "Create a safe role-aware workflow plan with verification and rollback gates.", risk: "compute", allowedAgents: ["brainstormer", "research_agent", "automation_orchestrator", "qa_engineer", "ui_architect", "multimodal_curator", "observability_engineer", "security_reviewer"], maxCallsPerMinute: 30, failureThreshold: 0.5, minimumSamples: 5, cooldownMs: 15e3 }
+  agentic_workflow_plan: { name: "agentic_workflow_plan", description: "Create a safe role-aware workflow plan with verification and rollback gates.", risk: "compute", allowedAgents: ["brainstormer", "research_agent", "automation_orchestrator", "qa_engineer", "ui_architect", "multimodal_curator", "observability_engineer", "security_reviewer"], maxCallsPerMinute: 30, failureThreshold: 0.5, minimumSamples: 5, cooldownMs: 15e3 },
+  advanced_music_arrangement: { name: "advanced_music_arrangement", description: "Generate bounded chord, arpeggio, swing, humanization, velocity, and MIDI-note outputs.", risk: "compute", allowedAgents: ["music_composer", "music_producer", "audio_engineer", "sound_designer", "brainstormer"], maxCallsPerMinute: 60, failureThreshold: 0.5, minimumSamples: 5, cooldownMs: 15e3 }
 };
 var runtime = /* @__PURE__ */ new Map();
 var callWindow = /* @__PURE__ */ new Map();
@@ -1982,6 +2144,7 @@ var codeExecTool = {
     }
   }
 };
+var advancedMusicArrangementTool = { type: "function", function: { name: "advanced_music_arrangement", description: "Generate bounded chord, arpeggio, swing, humanization, velocity, and MIDI-note outputs.", parameters: { type: "object", properties: { operation: { type: "string", enum: ["progression", "arpeggio", "swing", "humanize", "velocity", "note_name"] }, notes: { type: "array" }, events: { type: "array" }, root: { type: "number" }, quality: { type: "string" }, pattern: { type: "string" }, seed: { type: "number" } }, required: ["operation"] } } };
 var technicalIndicatorSuiteTool = {
   type: "function",
   function: { name: "technical_indicator_suite", description: "Compute a bounded deterministic suite of technical-analysis indicators from OHLCV candles.", parameters: { type: "object", properties: { data: { type: "array" }, indicators: { type: "array" } }, required: ["data"] } }
@@ -2336,7 +2499,7 @@ Adapt length and format to the user's needs.`,
     name: "UI Architect",
     description: "Designs responsive, accessible, stateful interfaces and theme systems.",
     systemPrompt: "You are a senior UI architect. Produce implementation-ready interaction contracts, responsive layouts, accessible states, design tokens, and performance-conscious animation plans. Prefer progressive enhancement and reduced-motion fallbacks.",
-    tools: [textAnalysisTool, dataProcessingTool, technicalIndicatorSuiteTool, agenticWorkflowPlanTool],
+    tools: [textAnalysisTool, dataProcessingTool, technicalIndicatorSuiteTool, advancedMusicArrangementTool, agenticWorkflowPlanTool],
     maxTokens: 3500
   },
   multimodal_curator: {
@@ -2344,7 +2507,7 @@ Adapt length and format to the user's needs.`,
     name: "Multimodal Curator",
     description: "Organizes attachment, transcript, image, and artifact context with provenance and privacy safeguards.",
     systemPrompt: "You are a multimodal information curator. Extract structured context from supplied material, preserve provenance, flag uncertainty, redact secrets, and propose artifact-ready summaries without inventing missing content.",
-    tools: [textAnalysisTool, dataProcessingTool, technicalIndicatorSuiteTool, agenticWorkflowPlanTool],
+    tools: [textAnalysisTool, dataProcessingTool, technicalIndicatorSuiteTool, advancedMusicArrangementTool, agenticWorkflowPlanTool],
     maxTokens: 4e3
   },
   observability_engineer: {
@@ -2401,6 +2564,18 @@ async function executeToolCall(toolName, args, agentRole) {
   if (!permission.allowed) return `Permission denied: ${permission.reason}`;
   try {
     switch (toolName) {
+      case "advanced_music_arrangement": {
+        const operation = String(args.operation ?? "");
+        const events = Array.isArray(args.events) ? args.events : [];
+        if (events.length > 512) return "Error: events are limited to 512 notes";
+        if (operation === "progression") return JSON.stringify(chordProgression(Number(args.root ?? 60), String(args.quality ?? "major") === "minor" ? "minor" : "major"));
+        if (operation === "arpeggio") return JSON.stringify(arpeggiate(Array.isArray(args.notes) ? args.notes.map(Number).slice(0, 32) : [], String(args.pattern ?? "up"), 2));
+        if (operation === "swing") return JSON.stringify(swingQuantize(events));
+        if (operation === "humanize") return JSON.stringify(humanizeNotes(events, 0.01, 5, Number(args.seed ?? 17)));
+        if (operation === "velocity") return JSON.stringify(velocityCurve(events));
+        if (operation === "note_name") return midiNoteName(Number(args.root ?? 60));
+        return "Error: unknown music arrangement operation";
+      }
       case "technical_indicator_suite": {
         const data = Array.isArray(args.data) ? args.data : [];
         if (!data.length || data.length > 2e3) return "Error: data must contain between 1 and 2000 candles";
@@ -3747,9 +3922,9 @@ function generateMelody(root, scaleName, length = 16, octaveRange = [4, 5]) {
   melody[melody.length - 1] = { note: `${lastNote}${octaveRange[0]}`, midi: noteToMidi(`${lastNote}${octaveRange[0]}`), duration: "half", velocity: 70 };
   return melody;
 }
-function generateBassLine(chordProgression, pattern = "root") {
+function generateBassLine(chordProgression2, pattern = "root") {
   const bassNotes = [];
-  for (const chord of chordProgression) {
+  for (const chord of chordProgression2) {
     const root = chord.notes[0];
     const rootMidi = noteToMidi(`${root}2`);
     switch (pattern) {
@@ -6105,54 +6280,6 @@ function generateMidiAutomation(input) {
     return { bar: index2 / resolution, value: input.start + (input.end - input.start) * shaped };
   });
   return { destination: input.destination, bars, resolution, values };
-}
-
-// server/_core/musicPro.ts
-var SCALE_INTERVALS = { major: [0, 2, 4, 5, 7, 9, 11], minor: [0, 2, 3, 5, 7, 8, 10], dorian: [0, 2, 3, 5, 7, 9, 10], pentatonic: [0, 2, 4, 7, 9], blues: [0, 3, 5, 6, 7, 10] };
-function scaleNotes(root = 60, scale = "major", octaves = 2) {
-  const intervals = SCALE_INTERVALS[scale] ?? SCALE_INTERVALS.major;
-  return Array.from({ length: Math.max(1, octaves) }, (_, octave) => intervals.map((interval) => root + octave * 12 + interval)).flat();
-}
-function chordExtensions(root, quality = "major", extensions = [7, 9]) {
-  const base = quality === "minor" ? [0, 3, 7] : quality === "dominant" ? [0, 4, 7, 10] : quality === "diminished" ? [0, 3, 6] : [0, 4, 7];
-  const extra = extensions.map((extension) => extension === 7 ? quality === "major" ? 11 : 10 : extension === 9 ? 14 : extension === 11 ? 17 : 21);
-  return [...base, ...extra].map((interval) => root + interval);
-}
-function quantizeNotes(events, grid = 0.25, strength = 1) {
-  const safeGrid = Math.max(1e-3, grid);
-  return events.map((event) => ({ ...event, start: event.start + (Math.round(event.start / safeGrid) * safeGrid - event.start) * Math.max(0, Math.min(1, strength)) }));
-}
-function euclideanRhythm(steps, pulses, rotation = 0) {
-  const n = Math.max(1, Math.floor(steps));
-  const k = Math.max(0, Math.min(n, Math.floor(pulses)));
-  const pattern = Array.from({ length: n }, (_, i) => Math.floor(i * k / n) !== Math.floor((i - 1 + n) % n * k / n));
-  const shift = (rotation % n + n) % n;
-  return pattern.map((_, i) => pattern[(i - shift + n) % n]);
-}
-function drumGrid(steps = 16, density = 0.5, seed = 7) {
-  const safeSteps = Math.max(1, Math.min(128, Math.floor(steps)));
-  let state = Math.abs(seed) || 7;
-  const next = () => {
-    state = state * 1664525 + 1013904223 >>> 0;
-    return state / 4294967296;
-  };
-  return { kick: Array.from({ length: safeSteps }, (_, i) => i % 4 === 0 || next() < density * 0.12), snare: Array.from({ length: safeSteps }, (_, i) => i % 8 === 4 || next() < density * 0.05), hat: Array.from({ length: safeSteps }, () => next() < Math.min(0.98, density + 0.25)) };
-}
-function shapeAutomation(points, curve = "linear", samples = points.length) {
-  const source = points.length ? points : [0, 1];
-  const count = Math.max(2, samples);
-  const at = (t2) => {
-    const scaled = t2 * (source.length - 1);
-    const left = Math.floor(scaled);
-    const right = Math.min(source.length - 1, left + 1);
-    const local = scaled - left;
-    let eased = local;
-    if (curve === "ease-in") eased = local * local;
-    if (curve === "ease-out") eased = 1 - (1 - local) * (1 - local);
-    if (curve === "sine") eased = (1 - Math.cos(local * Math.PI)) / 2;
-    return source[left] + (source[right] - source[left]) * eased;
-  };
-  return Array.from({ length: count }, (_, i) => at(i / (count - 1)));
 }
 
 // server/_core/technicalAdvanced.ts

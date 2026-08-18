@@ -6,6 +6,7 @@
 import { invokeLLM, type Message, type Tool } from "./llm";
 import { forexSignalSnapshot, multiTimeframeConfluence } from "./forexAdvanced";
 import { indicatorSuite } from "./technicalIndicators";
+import { arpeggiate, chordProgression, humanizeNotes, swingQuantize, velocityCurve, midiNoteName, type NoteEvent } from "./musicPro";
 import { analyzeSynthPatch, createModulationMatrix, createSerumStylePatch } from "./synthTools";
 import { canInvokeTool, recordToolFailure, recordToolSuccess } from "./toolRegistry";
 
@@ -104,6 +105,7 @@ const codeExecTool: Tool = {
   },
 };
 
+const advancedMusicArrangementTool: Tool = { type: "function", function: { name: "advanced_music_arrangement", description: "Generate bounded chord, arpeggio, swing, humanization, velocity, and MIDI-note outputs.", parameters: { type: "object", properties: { operation: { type: "string", enum: ["progression", "arpeggio", "swing", "humanize", "velocity", "note_name"] }, notes: { type: "array" }, events: { type: "array" }, root: { type: "number" }, quality: { type: "string" }, pattern: { type: "string" }, seed: { type: "number" } }, required: ["operation"] } } };
 const technicalIndicatorSuiteTool: Tool = {
   type: "function",
   function: { name: "technical_indicator_suite", description: "Compute a bounded deterministic suite of technical-analysis indicators from OHLCV candles.", parameters: { type: "object", properties: { data: { type: "array" }, indicators: { type: "array" } }, required: ["data"] } },
@@ -471,7 +473,7 @@ Adapt length and format to the user's needs.`,
     name: "UI Architect",
     description: "Designs responsive, accessible, stateful interfaces and theme systems.",
     systemPrompt: "You are a senior UI architect. Produce implementation-ready interaction contracts, responsive layouts, accessible states, design tokens, and performance-conscious animation plans. Prefer progressive enhancement and reduced-motion fallbacks.",
-    tools: [textAnalysisTool, dataProcessingTool, technicalIndicatorSuiteTool, agenticWorkflowPlanTool],
+    tools: [textAnalysisTool, dataProcessingTool, technicalIndicatorSuiteTool, advancedMusicArrangementTool, agenticWorkflowPlanTool],
     maxTokens: 3500,
   },
   multimodal_curator: {
@@ -479,7 +481,7 @@ Adapt length and format to the user's needs.`,
     name: "Multimodal Curator",
     description: "Organizes attachment, transcript, image, and artifact context with provenance and privacy safeguards.",
     systemPrompt: "You are a multimodal information curator. Extract structured context from supplied material, preserve provenance, flag uncertainty, redact secrets, and propose artifact-ready summaries without inventing missing content.",
-    tools: [textAnalysisTool, dataProcessingTool, technicalIndicatorSuiteTool, agenticWorkflowPlanTool],
+    tools: [textAnalysisTool, dataProcessingTool, technicalIndicatorSuiteTool, advancedMusicArrangementTool, agenticWorkflowPlanTool],
     maxTokens: 4000,
   },
   observability_engineer: {
@@ -551,6 +553,18 @@ async function executeToolCall(
   if (!permission.allowed) return `Permission denied: ${permission.reason}`;
   try {
     switch (toolName) {
+    case "advanced_music_arrangement": {
+      const operation = String(args.operation ?? "");
+      const events = Array.isArray(args.events) ? args.events as NoteEvent[] : [];
+      if (events.length > 512) return "Error: events are limited to 512 notes";
+      if (operation === "progression") return JSON.stringify(chordProgression(Number(args.root ?? 60), String(args.quality ?? "major") === "minor" ? "minor" : "major"));
+      if (operation === "arpeggio") return JSON.stringify(arpeggiate(Array.isArray(args.notes) ? args.notes.map(Number).slice(0, 32) : [], String(args.pattern ?? "up") as "up" | "down" | "updown", 2));
+      if (operation === "swing") return JSON.stringify(swingQuantize(events));
+      if (operation === "humanize") return JSON.stringify(humanizeNotes(events, .01, 5, Number(args.seed ?? 17)));
+      if (operation === "velocity") return JSON.stringify(velocityCurve(events));
+      if (operation === "note_name") return midiNoteName(Number(args.root ?? 60));
+      return "Error: unknown music arrangement operation";
+    }
     case "technical_indicator_suite": {
       const data = Array.isArray(args.data) ? args.data as Parameters<typeof indicatorSuite>[0] : [];
       if (!data.length || data.length > 2000) return "Error: data must contain between 1 and 2000 candles";

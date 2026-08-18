@@ -60,6 +60,18 @@ html[data-nova-theme="cosmic"] { --background: #05050b; --foreground: #f6f3ff; -
 html[data-nova-theme="lava"] { --background: #210b06; --foreground: #fff5e6; --paper: #3b160c; --paper-deep: #54200f; --ink-soft: #f2b995; --ink-faint: #c27d58; --line: #763317; --line-strong: #a34b20; --accent: #ffb34d; --accent-wash: #65300f; }
 html[data-nova-theme="paper-cut"] { --background: #f8e9c9; --foreground: #3b2e2a; --paper: #fff6df; --paper-deep: #e8cfa0; --ink-soft: #72594d; --ink-faint: #a88972; --line: #dfbf91; --line-strong: #c59b66; --accent: #d65d46; --accent-wash: #f3cfc1; }
 html[data-nova-theme="arctic"] { --background: #e8f5ff; --foreground: #17324b; --paper: rgba(255,255,255,.72); --paper-deep: #d3ebfa; --ink-soft: #4f7894; --ink-faint: #7ca2b7; --line: rgba(91,149,182,.32); --line-strong: rgba(91,149,182,.58); --accent: #338ee0; --accent-wash: #d2eafb; }
+html[data-nova-theme="monochrome"] { --background: #111; --foreground: #f5f5f5; --paper: #1d1d1d; --paper-deep: #292929; --ink-soft: #c6c6c6; --ink-faint: #858585; --line: #383838; --line-strong: #5a5a5a; --accent: #fff; --accent-wash: #343434; }
+html[data-nova-theme="rosewood"] { --background: #251017; --foreground: #fff2f4; --paper: #401a28; --paper-deep: #572235; --ink-soft: #efb8c9; --ink-faint: #b87991; --line: #733449; --line-strong: #a64c69; --accent: #ff8eb5; --accent-wash: #63253f; }
+html[data-nova-theme="citrus"] { --background: #22200a; --foreground: #fffde5; --paper: #393810; --paper-deep: #504d16; --ink-soft: #e2dda0; --ink-faint: #aaa34e; --line: #6c681c; --line-strong: #99921e; --accent: #dfff58; --accent-wash: #5a5a13; }
+html[data-nova-theme="sapphire"] { --background: #07152c; --foreground: #edf5ff; --paper: #102a4e; --paper-deep: #153a68; --ink-soft: #b1caea; --ink-faint: #7594bf; --line: #245083; --line-strong: #3b73ae; --accent: #69b4ff; --accent-wash: #1b4f7c; }
+html[data-nova-theme="amethyst"] { --background: #180d2b; --foreground: #fcf4ff; --paper: #2c1748; --paper-deep: #3f2262; --ink-soft: #d0b7eb; --ink-faint: #9773bb; --line: #5b3980; --line-strong: #8058ae; --accent: #d49cff; --accent-wash: #4d2a70; }
+html[data-nova-theme="forest"] { --background: #0c1c12; --foreground: #ebfff1; --paper: #153522; --paper-deep: #1d4a2e; --ink-soft: #b2d7bb; --ink-faint: #76a47e; --line: #2d6740; --line-strong: #4a8c59; --accent: #89e69b; --accent-wash: #245834; }
+html[data-nova-theme="sandstorm"] { --background: #2c2215; --foreground: #fff6df; --paper: #4b3821; --paper-deep: #624a2c; --ink-soft: #e9c992; --ink-faint: #b5925d; --line: #80623a; --line-strong: #aa8754; --accent: #ffd27a; --accent-wash: #6c4c25; }
+html[data-nova-theme="plasma"] { --background: #150722; --foreground: #fff4ff; --paper: #2c0c49; --paper-deep: #401366; --ink-soft: #e4b9fa; --ink-faint: #aa71c7; --line: #633286; --line-strong: #9250bd; --accent: #ff73f0; --accent-wash: #5d1e6d; }
+html[data-nova-theme="nocturne"] { --background: #080b17; --foreground: #e9edff; --paper: #11172c; --paper-deep: #182340; --ink-soft: #aeb8dc; --ink-faint: #717fae; --line: #29375e; --line-strong: #41578e; --accent: #8fa7ff; --accent-wash: #263667; }
+html[data-nova-theme="zen"] { --background: #e7eee6; --foreground: #27362e; --paper: #f5faf1; --paper-deep: #d7e5d3; --ink-soft: #58705d; --ink-faint: #849786; --line: #c4d6c0; --line-strong: #9db69a; --accent: #568a62; --accent-wash: #d4e5d1; }
+html[data-nova-theme="studio"] { --background: #1b1b20; --foreground: #f5f5f5; --paper: #292a31; --paper-deep: #363843; --ink-soft: #c1c4d0; --ink-faint: #858a9c; --line: #484b58; --line-strong: #626779; --accent: #f3c46e; --accent-wash: #54472c; }
+html[data-nova-theme="rain"] { --background: #101b24; --foreground: #eaf6ff; --paper: #172936; --paper-deep: #213b4b; --ink-soft: #b1cad7; --ink-faint: #7797a8; --line: #315366; --line-strong: #47768d; --accent: #82d6ea; --accent-wash: #214c5d; }
 html[data-nova-theme="aurora"] body, html[data-nova-theme="glass"] body { background-image: radial-gradient(circle at 15% 10%, color-mix(in srgb, var(--accent) 20%, transparent), transparent 34%), radial-gradient(circle at 85% 80%, rgba(83,116,218,.16), transparent 38%); }
 html[data-nova-theme="terminal"] body { font-family: var(--font-mono); }
 .app-shell::before { content: ""; position: fixed; inset: -18%; z-index: -1; pointer-events: none; opacity: 0; background: radial-gradient(circle at var(--pointer-x, 50%) var(--pointer-y, 45%), color-mix(in srgb, var(--accent) 25%, transparent), transparent 18%), conic-gradient(from 180deg at 50% 50%, color-mix(in srgb, var(--accent) 12%, transparent), transparent 24%, color-mix(in srgb, var(--accent) 8%, transparent), transparent 58%); transform: translate3d(calc((var(--pointer-x, 50vw) - 50vw) / -90), calc((var(--pointer-y, 50vh) - 50vh) / -90), 0) rotateX(2deg) rotateY(-2deg); transition: opacity .35s ease, transform .25s ease; }
@@ -68,6 +80,20 @@ html[data-nova-theme="aurora"] .composer-wrap, html[data-nova-theme="hologram"] 
 html[data-nova-theme="blueprint"] body { background-image: linear-gradient(rgba(123,214,255,.08) 1px, transparent 1px), linear-gradient(90deg, rgba(123,214,255,.08) 1px, transparent 1px); background-size: 26px 26px; }
 html[data-nova-theme="vaporwave"] body { background-image: linear-gradient(rgba(255,112,213,.08) 1px, transparent 1px), linear-gradient(90deg, rgba(255,112,213,.08) 1px, transparent 1px); background-size: 32px 32px; }
 html[data-nova-theme="paper-cut"] .composer-wrap, html[data-nova-theme="paper-cut"] .preferences-card { box-shadow: 8px 8px 0 color-mix(in srgb, var(--accent) 25%, transparent); }
+html[data-nova-theme="monochrome"] body { filter: grayscale(.35); }
+html[data-nova-theme="citrus"] body, html[data-nova-theme="plasma"] body { background-image: radial-gradient(circle at 20% 0%, color-mix(in srgb, var(--accent) 14%, transparent), transparent 34%), radial-gradient(circle at 90% 80%, color-mix(in srgb, var(--accent) 10%, transparent), transparent 40%); }
+html[data-nova-theme="studio"] .composer-wrap { box-shadow: 0 20px 60px rgba(0,0,0,.32), 0 1px 0 rgba(255,255,255,.08) inset; }
+html[data-nova-theme="zen"] .sidebar, html[data-nova-theme="zen"] .composer-wrap { border-radius: 22px; }
+html[data-nova-theme="rain"] body { background-image: repeating-linear-gradient(112deg, transparent 0 17px, color-mix(in srgb, var(--accent) 7%, transparent) 18px, transparent 19px); }
+html[data-nova-theme="nocturne"] .app-shell::before, html[data-nova-theme="plasma"] .app-shell::before, html[data-nova-theme="sapphire"] .app-shell::before, html[data-nova-theme="rosewood"] .app-shell::before { opacity: .9; }
+html[data-nova-theme="nocturne"] .composer-wrap, html[data-nova-theme="plasma"] .composer-wrap, html[data-nova-theme="sapphire"] .composer-wrap { transform: perspective(1000px) rotateX(1.5deg) rotateY(-.5deg); }
+.app-shell.focus-mode .sidebar, .app-shell.focus-mode .chat-header { opacity: .18; transition: opacity .3s ease; }
+.app-shell.focus-mode .sidebar:hover, .app-shell.focus-mode .chat-header:hover { opacity: 1; }
+.app-shell.chat-width-narrow .chat-scroll, .app-shell.chat-width-narrow .composer-wrap { max-width: 720px; margin-inline: auto; }
+.app-shell.chat-width-full .chat-scroll, .app-shell.chat-width-full .composer-wrap { max-width: none; }
+.app-shell.bubble-sharp .message-bubble { border-radius: 4px; }
+.app-shell.bubble-minimal .message-bubble { background: transparent; border-color: transparent; box-shadow: none; }
+html.nova-no-ambient .app-shell::before { display: none; }
 html.nova-reduced-motion .app-shell::before { transition: none; transform: none; }
 @media (prefers-reduced-motion: reduce) { .app-shell::before { transition: none; transform: none; } }
 html[data-nova-theme="glass"] .composer-wrap, html[data-nova-theme="glass"] .sidebar, html[data-nova-theme="glass"] .preferences-card { backdrop-filter: blur(18px); }
