@@ -33,7 +33,7 @@ import {
 import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
-import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
+import { adminProcedure, protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import {
   fullAnalysis,
   calculatePips,
@@ -63,6 +63,8 @@ import {
   CHORD_TYPES,
 } from "./_core/music";
 import { analyzeSynthPatch, createModulationMatrix, createSerumStylePatch, type SynthPatch } from "./_core/synthTools";
+import { exportDawBundle, exportMidiCcMap, exportSerumStylePreset } from "./_core/dawExport";
+import { listToolPolicies, listToolRuntime, resetToolCircuit } from "./_core/toolRegistry";
 import { adx, cci, forexSignalSnapshot, marketStructure, multiTimeframeConfluence, obv, volatilityRegime, williamsR } from "./_core/forexAdvanced";
 import {
   analyzeMetrics,
@@ -609,7 +611,10 @@ export const appRouter = router({
     modulationMatrix: protectedProcedure
       .input(z.object({ patch: z.record(z.string(), z.unknown()) }))
       .mutation(({ input }) => createModulationMatrix(input.patch as unknown as SynthPatch)),
-    patchCapabilities: protectedProcedure.query(() => ({ formats: ["serum-style-json", "modulation-matrix", "macro-map"], categories: ["bass", "lead", "pad", "pluck", "fx", "drum-synth", "atmosphere"], note: "The backend returns an engine-neutral patch specification that can be adapted to Xfer Serum or another synth adapter." })),
+    patchCapabilities: protectedProcedure.query(() => ({ formats: ["serum-style-json", "midi-cc-map", "nova-daw-bundle", "modulation-matrix", "macro-map"], categories: ["bass", "lead", "pad", "pluck", "fx", "drum-synth", "atmosphere"], note: "The backend returns an engine-neutral patch specification that can be adapted to Xfer Serum or another synth adapter." })),
+    exportPatch: protectedProcedure
+      .input(z.object({ format: z.enum(["midi-cc", "serum-style", "daw-bundle"]), patch: z.record(z.string(), z.unknown()) }))
+      .mutation(({ input }) => input.format === "midi-cc" ? exportMidiCcMap(input.patch as unknown as SynthPatch) : input.format === "serum-style" ? exportSerumStylePreset(input.patch as unknown as SynthPatch) : exportDawBundle(input.patch as unknown as SynthPatch)),
   }),
   music: router({
     scales: protectedProcedure
@@ -885,6 +890,11 @@ export const appRouter = router({
       }),
   }),
 
+  toolGovernance: router({
+    policies: protectedProcedure.query(() => listToolPolicies()),
+    runtime: protectedProcedure.query(() => listToolRuntime()),
+    resetCircuit: adminProcedure.input(z.object({ toolName: z.string().min(1) })).mutation(({ input }) => resetToolCircuit(input.toolName)),
+  }),
   backendTools: router({
     featureCatalog: protectedProcedure
       .input(
@@ -1188,6 +1198,9 @@ export const appRouter = router({
             "translator",
             "summarizer",
             "brainstormer",
+            "sound_designer",
+            "quant_researcher",
+            "risk_manager",
           ]),
           messages: z.array(
             z.object({

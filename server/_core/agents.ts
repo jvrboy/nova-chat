@@ -6,6 +6,7 @@
 import { invokeLLM, type Message, type Tool } from "./llm";
 import { forexSignalSnapshot, multiTimeframeConfluence } from "./forexAdvanced";
 import { analyzeSynthPatch, createModulationMatrix, createSerumStylePatch } from "./synthTools";
+import { canInvokeTool, recordToolFailure, recordToolSuccess } from "./toolRegistry";
 
 export type AgentRole =
   | "forex_analyst"
@@ -17,7 +18,10 @@ export type AgentRole =
   | "math_tutor"
   | "translator"
   | "summarizer"
-  | "brainstormer";
+  | "brainstormer"
+  | "sound_designer"
+  | "quant_researcher"
+  | "risk_manager";
 
 export type AgentConfig = {
   id: AgentRole;
@@ -203,6 +207,30 @@ Consider genre conventions and emotional intent.`,
     maxTokens: 4000,
   },
 
+  sound_designer: {
+    id: "sound_designer",
+    name: "Sound Designer",
+    description: "Designs synthesizer patches, modulation systems, and production-ready sound concepts.",
+    systemPrompt: "You are a senior sound designer. Use the synth patch tool for structured Serum-style specifications, explain signal flow, and propose safe gain-staging and macro mappings.",
+    tools: [calculatorTool, dataProcessingTool, synthPatchTool],
+    maxTokens: 4000,
+  },
+  quant_researcher: {
+    id: "quant_researcher",
+    name: "Quantitative Researcher",
+    description: "Analyzes OHLCV data, regimes, confluence, and backtest assumptions without making guarantees.",
+    systemPrompt: "You are a quantitative research specialist. Use advanced forex tools to inspect data, explain assumptions, and distinguish historical analysis from future expectations.",
+    tools: [calculatorTool, dataProcessingTool, advancedForexTool, multiTimeframeTool],
+    maxTokens: 4500,
+  },
+  risk_manager: {
+    id: "risk_manager",
+    name: "Risk Manager",
+    description: "Reviews analytical scenarios, exposure assumptions, volatility, and risk controls.",
+    systemPrompt: "You are a risk manager. Use market-analysis tools to identify uncertainty, drawdown sensitivity, volatility regimes, and risk controls. Never present outputs as guaranteed financial advice.",
+    tools: [calculatorTool, dataProcessingTool, advancedForexTool, multiTimeframeTool],
+    maxTokens: 4000,
+  },
   data_analyst: {
     id: "data_analyst",
     name: "Data Analyst",
@@ -398,9 +426,13 @@ export type ToolResult = {
 
 async function executeToolCall(
   toolName: string,
-  args: Record<string, unknown>
+  args: Record<string, unknown>,
+  agentRole: AgentRole
 ): Promise<string> {
-  switch (toolName) {
+  const permission = canInvokeTool(toolName, agentRole);
+  if (!permission.allowed) return `Permission denied: ${permission.reason}`;
+  try {
+    switch (toolName) {
     case "forex_signal_snapshot": {
       const data = Array.isArray(args.data) ? args.data as Parameters<typeof forexSignalSnapshot>[0] : [];
       return JSON.stringify(forexSignalSnapshot(data, Number(args.period ?? 14)));
@@ -522,6 +554,11 @@ async function executeToolCall(
       return JSON.stringify({ status: "search_requested", query: args.query });
     default:
       return `Error: Unknown tool: ${toolName}`;
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    recordToolFailure(toolName, message);
+    return `Error: ${message}`;
   }
 }
 
@@ -610,7 +647,9 @@ export async function runAgent(
         } catch {
           args = {};
         }
-        const result = await executeToolCall(tc.function.name, args);
+        const result = await executeToolCall(tc.function.name, args, role);
+        if (result.startsWith("Error:")) recordToolFailure(tc.function.name, result);
+        else recordToolSuccess(tc.function.name);
         toolResults.push({ toolCallId: tc.id, toolName: tc.function.name, result });
         messages.push({ role: "tool", name: tc.function.name, tool_call_id: tc.id, content: result });
       }

@@ -88,6 +88,36 @@ export const BUILTIN_PIPELINES: Pipeline[] = [
     variables: {},
   },
   {
+    id: 'sound-design-pipeline',
+    name: 'Sound Design Pipeline',
+    description: 'Sound concept → synth patch architecture → production notes',
+    steps: [
+      { id: 'concept', name: 'Sound Concept', type: 'agent', agentRole: 'sound_designer', prompt: '{input}', outputKey: 'concept' },
+      { id: 'patch', name: 'Patch Architecture', type: 'agent', agentRole: 'sound_designer', prompt: 'Turn this sound concept into a structured Serum-style patch and modulation plan:\n{concept}', outputKey: 'patch' },
+    ],
+    variables: {},
+  },
+  {
+    id: 'quant-research-pipeline',
+    name: 'Quantitative Research Pipeline',
+    description: 'Market data inspection → multi-timeframe confluence → research caveats',
+    steps: [
+      { id: 'analysis', name: 'Advanced Analysis', type: 'agent', agentRole: 'quant_researcher', prompt: '{input}', outputKey: 'analysis' },
+      { id: 'risk', name: 'Risk Review', type: 'agent', agentRole: 'risk_manager', prompt: 'Review this quantitative analysis for uncertainty, regime risk, drawdown sensitivity, and data limitations:\n{analysis}', outputKey: 'risk_review' },
+    ],
+    variables: {},
+  },
+  {
+    id: 'risk-review-pipeline',
+    name: 'Risk Review Pipeline',
+    description: 'Scenario analysis → risk controls → uncertainty summary',
+    steps: [
+      { id: 'scenario', name: 'Scenario Review', type: 'agent', agentRole: 'risk_manager', prompt: '{input}', outputKey: 'scenario' },
+      { id: 'research', name: 'Quantitative Challenge', type: 'agent', agentRole: 'quant_researcher', prompt: 'Challenge the following scenario with quantitative assumptions and failure cases:\n{scenario}', outputKey: 'challenge' },
+    ],
+    variables: {},
+  },
+  {
     id: 'translation-pipeline',
     name: 'Translation & Localization',
     description: 'Translate → Cultural adaptation → Quality check',
