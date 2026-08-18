@@ -86,6 +86,7 @@ import {
 } from "./_core/tradingStrategy";
 import { runSwarmConsensus, listSwarmAgents, SWARM_AGENTS } from "./_core/swarmConsensus";
 import { executeSandboxedCode } from "./_core/performanceTools";
+import { listBackendConnections, probeBackendConnections } from "./_core/backendConnections";
 import { e2bRunCode, firecrawlScrape, invokeWithProviderFailover, kaggleListDatasets, listConnectionStatus, listProviderStatus, type ProviderId } from "./_core/providerGateway";
 import { computeIndicator, computeIndicators, indicatorSnapshot, listIndicators, type IndicatorCategory } from "./_core/indicatorEngine";
 import { runBacktest as runResearchBacktest, runForwardTest, walkForwardAnalysis, type ResearchConfig } from "./_core/researchEngine";
@@ -247,6 +248,8 @@ export const appRouter = router({
     models: protectedProcedure.query(async () => (await listLLMModels()).data),
     providers: protectedProcedure.query(() => listProviderStatus()),
     connections: protectedProcedure.query(() => listConnectionStatus()),
+    backendConnections: protectedProcedure.query(() => listBackendConnections()),
+    backendHealth: protectedProcedure.mutation(() => probeBackendConnections()),
     complete: protectedProcedure
       .input(
         z.object({
@@ -1366,11 +1369,20 @@ export const appRouter = router({
   sandbox: router({
     execute: protectedProcedure.input(z.object({
       code: z.string().min(1).max(10000),
-      timeoutMs: z.number().int().min(100).max(30000).default(5000),
-      allowImports: z.boolean().default(false),
+      timeoutMs: z.number().int().min(100).max(10000).default(5000),
+      maxOutputLength: z.number().int().min(100).max(50000).default(20000),
+      allowImports: z.literal(false).default(false),
     })).mutation(async ({ input }) => {
-      return executeSandboxedCode(input.code, { timeoutMs: input.timeoutMs, allowImports: input.allowImports });
+      return executeSandboxedCode(input.code, { timeoutMs: input.timeoutMs, maxOutputLength: input.maxOutputLength, allowImports: false, allowedImports: [] });
     }),
+    capabilities: protectedProcedure.query(() => ({
+      execution: "isolated-in-process",
+      imports: false,
+      maxTimeoutMs: 10000,
+      maxOutputLength: 50000,
+      blockedCapabilities: ["filesystem", "network", "process", "dynamic-eval", "child-process"],
+      note: "Use E2B for untrusted or dependency-heavy workloads; this sandbox is intended for bounded calculations only.",
+    })),
   }),
 });
 

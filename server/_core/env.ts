@@ -15,4 +15,7 @@ export const ENV = {
   kaggleApiKeys: process.env.KAGGLE_API_KEYS ?? process.env.KAGGLE_API_KEY ?? "",
   firecrawlApiKeys: process.env.FIRECRAWL_API_KEYS ?? process.env.FIRECRAWL_API_KEY ?? "",
   e2bApiKeys: process.env.E2B_API_KEYS ?? process.env.E2B_API_KEY ?? "",
+  cloudflareWorkerUrl: process.env.CLOUDFLARE_WORKER_URL ?? "",
+  supabaseUrl: process.env.SUPABASE_URL ?? "",
+  supabaseAnonKey: process.env.SUPABASE_ANON_KEY ?? "",
 };
