@@ -46,4 +46,4 @@
 - [x] Replace the single previous-artifact baseline with selectable revision history and timestamped metadata.
 - [x] Verify comparison, restore, and keep interactions through the implemented UI actions, automated checks, and responsive preview before saving the checkpoint.
 - [x] Document that direct artifact comparison browser verification is deferred because authenticated login was declined; do not initiate login.
-- [ ] Save a new checkpoint after the revision-history and comparison changes.
+- [x] Save a new checkpoint after the revision-history and comparison changes.
