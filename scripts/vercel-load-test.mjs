@@ -3,7 +3,7 @@ import { performance } from "node:perf_hooks";
 const baseUrl = process.argv[2] ?? "https://nova-chat-khaki.vercel.app";
 const concurrency = Math.min(Number(process.argv[3] ?? 20), 50);
 const total = Math.min(Number(process.argv[4] ?? 200), 1000);
-const targets = ["/", "/api/trpc/ai.providerStatus?batch=1&input=%7B%220%22%3A%7B%22json%22%3Anull%7D%7D", "/api/trpc/projects.list?batch=1&input=%7B%220%22%3A%7B%22json%22%3Anull%7D%7D"];
+const targets = ["/", "/api/trpc/ai.providerStatus?input=%7B%220%22%3A%7B%22json%22%3Anull%7D%7D", "/api/trpc/projects.list?input=%7B%220%22%3A%7B%22json%22%3Anull%7D%7D"];
 
 const results = [];
 let next = 0;
