@@ -250,6 +250,7 @@ export const appRouter = router({
   ai: router({
     models: protectedProcedure.query(async () => (await listLLMModels()).data),
     providers: protectedProcedure.query(() => listProviderStatus()),
+    providerStatus: publicProcedure.query(() => listProviderStatus()),
     connections: protectedProcedure.query(() => listConnectionStatus()),
     backendConnections: protectedProcedure.query(() => listBackendConnections()),
     backendHealth: protectedProcedure.mutation(() => probeBackendConnections()),

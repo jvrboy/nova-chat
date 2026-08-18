@@ -11,6 +11,22 @@ type ProviderConfig = {
   keys: string[];
 };
 
+type ProviderTelemetry = {
+  requests: number;
+  successes: number;
+  failures: number;
+  tokensUsed: number;
+  lastUsedAt: number | null;
+  lastError: string | null;
+};
+
+const providerTelemetry = new Map<ProviderId, ProviderTelemetry>();
+const telemetryFor = (id: ProviderId): ProviderTelemetry => {
+  const current = providerTelemetry.get(id) ?? { requests: 0, successes: 0, failures: 0, tokensUsed: 0, lastUsedAt: null, lastError: null };
+  providerTelemetry.set(id, current);
+  return current;
+};
+
 type ConnectionStatus = {
   id: ConnectionId;
   label: string;
@@ -107,6 +123,8 @@ const markKeyFailed = (provider: { id: string }, key: string) => {
   failedUntil.set(`${provider.id}:${key}`, Date.now() + 30_000);
 };
 
+const availableKeyCount = (provider: ProviderConfig) => provider.keys.filter((key) => (failedUntil.get(`${provider.id}:${key}`) ?? 0) <= Date.now()).length;
+
 const textFromContent = (content: unknown) => {
   if (typeof content === "string") return content;
   if (Array.isArray(content)) return content.map(part => typeof part === "string" ? part : (part as { text?: string }).text ?? "").join("\n");
@@ -163,10 +181,22 @@ export async function invokeWithProviderFailover(params: InvokeParams & { provid
       const key = nextKey(provider);
       if (!key) break;
       try {
+        const telemetry = telemetryFor(provider.id);
+        telemetry.requests += 1;
         const result = provider.id === "gemini" ? await invokeGemini(provider, key, params) : await invokeOpenAICompatible(provider, key, params);
+        telemetry.successes += 1;
+        telemetry.lastUsedAt = Date.now();
+        const usage = (result as InvokeResult & { usage?: { total_tokens?: number; prompt_tokens?: number; completion_tokens?: number } }).usage;
+        telemetry.tokensUsed += usage?.total_tokens ?? ((usage?.prompt_tokens ?? 0) + (usage?.completion_tokens ?? 0));
+        telemetry.lastError = null;
         return { ...result, provider: provider.id, providerLabel: provider.label };
       } catch (error) {
         const status = (error as { status?: number }).status;
+        const telemetry = telemetryFor(provider.id);
+        telemetry.requests += 1;
+        telemetry.failures += 1;
+        telemetry.lastUsedAt = Date.now();
+        telemetry.lastError = error instanceof Error ? error.message.slice(0, 240) : "request failed";
         errors.push(`${provider.label}: ${error instanceof Error ? error.message : "request failed"}`);
         if (status === undefined || RETRYABLE_STATUS.has(status)) markKeyFailed(provider, key);
         if (status !== undefined && !RETRYABLE_STATUS.has(status)) break;
@@ -178,7 +208,24 @@ export async function invokeWithProviderFailover(params: InvokeParams & { provid
 }
 
 export function listProviderStatus() {
-  return providerConfigs().map(provider => ({ id: provider.id, label: provider.label, configured: provider.keys.length > 0, keyCount: provider.keys.length, defaultModel: provider.defaultModel }));
+  return providerConfigs().map(provider => {
+    const telemetry = telemetryFor(provider.id);
+    return {
+      id: provider.id,
+      label: provider.label,
+      configured: provider.keys.length > 0,
+      keyCount: provider.keys.length,
+      availableKeyCount: availableKeyCount(provider),
+      defaultModel: provider.defaultModel,
+      requests: telemetry.requests,
+      successes: telemetry.successes,
+      failures: telemetry.failures,
+      tokensUsed: telemetry.tokensUsed,
+      quotaRemaining: "Provider quota not exposed by API",
+      lastUsedAt: telemetry.lastUsedAt ? new Date(telemetry.lastUsedAt).toISOString() : null,
+      lastError: telemetry.lastError,
+    };
+  });
 }
 
 export function listConnectionStatus(): ConnectionStatus[] {

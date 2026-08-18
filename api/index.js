@@ -5013,6 +5013,12 @@ async function probeBackendConnections() {
 }
 
 // server/_core/providerGateway.ts
+var providerTelemetry = /* @__PURE__ */ new Map();
+var telemetryFor = (id) => {
+  const current = providerTelemetry.get(id) ?? { requests: 0, successes: 0, failures: 0, tokensUsed: 0, lastUsedAt: null, lastError: null };
+  providerTelemetry.set(id, current);
+  return current;
+};
 var splitKeys = (value) => (value ?? "").split(/[\n,;]+/).map((key) => key.trim()).filter(Boolean);
 var indexedKeys = (prefix) => {
   const keys = [];
@@ -5085,6 +5091,7 @@ var nextKey = (provider) => {
 var markKeyFailed = (provider, key) => {
   failedUntil.set(`${provider.id}:${key}`, Date.now() + 3e4);
 };
+var availableKeyCount = (provider) => provider.keys.filter((key) => (failedUntil.get(`${provider.id}:${key}`) ?? 0) <= Date.now()).length;
 var textFromContent = (content) => {
   if (typeof content === "string") return content;
   if (Array.isArray(content)) return content.map((part) => typeof part === "string" ? part : part.text ?? "").join("\n");
@@ -5137,10 +5144,22 @@ async function invokeWithProviderFailover(params) {
       const key = nextKey(provider);
       if (!key) break;
       try {
+        const telemetry = telemetryFor(provider.id);
+        telemetry.requests += 1;
         const result = provider.id === "gemini" ? await invokeGemini(provider, key, params) : await invokeOpenAICompatible(provider, key, params);
+        telemetry.successes += 1;
+        telemetry.lastUsedAt = Date.now();
+        const usage = result.usage;
+        telemetry.tokensUsed += usage?.total_tokens ?? (usage?.prompt_tokens ?? 0) + (usage?.completion_tokens ?? 0);
+        telemetry.lastError = null;
         return { ...result, provider: provider.id, providerLabel: provider.label };
       } catch (error) {
         const status = error.status;
+        const telemetry = telemetryFor(provider.id);
+        telemetry.requests += 1;
+        telemetry.failures += 1;
+        telemetry.lastUsedAt = Date.now();
+        telemetry.lastError = error instanceof Error ? error.message.slice(0, 240) : "request failed";
         errors.push(`${provider.label}: ${error instanceof Error ? error.message : "request failed"}`);
         if (status === void 0 || RETRYABLE_STATUS.has(status)) markKeyFailed(provider, key);
         if (status !== void 0 && !RETRYABLE_STATUS.has(status)) break;
@@ -5151,7 +5170,24 @@ async function invokeWithProviderFailover(params) {
   throw new Error(`All configured AI providers failed. ${errors.join(" | ") || "Add provider API keys in the server environment."}`);
 }
 function listProviderStatus() {
-  return providerConfigs().map((provider) => ({ id: provider.id, label: provider.label, configured: provider.keys.length > 0, keyCount: provider.keys.length, defaultModel: provider.defaultModel }));
+  return providerConfigs().map((provider) => {
+    const telemetry = telemetryFor(provider.id);
+    return {
+      id: provider.id,
+      label: provider.label,
+      configured: provider.keys.length > 0,
+      keyCount: provider.keys.length,
+      availableKeyCount: availableKeyCount(provider),
+      defaultModel: provider.defaultModel,
+      requests: telemetry.requests,
+      successes: telemetry.successes,
+      failures: telemetry.failures,
+      tokensUsed: telemetry.tokensUsed,
+      quotaRemaining: "Provider quota not exposed by API",
+      lastUsedAt: telemetry.lastUsedAt ? new Date(telemetry.lastUsedAt).toISOString() : null,
+      lastError: telemetry.lastError
+    };
+  });
 }
 function listConnectionStatus() {
   return [
@@ -6010,6 +6046,7 @@ var appRouter = router({
   ai: router({
     models: protectedProcedure.query(async () => (await listLLMModels()).data),
     providers: protectedProcedure.query(() => listProviderStatus()),
+    providerStatus: publicProcedure.query(() => listProviderStatus()),
     connections: protectedProcedure.query(() => listConnectionStatus()),
     backendConnections: protectedProcedure.query(() => listBackendConnections()),
     backendHealth: protectedProcedure.mutation(() => probeBackendConnections()),
