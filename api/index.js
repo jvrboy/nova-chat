@@ -6831,7 +6831,7 @@ function createApp() {
 }
 var app = createApp();
 
-// api/index.ts
+// server/vercelEntry.ts
 function handler(req, res) {
   return app(req, res);
 }
