@@ -83,3 +83,5 @@ Persimmon `#D85A3A` — ownable, warm, and energetic without reading as a generi
 ## Artifact verification note
 
 Nova now includes structured artifact generation, editable previews, regeneration, and Markdown export. The creation procedure is protected by authentication and the live generation/export flow was not executed end-to-end because login was intentionally declined during this task. Type checking, automated tests, production builds, and responsive UI previews were completed.
+
+The artifact editor now keeps selectable timestamped revision snapshots and offers a side-by-side comparison with changed-line highlighting, restore, and keep actions. Direct authenticated browser exercise of those controls remains deferred because login was declined; type checking, automated tests, production build, and responsive previews were completed.

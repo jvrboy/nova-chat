@@ -41,3 +41,9 @@
 - [x] Add artifact persistence/recovery states and verify the workflow responsively; authenticated generation remains sign-in gated.
 - [x] Add artifact-specific retry and recovery actions for failed generation and regeneration.
 - [x] Document that live authenticated artifact generation/export remains unverified because login was declined.
+- [x] Add revision snapshots and a side-by-side artifact comparison view.
+- [x] Add changed-line highlighting, restore/keep actions, responsive styling, and verification before saving a checkpoint.
+- [x] Replace the single previous-artifact baseline with selectable revision history and timestamped metadata.
+- [x] Verify comparison, restore, and keep interactions through the implemented UI actions, automated checks, and responsive preview before saving the checkpoint.
+- [x] Document that direct artifact comparison browser verification is deferred because authenticated login was declined; do not initiate login.
+- [ ] Save a new checkpoint after the revision-history and comparison changes.
