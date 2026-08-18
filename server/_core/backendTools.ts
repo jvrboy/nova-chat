@@ -388,15 +388,29 @@ export function planWorkflowExecution(steps: WorkflowStep[]) {
   }
   if (order.length !== steps.length)
     throw new Error("workflow contains a cycle");
-  const criticalPathMs = waves.reduce((total, wave) => {
-    const slowest = Math.max(...wave.map(id => byId.get(id)?.durationMs ?? 0));
-    return total + slowest;
-  }, 0);
+  const earliestFinish = new Map<string, number>();
+  let criticalPathMs = 0;
+  for (const id of order) {
+    const step = byId.get(id)!;
+    let dependencyFinishMs = 0;
+    for (const dependency of step.dependsOn ?? []) {
+      dependencyFinishMs = Math.max(
+        dependencyFinishMs,
+        earliestFinish.get(dependency) ?? 0
+      );
+    }
+    const finishMs = dependencyFinishMs + (step.durationMs ?? 0);
+    earliestFinish.set(id, finishMs);
+    criticalPathMs = Math.max(criticalPathMs, finishMs);
+  }
   return {
     order,
     waves,
     criticalPathMs,
-    parallelism: Math.max(...waves.map(wave => wave.length)),
+    parallelism: waves.reduce(
+      (maxParallelism, wave) => Math.max(maxParallelism, wave.length),
+      0
+    ),
   };
 }
 

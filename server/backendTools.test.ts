@@ -197,4 +197,23 @@ describe("advanced backend tools", () => {
       ]).bySeverity.critical
     ).toBe(1);
   });
+
+  it("computes workflow critical paths across dependency chains", () => {
+    const workflow = planWorkflowExecution([
+      { id: "slow-independent", durationMs: 100 },
+      { id: "extract", durationMs: 1 },
+      { id: "transform", dependsOn: ["extract"], durationMs: 1 },
+    ]);
+
+    expect(workflow.criticalPathMs).toBe(100);
+  });
+
+  it("handles empty workflows", () => {
+    expect(planWorkflowExecution([])).toEqual({
+      order: [],
+      waves: [],
+      criticalPathMs: 0,
+      parallelism: 0,
+    });
+  });
 });
