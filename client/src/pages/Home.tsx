@@ -54,7 +54,7 @@ type PromptItem = { id: string; text: string; folder: string };
 type GeneratedArtifact = { title: string; summary: string; content: string; language: string; kind: "document" | "plan" | "table" | "code"; model?: string };
 type ArtifactRevision = { id: string; label: string; content: string; createdAt: string };
 type DiffLine = { left: string; right: string; changed: boolean };
-const buildDiffLines = (left: string, right: string): DiffLine[] => { const leftLines = left.split("\\n"); const rightLines = right.split("\\n"); const count = Math.max(leftLines.length, rightLines.length); return Array.from({ length: count }, (_, index) => ({ left: leftLines[index] ?? "", right: rightLines[index] ?? "", changed: (leftLines[index] ?? "") !== (rightLines[index] ?? "") })); };
+const buildDiffLines = (left: string, right: string): DiffLine[] => { const leftLines = left.split("\n"); const rightLines = right.split("\n"); const count = Math.max(leftLines.length, rightLines.length); return Array.from({ length: count }, (_, index) => ({ left: leftLines[index] ?? "", right: rightLines[index] ?? "", changed: (leftLines[index] ?? "") !== (rightLines[index] ?? "") })); };
 
 const demoConversations: Conversation[] = [
   { id: 1, title: "A calmer way to plan the week", date: "Today", active: true, starred: true },

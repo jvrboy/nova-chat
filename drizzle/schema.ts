@@ -56,6 +56,35 @@ export const attachments = mysqlTable("attachments", {
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 }, (table) => ({ conversationIdx: index("attachments_conversation_idx").on(table.conversationId) }));
 
+export const agentExecutions = mysqlTable("agentExecutions", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  conversationId: int("conversationId"),
+  agentId: varchar("agentId", { length: 64 }).notNull(),
+  agentName: varchar("agentName", { length: 128 }).notNull(),
+  input: text("input").notNull(),
+  output: text("output"),
+  toolResults: text("toolResults"),
+  stepsUsed: int("stepsUsed").default(0).notNull(),
+  duration: int("duration").default(0).notNull(),
+  status: mysqlEnum("status", ["running", "completed", "error"]).default("running").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => ({ userIdx: index("agent_executions_user_idx").on(table.userId), conversationIdx: index("agent_executions_conversation_idx").on(table.conversationId) }));
+
+export const pipelineExecutions = mysqlTable("pipelineExecutions", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  conversationId: int("conversationId"),
+  pipelineId: varchar("pipelineId", { length: 128 }).notNull(),
+  pipelineName: varchar("pipelineName", { length: 240 }).notNull(),
+  input: text("input").notNull(),
+  output: text("output"),
+  stepResults: text("stepResults"),
+  duration: int("duration").default(0).notNull(),
+  status: mysqlEnum("status", ["running", "completed", "error"]).default("running").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => ({ userIdx: index("pipeline_executions_user_idx").on(table.userId) }));
+
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
 export type Project = typeof projects.$inferSelect;
@@ -66,3 +95,7 @@ export type Message = typeof messages.$inferSelect;
 export type InsertMessage = typeof messages.$inferInsert;
 export type Attachment = typeof attachments.$inferSelect;
 export type InsertAttachment = typeof attachments.$inferInsert;
+export type AgentExecution = typeof agentExecutions.$inferSelect;
+export type InsertAgentExecution = typeof agentExecutions.$inferInsert;
+export type PipelineExecution = typeof pipelineExecutions.$inferSelect;
+export type InsertPipelineExecution = typeof pipelineExecutions.$inferInsert;
