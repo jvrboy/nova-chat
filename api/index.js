@@ -609,6 +609,7 @@ function registerStorageProxy(app2) {
 
 // server/routers.ts
 import { z as z2 } from "zod";
+import { scryptSync, timingSafeEqual } from "node:crypto";
 
 // server/_core/llm.ts
 var ensureArray = (value) => Array.isArray(value) ? value : [value];
@@ -5955,6 +5956,20 @@ var appRouter = router({
       const cookieOptions = getSessionCookieOptions(ctx.req);
       ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
       return { success: true };
+    }),
+    passwordLogin: publicProcedure.input(z2.object({ password: z2.string().min(1).max(256) })).mutation(async ({ ctx, input }) => {
+      const configured = process.env.NOVA_ACCESS_PASSWORD_HASH;
+      if (!configured) throw new Error("Password-only access is not configured. Set NOVA_ACCESS_PASSWORD_HASH in Vercel.");
+      const [salt, expectedHex] = configured.split(":");
+      if (!salt || !expectedHex || !/^[0-9a-f]+$/i.test(expectedHex)) throw new Error("NOVA_ACCESS_PASSWORD_HASH has an invalid format.");
+      const expected = Buffer.from(expectedHex, "hex");
+      const actual = scryptSync(input.password, salt, expected.length || 32);
+      if (expected.length !== actual.length || !timingSafeEqual(expected, actual)) throw new Error("Incorrect password.");
+      const openId = `password:${salt}`;
+      await upsertUser({ openId, name: "Nova Workspace", email: null, loginMethod: "password" });
+      const token = await sdk.createSessionToken(openId, { name: "Nova Workspace" });
+      ctx.res.cookie(COOKIE_NAME, token, { ...getSessionCookieOptions(ctx.req), maxAge: 1e3 * 60 * 60 * 24 * 30 });
+      return { success: true };
     })
   }),
   projects: router({
@@ -6178,6 +6193,14 @@ ${input.context ?? "No additional context."}`
         language: result.language,
         duration: result.duration
       };
+    }),
+    uploadAndTranscribe: protectedProcedure.input(z2.object({ audioBase64: z2.string().min(1).max(24e6), mimeType: z2.string().min(1).max(100), language: z2.string().optional(), prompt: z2.string().optional() })).mutation(async ({ input, ctx }) => {
+      const audio = Buffer.from(input.audioBase64, "base64");
+      if (audio.length > 16 * 1024 * 1024) throw new Error("Audio recording exceeds the 16 MB limit.");
+      const stored = await storagePut(`voice/${ctx.user.id}/${Date.now()}.audio`, audio, input.mimeType);
+      const result = await transcribeAudio({ audioUrl: stored.url, language: input.language, prompt: input.prompt });
+      if ("error" in result) throw new Error(result.error);
+      return { text: result.text, language: result.language, duration: result.duration, audioUrl: stored.url };
     })
   }),
   conversations: router({

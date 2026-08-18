@@ -1,7 +1,9 @@
 import { z } from "zod";
+import { scryptSync, timingSafeEqual } from "node:crypto";
 import { invokeLLM, listLLMModels } from "./_core/llm";
 import { generateImage, listImageModels } from "./_core/imageGeneration";
 import { transcribeAudio } from "./_core/voiceTranscription";
+import { storagePut } from "./storage";
 import { runAgent, listAgents, type AgentRole } from "./_core/agents";
 import { executePipeline, listPipelines, getPipeline } from "./_core/pipelines";
 import {
@@ -32,6 +34,8 @@ import {
 } from "./_core/backendTools";
 import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
+import { sdk } from "./_core/sdk";
+import { ENV } from "./_core/env";
 import { systemRouter } from "./_core/systemRouter";
 import { adminProcedure, protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import {
@@ -105,6 +109,7 @@ import {
   listProjects,
   updateConversation,
   updateProject,
+  upsertUser,
 } from "./db";
 
 const projectInput = z.object({
@@ -125,6 +130,20 @@ export const appRouter = router({
     logout: publicProcedure.mutation(({ ctx }) => {
       const cookieOptions = getSessionCookieOptions(ctx.req);
       ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
+      return { success: true } as const;
+    }),
+    passwordLogin: publicProcedure.input(z.object({ password: z.string().min(1).max(256) })).mutation(async ({ ctx, input }) => {
+      const configured = process.env.NOVA_ACCESS_PASSWORD_HASH;
+      if (!configured) throw new Error("Password-only access is not configured. Set NOVA_ACCESS_PASSWORD_HASH in Vercel.");
+      const [salt, expectedHex] = configured.split(":");
+      if (!salt || !expectedHex || !/^[0-9a-f]+$/i.test(expectedHex)) throw new Error("NOVA_ACCESS_PASSWORD_HASH has an invalid format.");
+      const expected = Buffer.from(expectedHex, "hex");
+      const actual = scryptSync(input.password, salt, expected.length || 32);
+      if (expected.length !== actual.length || !timingSafeEqual(expected, actual)) throw new Error("Incorrect password.");
+      const openId = `password:${salt}`;
+      await upsertUser({ openId, name: "Nova Workspace", email: null, loginMethod: "password" });
+      const token = await sdk.createSessionToken(openId, { name: "Nova Workspace" });
+      ctx.res.cookie(COOKIE_NAME, token, { ...getSessionCookieOptions(ctx.req), maxAge: 1000 * 60 * 60 * 24 * 30 });
       return { success: true } as const;
     }),
   }),
@@ -403,6 +422,16 @@ export const appRouter = router({
           language: result.language,
           duration: result.duration,
         };
+      }),
+    uploadAndTranscribe: protectedProcedure
+      .input(z.object({ audioBase64: z.string().min(1).max(24_000_000), mimeType: z.string().min(1).max(100), language: z.string().optional(), prompt: z.string().optional() }))
+      .mutation(async ({ input, ctx }) => {
+        const audio = Buffer.from(input.audioBase64, "base64");
+        if (audio.length > 16 * 1024 * 1024) throw new Error("Audio recording exceeds the 16 MB limit.");
+        const stored = await storagePut(`voice/${ctx.user.id}/${Date.now()}.audio`, audio, input.mimeType);
+        const result = await transcribeAudio({ audioUrl: stored.url, language: input.language, prompt: input.prompt });
+        if ("error" in result) throw new Error(result.error);
+        return { text: result.text, language: result.language, duration: result.duration, audioUrl: stored.url };
       }),
   }),
   conversations: router({
