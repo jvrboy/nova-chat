@@ -419,3 +419,17 @@ kbd { color: #aaa49b; font-size: 10px; }
   .model-selector { max-width: 132px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
   .send-button { width: 34px; height: 34px; }
 }
+
+:root { --nova-font-scale: 100%; }
+html { font-size: var(--nova-font-scale); }
+.nova-reduced-motion *, .nova-reduced-motion *::before, .nova-reduced-motion *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; transition-duration: .01ms !important; }
+.nova-high-contrast { filter: contrast(1.08); }
+.preferences-card { width: min(940px, calc(100vw - 32px)); max-height: min(820px, calc(100vh - 32px)); overflow: auto; }
+.preferences-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; margin-top: 20px; }
+.preferences-section { border: 1px solid var(--line); border-radius: 14px; padding: 15px; background: color-mix(in srgb, var(--paper) 88%, #f6efe7); }
+.preferences-section .eyebrow { display: block; margin-bottom: 7px; }
+.preferences-section .preference-row { padding: 11px 0; border-top: 1px solid color-mix(in srgb, var(--line) 78%, transparent); }
+.preferences-section .preference-row:first-of-type { border-top: 0; }
+.preference-row select, .preference-row input[type="text"], .preference-row input:not([type]) { max-width: 170px; min-height: 30px; border: 1px solid var(--line); border-radius: 7px; padding: 4px 8px; background: var(--paper); color: inherit; }
+.preference-row input[type="range"] { width: 130px; accent-color: var(--accent); }
+@media (max-width: 720px) { .preferences-grid { grid-template-columns: 1fr; gap: 12px; } .preferences-card { width: calc(100vw - 20px); max-height: calc(100vh - 20px); } }
