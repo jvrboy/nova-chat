@@ -2071,6 +2071,38 @@ Adapt length and format to the user's needs.`,
     tools: [textAnalysisTool, dataProcessingTool],
     maxTokens: 4e3
   },
+  ui_architect: {
+    id: "ui_architect",
+    name: "UI Architect",
+    description: "Designs responsive, accessible, stateful interfaces and theme systems.",
+    systemPrompt: "You are a senior UI architect. Produce implementation-ready interaction contracts, responsive layouts, accessible states, design tokens, and performance-conscious animation plans. Prefer progressive enhancement and reduced-motion fallbacks.",
+    tools: [textAnalysisTool, dataProcessingTool],
+    maxTokens: 3500
+  },
+  multimodal_curator: {
+    id: "multimodal_curator",
+    name: "Multimodal Curator",
+    description: "Organizes attachment, transcript, image, and artifact context with provenance and privacy safeguards.",
+    systemPrompt: "You are a multimodal information curator. Extract structured context from supplied material, preserve provenance, flag uncertainty, redact secrets, and propose artifact-ready summaries without inventing missing content.",
+    tools: [textAnalysisTool, dataProcessingTool],
+    maxTokens: 4e3
+  },
+  observability_engineer: {
+    id: "observability_engineer",
+    name: "Observability Engineer",
+    description: "Analyzes latency, error, health, and circuit-breaker signals and produces cautious remediation plans.",
+    systemPrompt: "You are an observability engineer. Separate measured facts from hypotheses, assess latency and error budgets, identify instrumentation gaps, and propose reversible mitigations with rollback criteria.",
+    tools: [dataProcessingTool, calculatorTool],
+    maxTokens: 3500
+  },
+  security_reviewer: {
+    id: "security_reviewer",
+    name: "Security Reviewer",
+    description: "Reviews authentication, attachments, tools, sandbox boundaries, and privacy controls for exploitable gaps.",
+    systemPrompt: "You are a defensive application security reviewer. Inspect supplied designs or code for auth bypasses, secret exposure, injection, unsafe file handling, insecure defaults, and missing rate limits. Recommend fixes and safe tests; do not provide exploit instructions.",
+    tools: [textAnalysisTool, codeExecTool],
+    maxTokens: 4e3
+  },
   brainstormer: {
     id: "brainstormer",
     name: "Brainstormer",
@@ -2457,6 +2489,39 @@ var BUILTIN_PIPELINES = [
     steps: [
       { id: "concept", name: "Musical Concept", type: "agent", agentRole: "music_composer", prompt: "Create a musical concept and chord progression for: {input}", outputKey: "concept" },
       { id: "compose", name: "Full Composition", type: "agent", agentRole: "music_composer", prompt: "Based on this concept, create a complete composition with melody, bass, and arrangement:\n{concept}", outputKey: "composition" }
+    ],
+    variables: {}
+  },
+  {
+    id: "multimodal-intake",
+    name: "Multimodal Intake Pipeline",
+    description: "Attachment or transcript intake \u2192 structured extraction \u2192 artifact-ready brief",
+    steps: [
+      { id: "extract", name: "Extract Context", type: "agent", agentRole: "data_analyst", prompt: "Extract entities, claims, decisions, and open questions from this attachment or transcript:\n{input}", outputKey: "extraction" },
+      { id: "brief", name: "Create Brief", type: "agent", agentRole: "writing_assistant", prompt: "Turn this extracted context into a clear, source-aware working brief:\n{extraction}", outputKey: "brief" },
+      { id: "qa", name: "Quality Review", type: "agent", agentRole: "qa_engineer", prompt: "Check this brief for unsupported claims, missing provenance, privacy risks, and ambiguous next steps:\n{brief}", outputKey: "qa" }
+    ],
+    variables: {}
+  },
+  {
+    id: "model-evaluation-pipeline",
+    name: "Model Evaluation Pipeline",
+    description: "Evaluation prompt \u2192 independent review \u2192 regression and quality report",
+    steps: [
+      { id: "evaluate", name: "Evaluate Response", type: "agent", agentRole: "data_analyst", prompt: "Evaluate the supplied model response against the requested criteria and identify evidence:\n{input}", outputKey: "evaluation" },
+      { id: "challenge", name: "Challenge Findings", type: "agent", agentRole: "research_agent", prompt: "Independently challenge the evaluation for bias, missing counterexamples, and reproducibility:\n{evaluation}", outputKey: "challenge" },
+      { id: "report", name: "Quality Report", type: "agent", agentRole: "qa_engineer", prompt: "Produce a concise quality report with scores, limitations, and next tests:\n{evaluation}\n\nChallenge:\n{challenge}", outputKey: "report" }
+    ],
+    variables: {}
+  },
+  {
+    id: "reliability-incident-pipeline",
+    name: "Reliability Incident Pipeline",
+    description: "Incident signal \u2192 failure analysis \u2192 mitigations \u2192 runbook",
+    steps: [
+      { id: "triage", name: "Triage Signal", type: "agent", agentRole: "qa_engineer", prompt: "Triage this incident signal and separate symptoms, impact, and unknowns:\n{input}", outputKey: "triage" },
+      { id: "root-cause", name: "Root Cause Review", type: "agent", agentRole: "data_engineer", prompt: "Analyze this triage for likely root causes, observability gaps, and safe reproduction steps:\n{triage}", outputKey: "root_cause" },
+      { id: "runbook", name: "Runbook", type: "agent", agentRole: "automation_orchestrator", prompt: "Create a cautious mitigation and rollback runbook based on:\n{root_cause}", outputKey: "runbook" }
     ],
     variables: {}
   }
@@ -5928,7 +5993,12 @@ var BACKEND_SKILLS = [
   { id: "music-production", name: "Music Production", category: "music", description: "Scales, chord extensions, quantization, Euclidean rhythms, drum grids, automation, and synth patch design.", tools: ["music_scale", "music_quantize", "music_rhythm", "create_synth_patch"], risk: "low", requiresAuth: true },
   { id: "durable-memory", name: "Durable Memory", category: "memory", description: "Retention-aware persistent embeddings with scoped recall and deletion.", tools: ["persistent_remember", "persistent_recall", "purge_expired"], risk: "medium", requiresAuth: true },
   { id: "agent-swarms", name: "Agent Swarms", category: "agentic", description: "Role-scoped parallel analysis with synthesis and governance controls.", tools: ["agent_swarm", "pipeline_execute"], risk: "medium", requiresAuth: true },
-  { id: "sandbox-engineering", name: "Bounded Engineering Sandbox", category: "engineering", description: "Short, import-free calculations for safe lightweight transformations.", tools: ["sandbox_execute", "sandbox_capabilities"], risk: "medium", requiresAuth: true }
+  { id: "sandbox-engineering", name: "Bounded Engineering Sandbox", category: "engineering", description: "Short, import-free calculations for safe lightweight transformations.", tools: ["sandbox_execute", "sandbox_capabilities"], risk: "medium", requiresAuth: true },
+  { id: "multimodal-orchestration", name: "Multimodal Orchestration", category: "agentic", description: "Coordinate text, image, audio, attachment, and artifact workflows with explicit handoffs.", tools: ["voice_transcribe", "attachment_inspect", "artifact_create", "pipeline_execute"], risk: "medium", requiresAuth: true },
+  { id: "frontend-prototyping", name: "Interactive UI Prototyping", category: "engineering", description: "Design responsive interaction states, accessibility checks, theme tokens, and component behavior.", tools: ["ui_audit", "accessibility_check", "theme_preview"], risk: "low", requiresAuth: true },
+  { id: "reliability-observability", name: "Reliability Observability", category: "engineering", description: "Inspect health, latency, failure modes, circuit breakers, and safe operational summaries.", tools: ["health_snapshot", "latency_summary", "tool_registry_status"], risk: "medium", requiresAuth: true },
+  { id: "model-evaluation", name: "Model Evaluation", category: "research", description: "Run bounded prompt evaluations, regression comparisons, and structured quality reports.", tools: ["evaluation_run", "regression_compare", "quality_report"], risk: "medium", requiresAuth: true },
+  { id: "knowledge-graph", name: "Knowledge Graph Builder", category: "memory", description: "Extract entities, relations, provenance, and scoped graph links from durable memory inputs.", tools: ["entity_extract", "relation_link", "provenance_trace"], risk: "medium", requiresAuth: true }
 ];
 function listSkills(category) {
   return category ? BACKEND_SKILLS.filter((skill) => skill.category === category) : BACKEND_SKILLS;

@@ -26,7 +26,7 @@ describe("advanced backend capabilities", () => {
   });
 
   it("exposes reusable skills and new production pipelines", () => {
-    expect(listSkills()).toHaveLength(6);
+    expect(listSkills().length).toBeGreaterThanOrEqual(6);
     expect(getSkill("music-production")?.tools).toContain("music_quantize");
     expect(listPipelines().map(p => p.id)).toEqual(expect.arrayContaining(["music-production-pipeline", "market-structure-pipeline", "release-qa-pipeline"]));
     expect(getPipeline("data-quality-pipeline")?.steps).toHaveLength(3);

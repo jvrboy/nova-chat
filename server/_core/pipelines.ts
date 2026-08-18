@@ -190,6 +190,39 @@ export const BUILTIN_PIPELINES: Pipeline[] = [
     ],
     variables: {},
   },
+  {
+    id: 'multimodal-intake',
+    name: 'Multimodal Intake Pipeline',
+    description: 'Attachment or transcript intake → structured extraction → artifact-ready brief',
+    steps: [
+      { id: 'extract', name: 'Extract Context', type: 'agent', agentRole: 'data_analyst', prompt: 'Extract entities, claims, decisions, and open questions from this attachment or transcript:\n{input}', outputKey: 'extraction' },
+      { id: 'brief', name: 'Create Brief', type: 'agent', agentRole: 'writing_assistant', prompt: 'Turn this extracted context into a clear, source-aware working brief:\n{extraction}', outputKey: 'brief' },
+      { id: 'qa', name: 'Quality Review', type: 'agent', agentRole: 'qa_engineer', prompt: 'Check this brief for unsupported claims, missing provenance, privacy risks, and ambiguous next steps:\n{brief}', outputKey: 'qa' },
+    ],
+    variables: {},
+  },
+  {
+    id: 'model-evaluation-pipeline',
+    name: 'Model Evaluation Pipeline',
+    description: 'Evaluation prompt → independent review → regression and quality report',
+    steps: [
+      { id: 'evaluate', name: 'Evaluate Response', type: 'agent', agentRole: 'data_analyst', prompt: 'Evaluate the supplied model response against the requested criteria and identify evidence:\n{input}', outputKey: 'evaluation' },
+      { id: 'challenge', name: 'Challenge Findings', type: 'agent', agentRole: 'research_agent', prompt: 'Independently challenge the evaluation for bias, missing counterexamples, and reproducibility:\n{evaluation}', outputKey: 'challenge' },
+      { id: 'report', name: 'Quality Report', type: 'agent', agentRole: 'qa_engineer', prompt: 'Produce a concise quality report with scores, limitations, and next tests:\n{evaluation}\n\nChallenge:\n{challenge}', outputKey: 'report' },
+    ],
+    variables: {},
+  },
+  {
+    id: 'reliability-incident-pipeline',
+    name: 'Reliability Incident Pipeline',
+    description: 'Incident signal → failure analysis → mitigations → runbook',
+    steps: [
+      { id: 'triage', name: 'Triage Signal', type: 'agent', agentRole: 'qa_engineer', prompt: 'Triage this incident signal and separate symptoms, impact, and unknowns:\n{input}', outputKey: 'triage' },
+      { id: 'root-cause', name: 'Root Cause Review', type: 'agent', agentRole: 'data_engineer', prompt: 'Analyze this triage for likely root causes, observability gaps, and safe reproduction steps:\n{triage}', outputKey: 'root_cause' },
+      { id: 'runbook', name: 'Runbook', type: 'agent', agentRole: 'automation_orchestrator', prompt: 'Create a cautious mitigation and rollback runbook based on:\n{root_cause}', outputKey: 'runbook' },
+    ],
+    variables: {},
+  },
 ];
 
 // --- Pipeline Execution ---

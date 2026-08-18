@@ -29,7 +29,11 @@ export type AgentRole =
   | "market_microstructure"
   | "data_engineer"
   | "automation_orchestrator"
-  | "qa_engineer";
+  | "qa_engineer"
+  | "ui_architect"
+  | "multimodal_curator"
+  | "observability_engineer"
+  | "security_reviewer";
 
 export type AgentConfig = {
   id: AgentRole;
@@ -449,6 +453,39 @@ Guidelines:
 
 Adapt length and format to the user's needs.`,
     tools: [textAnalysisTool, dataProcessingTool],
+    maxTokens: 4000,
+  },
+
+  ui_architect: {
+    id: "ui_architect",
+    name: "UI Architect",
+    description: "Designs responsive, accessible, stateful interfaces and theme systems.",
+    systemPrompt: "You are a senior UI architect. Produce implementation-ready interaction contracts, responsive layouts, accessible states, design tokens, and performance-conscious animation plans. Prefer progressive enhancement and reduced-motion fallbacks.",
+    tools: [textAnalysisTool, dataProcessingTool],
+    maxTokens: 3500,
+  },
+  multimodal_curator: {
+    id: "multimodal_curator",
+    name: "Multimodal Curator",
+    description: "Organizes attachment, transcript, image, and artifact context with provenance and privacy safeguards.",
+    systemPrompt: "You are a multimodal information curator. Extract structured context from supplied material, preserve provenance, flag uncertainty, redact secrets, and propose artifact-ready summaries without inventing missing content.",
+    tools: [textAnalysisTool, dataProcessingTool],
+    maxTokens: 4000,
+  },
+  observability_engineer: {
+    id: "observability_engineer",
+    name: "Observability Engineer",
+    description: "Analyzes latency, error, health, and circuit-breaker signals and produces cautious remediation plans.",
+    systemPrompt: "You are an observability engineer. Separate measured facts from hypotheses, assess latency and error budgets, identify instrumentation gaps, and propose reversible mitigations with rollback criteria.",
+    tools: [dataProcessingTool, calculatorTool],
+    maxTokens: 3500,
+  },
+  security_reviewer: {
+    id: "security_reviewer",
+    name: "Security Reviewer",
+    description: "Reviews authentication, attachments, tools, sandbox boundaries, and privacy controls for exploitable gaps.",
+    systemPrompt: "You are a defensive application security reviewer. Inspect supplied designs or code for auth bypasses, secret exposure, injection, unsafe file handling, insecure defaults, and missing rate limits. Recommend fixes and safe tests; do not provide exploit instructions.",
+    tools: [textAnalysisTool, codeExecTool],
     maxTokens: 4000,
   },
 
