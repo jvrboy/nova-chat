@@ -16,7 +16,7 @@ export type ToolPolicy = {
 
 type RuntimeState = { successes: number; failures: number; openedAt?: number; lastError?: string; lastUsedAt?: number };
 
-const commonAgents: AgentRole[] = ["forex_analyst", "code_reviewer", "music_composer", "data_analyst", "research_agent", "writing_assistant", "math_tutor", "translator", "summarizer", "brainstormer", "sound_designer", "quant_researcher", "risk_manager"];
+const commonAgents: AgentRole[] = ["forex_analyst", "code_reviewer", "music_composer", "data_analyst", "research_agent", "writing_assistant", "math_tutor", "translator", "summarizer", "brainstormer", "sound_designer", "quant_researcher", "risk_manager", "memory_architect", "ml_engineer", "music_producer", "audio_engineer", "market_microstructure", "data_engineer", "automation_orchestrator", "qa_engineer"];
 
 export const TOOL_POLICIES: Record<string, ToolPolicy> = {
   calculator: { name: "calculator", description: "Evaluate safe arithmetic expressions.", risk: "compute", allowedAgents: "all", maxCallsPerMinute: 120, failureThreshold: .6, minimumSamples: 10, cooldownMs: 15_000 },
@@ -26,7 +26,12 @@ export const TOOL_POLICIES: Record<string, ToolPolicy> = {
   web_search: { name: "web_search", description: "Request current web research.", risk: "external", allowedAgents: ["forex_analyst", "research_agent", "brainstormer"], maxCallsPerMinute: 30, failureThreshold: .5, minimumSamples: 5, cooldownMs: 20_000 },
   forex_signal_snapshot: { name: "forex_signal_snapshot", description: "Compute advanced forex indicators and a non-guaranteed snapshot.", risk: "compute", allowedAgents: ["forex_analyst", "quant_researcher", "risk_manager"], maxCallsPerMinute: 30, failureThreshold: .5, minimumSamples: 5, cooldownMs: 20_000 },
   forex_multi_timeframe: { name: "forex_multi_timeframe", description: "Calculate timeframe confluence.", risk: "compute", allowedAgents: ["forex_analyst", "quant_researcher", "risk_manager"], maxCallsPerMinute: 20, failureThreshold: .5, minimumSamples: 5, cooldownMs: 20_000 },
-  create_synth_patch: { name: "create_synth_patch", description: "Generate a Serum/Xfer-style engine-neutral synth patch.", risk: "compute", allowedAgents: ["music_composer", "sound_designer", "brainstormer"], maxCallsPerMinute: 30, failureThreshold: .5, minimumSamples: 5, cooldownMs: 15_000 },
+  create_synth_patch: { name: "create_synth_patch", description: "Generate a Serum/Xfer-style engine-neutral synth patch.", risk: "compute", allowedAgents: ["music_composer", "sound_designer", "brainstormer", "music_producer", "audio_engineer"], maxCallsPerMinute: 30, failureThreshold: .5, minimumSamples: 5, cooldownMs: 15_000 },
+  advanced_market_structure: { name: "advanced_market_structure", description: "Compute pivots, Fibonacci, Ichimoku, Supertrend, divergence, volume profile, and confluence.", risk: "compute", allowedAgents: ["forex_analyst", "quant_researcher", "risk_manager", "market_microstructure"], maxCallsPerMinute: 20, failureThreshold: .5, minimumSamples: 5, cooldownMs: 20_000 },
+  music_quantize: { name: "music_quantize", description: "Quantize note events to a bounded musical grid.", risk: "compute", allowedAgents: ["music_composer", "music_producer", "audio_engineer"], maxCallsPerMinute: 60, failureThreshold: .5, minimumSamples: 5, cooldownMs: 15_000 },
+  music_rhythm: { name: "music_rhythm", description: "Generate deterministic Euclidean and drum-grid patterns.", risk: "compute", allowedAgents: ["music_composer", "music_producer", "audio_engineer"], maxCallsPerMinute: 60, failureThreshold: .5, minimumSamples: 5, cooldownMs: 15_000 },
+  persistent_remember: { name: "persistent_remember", description: "Persist scoped memory with embeddings and retention metadata.", risk: "external", allowedAgents: ["memory_architect", "automation_orchestrator"], maxCallsPerMinute: 30, failureThreshold: .4, minimumSamples: 5, cooldownMs: 30_000 },
+  persistent_recall: { name: "persistent_recall", description: "Recall durable memories using scoped cosine similarity.", risk: "external", allowedAgents: ["memory_architect", "ml_engineer", "automation_orchestrator"], maxCallsPerMinute: 60, failureThreshold: .5, minimumSamples: 5, cooldownMs: 20_000 },
 };
 
 const runtime = new Map<string, RuntimeState>();

@@ -93,6 +93,9 @@ import { runBacktest as runResearchBacktest, runForwardTest, walkForwardAnalysis
 import { conv1d, ensembleForward, listMemories, neuralFeatureVector, neuralForward, recallMemories, recurrentSequenceForward, softmax, storeMemory, forgetMemory, runAgentSwarm, type DenseLayer, type MemoryKind } from "./_core/brainSystem";
 import { forgetPersistentMemory, listPersistentMemories, purgeExpiredMemories, recallPersistentMemories, retentionPolicy, storePersistentMemory } from "./_core/persistentMemory";
 import { generateArpeggio, generateGroove, generateMidiAutomation, reharmonize, voiceChord, voiceLeadProgression, type ChordEvent } from "./_core/musicAdvanced";
+import { chordExtensions, drumGrid, euclideanRhythm, quantizeNotes, scaleNotes, shapeAutomation, type NoteEvent } from "./_core/musicPro";
+import { confluenceSnapshot, fibonacciLevels, ichimoku, pivotPoints as advancedPivotPoints, rsiDivergence, supertrend, volumeProfile, type AdvancedCandle } from "./_core/technicalAdvanced";
+import { getSkill, listSkills } from "./_core/skillRegistry";
 import {
   createConversation,
   createMessage,
@@ -467,6 +470,8 @@ export const appRouter = router({
     indicatorSnapshot: protectedProcedure
       .input(z.object({ data: z.array(z.object({ timestamp: z.number(), open: z.number(), high: z.number(), low: z.number(), close: z.number(), volume: z.number() })).min(5).max(10000), ids: z.array(z.string()).max(240).optional() }))
       .mutation(({ input }) => indicatorSnapshot(input.data, input.ids)),
+    advancedStructure: protectedProcedure.input(z.object({ candles: z.array(z.object({ timestamp: z.number(), open: z.number(), high: z.number(), low: z.number(), close: z.number(), volume: z.number() })).min(20).max(5000), lookback: z.number().int().min(5).max(500).default(50) })).mutation(({ input }) => ({ fibonacci: fibonacciLevels(input.candles as AdvancedCandle[], input.lookback), ichimoku: ichimoku(input.candles as AdvancedCandle[]), supertrend: supertrend(input.candles as AdvancedCandle[]), divergence: rsiDivergence(input.candles as AdvancedCandle[]), volumeProfile: volumeProfile(input.candles as AdvancedCandle[]), confluence: confluenceSnapshot(input.candles as AdvancedCandle[]) })),
+    pivotLevels: protectedProcedure.input(z.object({ candle: z.object({ timestamp: z.number(), open: z.number(), high: z.number(), low: z.number(), close: z.number(), volume: z.number() }) })).query(({ input }) => advancedPivotPoints(input.candle)),
     analyze: protectedProcedure
       .input(
         z.object({
@@ -841,6 +846,12 @@ export const appRouter = router({
         const melody = generateMelody(input.root, input.scale, 32);
         return { abc: melodyToABC(melody, input.title) };
       }),
+    proScale: protectedProcedure.input(z.object({ root: z.number().int().min(0).max(127).default(60), scale: z.enum(["major", "minor", "dorian", "pentatonic", "blues"]).default("major"), octaves: z.number().int().min(1).max(4).default(2) })).query(({ input }) => ({ notes: scaleNotes(input.root, input.scale, input.octaves) })),
+    chordExtensions: protectedProcedure.input(z.object({ root: z.number().int().min(0).max(127), quality: z.enum(["major", "minor", "dominant", "diminished"]).default("major"), extensions: z.array(z.number().int()).max(8).default([7, 9]) })).query(({ input }) => ({ notes: chordExtensions(input.root, input.quality, input.extensions) })),
+    quantize: protectedProcedure.input(z.object({ events: z.array(z.object({ note: z.number(), start: z.number(), duration: z.number(), velocity: z.number() })).max(20000), grid: z.number().positive().max(64).default(.25), strength: z.number().min(0).max(1).default(1) })).mutation(({ input }) => quantizeNotes(input.events as NoteEvent[], input.grid, input.strength)),
+    euclidean: protectedProcedure.input(z.object({ steps: z.number().int().min(1).max(128), pulses: z.number().int().min(0).max(128), rotation: z.number().int().optional() })).query(({ input }) => euclideanRhythm(input.steps, input.pulses, input.rotation)),
+    drumGrid: protectedProcedure.input(z.object({ steps: z.number().int().min(1).max(128).default(16), density: z.number().min(0).max(1).default(.5), seed: z.number().int().optional() })).query(({ input }) => drumGrid(input.steps, input.density, input.seed)),
+    automationShape: protectedProcedure.input(z.object({ points: z.array(z.number()).min(1).max(512), curve: z.enum(["linear", "ease-in", "ease-out", "sine"]).default("linear"), samples: z.number().int().min(2).max(4096).default(64) })).query(({ input }) => shapeAutomation(input.points, input.curve, input.samples)),
   }),
   codeTools: router({
     metrics: protectedProcedure
@@ -1205,10 +1216,14 @@ export const appRouter = router({
       )
       .mutation(({ input }) => summarizeEventStream(input.events)),
   }),
+  skills: router({
+    list: protectedProcedure.input(z.object({ category: z.enum(["research", "trading", "music", "engineering", "memory", "agentic"]).optional() })).query(({ input }) => listSkills(input.category)),
+    get: protectedProcedure.input(z.object({ id: z.string().min(1).max(100) })).query(({ input }) => getSkill(input.id) ?? null),
+  }),
   agents: router({
     list: protectedProcedure.query(() => listAgents()),
     swarm: protectedProcedure
-      .input(z.object({ roles: z.array(z.enum(["forex_analyst", "code_reviewer", "music_composer", "data_analyst", "research_agent", "writing_assistant", "math_tutor", "translator", "summarizer", "brainstormer", "sound_designer", "quant_researcher", "risk_manager", "memory_architect", "ml_engineer", "music_producer"])).min(2).max(6), prompt: z.string().min(1).max(12000), model: z.string().optional(), maxSteps: z.number().int().min(1).max(8).default(3) }))
+      .input(z.object({ roles: z.array(z.enum(["forex_analyst", "code_reviewer", "music_composer", "data_analyst", "research_agent", "writing_assistant", "math_tutor", "translator", "summarizer", "brainstormer", "sound_designer", "quant_researcher", "risk_manager", "memory_architect", "ml_engineer", "music_producer", "audio_engineer", "market_microstructure", "data_engineer", "automation_orchestrator", "qa_engineer"])).min(2).max(6), prompt: z.string().min(1).max(12000), model: z.string().optional(), maxSteps: z.number().int().min(1).max(8).default(3) }))
       .mutation(({ input }) => runAgentSwarm(input)),
     run: protectedProcedure
       .input(

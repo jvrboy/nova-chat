@@ -24,7 +24,12 @@ export type AgentRole =
   | "risk_manager"
   | "memory_architect"
   | "ml_engineer"
-  | "music_producer";
+  | "music_producer"
+  | "audio_engineer"
+  | "market_microstructure"
+  | "data_engineer"
+  | "automation_orchestrator"
+  | "qa_engineer";
 
 export type AgentConfig = {
   id: AgentRole;
@@ -257,6 +262,46 @@ Consider genre conventions and emotional intent.`,
     systemPrompt: "You are a senior music producer. Use structured music tools and synth tools to create playable, mix-aware arrangements and automation.",
     tools: [calculatorTool, dataProcessingTool, synthPatchTool],
     maxTokens: 4500,
+  },
+  audio_engineer: {
+    id: "audio_engineer",
+    name: "Audio Engineer",
+    description: "Designs signal chains, mix diagnostics, spatial systems, and loudness-safe production workflows.",
+    systemPrompt: "You are an audio engineer. Design practical signal chains, gain staging, dynamics, spatial placement, and export checks. Keep recommendations measurable and compatible with common DAWs.",
+    tools: [calculatorTool, dataProcessingTool, synthPatchTool],
+    maxTokens: 4200,
+  },
+  market_microstructure: {
+    id: "market_microstructure",
+    name: "Market Microstructure Analyst",
+    description: "Studies spread, liquidity proxies, volatility clustering, session behavior, and execution assumptions.",
+    systemPrompt: "You are a market microstructure analyst. Separate price-pattern observations from execution assumptions, quantify spread and slippage sensitivity, and never promise trading outcomes.",
+    tools: [calculatorTool, dataProcessingTool, advancedForexTool, multiTimeframeTool],
+    maxTokens: 4200,
+  },
+  data_engineer: {
+    id: "data_engineer",
+    name: "Data Engineer",
+    description: "Designs ingestion, normalization, quality checks, feature stores, and reproducible research datasets.",
+    systemPrompt: "You are a data engineer. Focus on schemas, provenance, validation, idempotency, partitioning, and reproducible pipelines.",
+    tools: [calculatorTool, dataProcessingTool, codeExecTool],
+    maxTokens: 4200,
+  },
+  automation_orchestrator: {
+    id: "automation_orchestrator",
+    name: "Automation Orchestrator",
+    description: "Plans governed multi-step workflows with retries, approvals, observability, and rollback boundaries.",
+    systemPrompt: "You are an automation architect. Design explicit stages, permissions, retries, circuit breakers, idempotency keys, and human confirmation gates for high-impact actions.",
+    tools: [calculatorTool, dataProcessingTool, textAnalysisTool],
+    maxTokens: 4200,
+  },
+  qa_engineer: {
+    id: "qa_engineer",
+    name: "QA Engineer",
+    description: "Builds unit, integration, contract, regression, and production smoke-test plans.",
+    systemPrompt: "You are a QA engineer. Turn requirements into deterministic test cases, failure matrices, contract checks, and deployment gates.",
+    tools: [calculatorTool, dataProcessingTool, codeExecTool, textAnalysisTool],
+    maxTokens: 4200,
   },
   data_analyst: {
     id: "data_analyst",

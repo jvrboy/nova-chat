@@ -118,6 +118,59 @@ export const BUILTIN_PIPELINES: Pipeline[] = [
     variables: {},
   },
   {
+    id: 'music-production-pipeline',
+    name: 'Music Production Pipeline',
+    description: 'Musical brief → composition architecture → sound design → mix and export checklist',
+    steps: [
+      { id: 'brief', name: 'Production Brief', type: 'agent', agentRole: 'music_producer', prompt: '{input}', outputKey: 'brief' },
+      { id: 'sound', name: 'Sound Design', type: 'agent', agentRole: 'audio_engineer', prompt: 'Turn this production brief into signal-chain, synth, spatial, and automation recommendations:\n{brief}', outputKey: 'sound' },
+      { id: 'qa', name: 'Export QA', type: 'agent', agentRole: 'qa_engineer', prompt: 'Create a deterministic DAW export and mix QA checklist for:\n{sound}', outputKey: 'qa' },
+    ],
+    variables: {},
+  },
+  {
+    id: 'market-structure-pipeline',
+    name: 'Market Structure Pipeline',
+    description: 'OHLCV brief → microstructure review → confluence → risk challenge',
+    steps: [
+      { id: 'structure', name: 'Structure Review', type: 'agent', agentRole: 'market_microstructure', prompt: '{input}', outputKey: 'structure' },
+      { id: 'quant', name: 'Quant Challenge', type: 'agent', agentRole: 'quant_researcher', prompt: 'Challenge these observations with data-quality, regime, and execution assumptions:\n{structure}', outputKey: 'quant' },
+      { id: 'risk', name: 'Risk Review', type: 'agent', agentRole: 'risk_manager', prompt: 'Summarize uncertainty and non-guaranteed risk controls for:\n{quant}', outputKey: 'risk' },
+    ],
+    variables: {},
+  },
+  {
+    id: 'data-quality-pipeline',
+    name: 'Data Quality Pipeline',
+    description: 'Dataset intake → schema and quality review → reproducibility plan',
+    steps: [
+      { id: 'profile', name: 'Dataset Profile', type: 'agent', agentRole: 'data_engineer', prompt: '{input}', outputKey: 'profile' },
+      { id: 'review', name: 'Quality Review', type: 'agent', agentRole: 'data_analyst', prompt: 'Identify missingness, outliers, leakage, and measurement risks in:\n{profile}', outputKey: 'review' },
+      { id: 'plan', name: 'Reproducibility Plan', type: 'agent', agentRole: 'data_engineer', prompt: 'Create a versioned ingestion and validation plan based on:\n{review}', outputKey: 'plan' },
+    ],
+    variables: {},
+  },
+  {
+    id: 'memory-curation-pipeline',
+    name: 'Memory Curation Pipeline',
+    description: 'Candidate context → privacy and retention review → durable-memory proposal',
+    steps: [
+      { id: 'classify', name: 'Classify Context', type: 'agent', agentRole: 'memory_architect', prompt: '{input}', outputKey: 'classification' },
+      { id: 'privacy', name: 'Privacy Review', type: 'agent', agentRole: 'qa_engineer', prompt: 'Review this memory proposal for secrets, over-retention, and testable deletion requirements:\n{classification}', outputKey: 'privacy' },
+    ],
+    variables: {},
+  },
+  {
+    id: 'release-qa-pipeline',
+    name: 'Release QA Pipeline',
+    description: 'Release brief → test matrix → deployment smoke checks → rollback criteria',
+    steps: [
+      { id: 'matrix', name: 'Test Matrix', type: 'agent', agentRole: 'qa_engineer', prompt: '{input}', outputKey: 'matrix' },
+      { id: 'ops', name: 'Operations Review', type: 'agent', agentRole: 'automation_orchestrator', prompt: 'Turn this test matrix into deployment gates, observability, rollback, and human approval steps:\n{matrix}', outputKey: 'ops' },
+    ],
+    variables: {},
+  },
+  {
     id: 'translation-pipeline',
     name: 'Translation & Localization',
     description: 'Translate → Cultural adaptation → Quality check',
