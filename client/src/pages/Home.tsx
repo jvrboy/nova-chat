@@ -71,7 +71,11 @@ const starterMessages: Message[] = [
 ];
 
 function NovaMark({ size = 27 }: { size?: number }) {
-  return <img src="/manus-storage/nova-mark_62465292.png" alt="Nova" width={size} height={size} className="nova-mark" />;
+  return (
+    <span aria-label="Nova" role="img" className="nova-mark" style={{ width: size, height: size }}>
+      N
+    </span>
+  );
 }
 
 function IconButton({ label, children, onClick, active = false }: { label: string; children: React.ReactNode; onClick?: () => void; active?: boolean }) {

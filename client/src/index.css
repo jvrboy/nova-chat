@@ -196,7 +196,7 @@ kbd { color: #aaa49b; font-size: 10px; }
 .profile-copy strong { color: #4c4841; font-size: 11px; font-weight: 600; }
 .profile-copy span { color: #9a9389; font-size: 10px; }
 .profile-row > svg { color: #a6a097; }
-.chat-area { display: flex; flex-direction: column; min-width: 0; flex: 1; position: relative; background: var(--paper); background-image: linear-gradient(rgba(255,255,255,.32), rgba(255,255,255,.32)), url('/manus-storage/nova-paper-texture_d6171ef3.png'); background-size: cover; }
+.chat-area { display: flex; flex-direction: column; min-width: 0; flex: 1; position: relative; background: var(--paper); background-image: linear-gradient(rgba(255,255,255,.32), rgba(255,255,255,.32)); background-size: cover; }
 .chat-header { height: 64px; flex: 0 0 64px; display: flex; align-items: center; justify-content: space-between; padding: 0 24px; border-bottom: 1px solid rgba(230,225,217,.72); background: rgba(251,250,248,.78); backdrop-filter: blur(12px); }
 .conversation-heading { display: flex; align-items: center; gap: 5px; margin-left: 58px; color: #605b53; font-family: Newsreader, serif; font-size: 15px; letter-spacing: -.015em; }
 .header-caret { display: flex; color: #aba49b; background: transparent; }
