@@ -87,6 +87,9 @@ import {
 import { runSwarmConsensus, listSwarmAgents, SWARM_AGENTS } from "./_core/swarmConsensus";
 import { executeSandboxedCode } from "./_core/performanceTools";
 import { e2bRunCode, firecrawlScrape, invokeWithProviderFailover, kaggleListDatasets, listConnectionStatus, listProviderStatus, type ProviderId } from "./_core/providerGateway";
+import { computeIndicator, computeIndicators, indicatorSnapshot, listIndicators, type IndicatorCategory } from "./_core/indicatorEngine";
+import { runBacktest as runResearchBacktest, runForwardTest, walkForwardAnalysis, type ResearchConfig } from "./_core/researchEngine";
+import { listMemories, neuralFeatureVector, neuralForward, recallMemories, storeMemory, forgetMemory, runAgentSwarm, type DenseLayer, type MemoryKind } from "./_core/brainSystem";
 import {
   createConversation,
   createMessage,
@@ -450,6 +453,15 @@ export const appRouter = router({
     multiTimeframe: protectedProcedure
       .input(z.object({ frames: z.array(z.object({ timeframe: z.string().min(1).max(20), data: z.array(z.object({ timestamp: z.number(), open: z.number(), high: z.number(), low: z.number(), close: z.number(), volume: z.number() })).min(20).max(5000) })).min(1).max(10) }))
       .mutation(({ input }) => multiTimeframeConfluence(input.frames)),
+    indicatorCatalog: protectedProcedure
+      .input(z.object({ category: z.enum(["trend", "momentum", "volatility", "volume", "price"]).optional() }))
+      .query(({ input }) => listIndicators(input.category as IndicatorCategory | undefined)),
+    batchIndicators: protectedProcedure
+      .input(z.object({ ids: z.array(z.string()).min(1).max(240), data: z.array(z.object({ timestamp: z.number(), open: z.number(), high: z.number(), low: z.number(), close: z.number(), volume: z.number() })).min(5).max(10000) }))
+      .mutation(({ input }) => computeIndicators(input.ids, input.data)),
+    indicatorSnapshot: protectedProcedure
+      .input(z.object({ data: z.array(z.object({ timestamp: z.number(), open: z.number(), high: z.number(), low: z.number(), close: z.number(), volume: z.number() })).min(5).max(10000), ids: z.array(z.string()).max(240).optional() }))
+      .mutation(({ input }) => indicatorSnapshot(input.data, input.ids)),
     analyze: protectedProcedure
       .input(
         z.object({
@@ -1184,6 +1196,9 @@ export const appRouter = router({
   }),
   agents: router({
     list: protectedProcedure.query(() => listAgents()),
+    swarm: protectedProcedure
+      .input(z.object({ roles: z.array(z.enum(["forex_analyst", "code_reviewer", "music_composer", "data_analyst", "research_agent", "writing_assistant", "math_tutor", "translator", "summarizer", "brainstormer", "sound_designer", "quant_researcher", "risk_manager"])).min(2).max(6), prompt: z.string().min(1).max(12000), model: z.string().optional(), maxSteps: z.number().int().min(1).max(8).default(3) }))
+      .mutation(({ input }) => runAgentSwarm(input)),
     run: protectedProcedure
       .input(
         z.object({
@@ -1242,7 +1257,20 @@ export const appRouter = router({
         return executePipeline(input.id, input.input, { model: input.model });
       }),
   }),
+  brain: router({
+    memories: protectedProcedure.query(({ ctx }) => listMemories(String(ctx.user.id))),
+    recall: protectedProcedure.input(z.object({ query: z.string().min(1).max(2000), limit: z.number().int().min(1).max(25).default(8) })).query(({ ctx, input }) => recallMemories(String(ctx.user.id), input.query, input.limit)),
+    remember: protectedProcedure.input(z.object({ kind: z.enum(["preference", "fact", "goal", "conversation", "tool-result"]), text: z.string().min(1).max(5000), tags: z.array(z.string()).max(20).default([]), importance: z.number().min(0).max(1).default(.5) })).mutation(({ ctx, input }) => storeMemory({ userId: String(ctx.user.id), kind: input.kind as MemoryKind, text: input.text, tags: input.tags, importance: input.importance })),
+    forget: protectedProcedure.input(z.object({ id: z.string().uuid() })).mutation(({ ctx, input }) => forgetMemory(String(ctx.user.id), input.id)),
+    neuralForward: protectedProcedure.input(z.object({ input: z.array(z.number()).max(2048), layers: z.array(z.object({ weights: z.array(z.array(z.number())), bias: z.array(z.number()), activation: z.enum(["relu", "tanh", "sigmoid", "linear"]).optional() })).max(32) })).mutation(({ input }) => neuralForward(input.input, input.layers as DenseLayer[])),
+    neuralFeatures: protectedProcedure.input(z.object({ values: z.array(z.number()).max(10000) })).mutation(({ input }) => neuralFeatureVector(input.values)),
+  }),
   trading: router({
+    indicatorCatalog: protectedProcedure.input(z.object({ category: z.enum(["trend", "momentum", "volatility", "volume", "price"]).optional() })).query(({ input }) => listIndicators(input.category as IndicatorCategory | undefined)),
+    indicator: protectedProcedure.input(z.object({ id: z.string(), candles: z.array(z.object({ timestamp: z.number(), open: z.number(), high: z.number(), low: z.number(), close: z.number(), volume: z.number() })).min(5).max(10000) })).mutation(({ input }) => computeIndicator(input.id, input.candles)),
+    researchBacktest: protectedProcedure.input(z.object({ candles: z.array(z.object({ timestamp: z.number(), open: z.number(), high: z.number(), low: z.number(), close: z.number(), volume: z.number() })).min(60), config: z.record(z.string(), z.number()).optional() })).mutation(({ input }) => runResearchBacktest(input.candles, input.config as ResearchConfig | undefined)),
+    forwardTest: protectedProcedure.input(z.object({ candles: z.array(z.object({ timestamp: z.number(), open: z.number(), high: z.number(), low: z.number(), close: z.number(), volume: z.number() })).min(70), config: z.record(z.string(), z.number()).optional() })).mutation(({ input }) => runForwardTest(input.candles, input.config as ResearchConfig | undefined)),
+    walkForward: protectedProcedure.input(z.object({ candles: z.array(z.object({ timestamp: z.number(), open: z.number(), high: z.number(), low: z.number(), close: z.number(), volume: z.number() })).min(100), config: z.record(z.string(), z.number()).optional() })).mutation(({ input }) => walkForwardAnalysis(input.candles, input.config as ResearchConfig | undefined)),
     strategies: protectedProcedure.query(() => BUILT_IN_STRATEGIES),
     backtest: protectedProcedure.input(z.object({
       candles: z.array(z.object({ timestamp: z.number(), open: z.number(), high: z.number(), low: z.number(), close: z.number(), volume: z.number() })).min(50),
