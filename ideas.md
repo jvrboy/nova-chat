@@ -79,3 +79,7 @@ Persimmon `#D85A3A` — ownable, warm, and energetic without reading as a generi
 - Persimmon `#D85A3A` is reserved for the brand glyph, selected navigation/history state, and primary send/agency actions.
 - Nova’s visible identity moments use Newsreader; routine UI remains DM Sans so the product does not read as an all-sans generic chat app.
 - The composer is treated as a tactile paper card on a desk, with a distinct white-paper surface, clearer writing/control separation, and stronger send hierarchy.
+
+## Artifact verification note
+
+Nova now includes structured artifact generation, editable previews, regeneration, and Markdown export. The creation procedure is protected by authentication and the live generation/export flow was not executed end-to-end because login was intentionally declined during this task. Type checking, automated tests, production builds, and responsive UI previews were completed.

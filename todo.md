@@ -36,3 +36,8 @@
 - [x] Verify prompt-library interactions, responsive styling, tests, and save a checkpoint.
 - [x] Ensure deleted-folder prompts retain a valid selectable assignment and re-verify the folder flows.
 - [x] Verify prompt-folder lifecycle implementation, live folder selection/deletion behavior, and mobile-sized layout.
+- [x] Add structured AI artifact generation for documents, plans, tables, and code snippets.
+- [x] Add artifact creation controls, editable preview, regenerate, and export actions.
+- [x] Add artifact persistence/recovery states and verify the workflow responsively; authenticated generation remains sign-in gated.
+- [x] Add artifact-specific retry and recovery actions for failed generation and regeneration.
+- [x] Document that live authenticated artifact generation/export remains unverified because login was declined.

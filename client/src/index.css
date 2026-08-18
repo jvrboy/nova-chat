@@ -71,7 +71,33 @@ button:focus-visible, textarea:focus-visible, input:focus-visible { outline: 2px
 .prompt-grid button:hover { color: var(--accent-dark); border-color: #d9b2a5; background: var(--accent-wash); }
 .prompt-grid button span { flex: 1; }
 .app-loading { min-height: 100vh; display: grid; place-content: center; justify-items: center; gap: 12px; color: var(--ink-soft); background: var(--paper); font-size: 13px; }
-.artifact-panel { position: absolute; z-index: 4; top: 64px; right: 22px; width: min(330px, calc(100% - 44px)); padding: 17px; background: rgba(255,254,250,.97); border: 1px solid #d9d1c7; border-radius: 12px; box-shadow: 0 18px 45px rgba(80,65,46,.14); }
+.artifact-panel { position: absolute; z-index: 4; top: 64px; right: 22px; width: min(390px, calc(100% - 44px)); max-height: calc(100% - 86px); overflow: auto; padding: 17px; background: rgba(255,254,250,.97); border: 1px solid #d9d1c7; border-radius: 12px; box-shadow: 0 18px 45px rgba(80,65,46,.14); }
+.artifact-panel-actions { display: flex; align-items: center; gap: 6px; }
+.artifact-create-button, .primary-artifact-button { display: inline-flex; align-items: center; gap: 6px; padding: 7px 9px; color: #fffaf5; background: var(--accent); border: 0; border-radius: 6px; font-size: 10px; }
+.artifact-create-button:hover, .primary-artifact-button:hover { background: var(--accent-dark); }
+.generated-artifact-card { margin-top: 15px; padding: 12px; background: #fbf8f3; border: 1px solid #e3d9cf; border-radius: 8px; }
+.generated-artifact-meta { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.generated-artifact-meta h3 { margin: 4px 0 0; color: var(--ink); font: 19px/1.05 Newsreader, Georgia, serif; }
+.artifact-status { color: var(--ink-faint); font-size: 9px; }
+.artifact-summary { margin: 10px 0; color: var(--ink-soft); font-size: 11px; line-height: 1.5; }
+.artifact-content, .artifact-editor { max-height: 280px; overflow: auto; margin: 0; padding: 10px; color: var(--ink-soft); background: #fffefa; border: 1px solid var(--line); border-radius: 6px; font: 11px/1.55 'DM Sans', sans-serif; white-space: pre-wrap; }
+.artifact-editor { width: 100%; min-height: 220px; resize: vertical; }
+.generated-artifact-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; }
+.generated-artifact-actions button { display: inline-flex; align-items: center; gap: 5px; padding: 6px 8px; color: var(--ink-soft); background: transparent; border: 1px solid var(--line); border-radius: 5px; font-size: 10px; }
+.generated-artifact-actions button:hover { color: var(--accent-dark); border-color: #d9b2a5; background: var(--accent-wash); }
+.artifact-create-card { width: min(560px, calc(100% - 32px)); padding: 16px; background: #fffefa; border: 1px solid #d9d1c7; border-radius: 12px; box-shadow: 0 24px 60px rgba(55,45,35,.22); }
+.artifact-create-card > p { margin: 12px 2px; color: var(--ink-faint); font-size: 12px; }
+.artifact-kind-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; margin: 14px 0; }
+.artifact-kind { display: grid; gap: 4px; padding: 11px; color: var(--ink-soft); background: #fbf8f3; border: 1px solid var(--line); border-radius: 7px; text-align: left; }
+.artifact-kind strong { color: var(--ink); font-size: 11px; }
+.artifact-kind span { color: var(--ink-faint); font-size: 10px; line-height: 1.35; }
+.artifact-kind:hover, .artifact-kind.active { color: var(--accent-dark); border-color: #d9b2a5; background: var(--accent-wash); }
+.artifact-prompt-input { width: 100%; min-height: 110px; padding: 11px; resize: vertical; color: var(--ink); background: #fbf8f3; border: 1px solid var(--line); border-radius: 7px; font: 12px/1.5 'DM Sans', sans-serif; outline: none; }
+.artifact-prompt-input:focus { border-color: #d9b2a5; box-shadow: 0 0 0 3px rgba(205,87,55,.1); }
+.artifact-retry { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 8px 0; padding: 8px 9px; color: #8e3f2f; background: #fff1ec; border: 1px solid #efc9bd; border-radius: 6px; font-size: 10px; }
+.artifact-retry button { padding: 5px 7px; color: #8e3f2f; background: transparent; border: 1px solid #dfa99a; border-radius: 5px; font-size: 10px; }
+.artifact-create-footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 11px; }
+.artifact-create-footer > span { color: var(--ink-faint); font-size: 10px; }
 .artifact-panel-head { display: flex; align-items: flex-start; justify-content: space-between; padding-bottom: 13px; border-bottom: 1px solid var(--line); }
 .artifact-panel-head h2 { margin: 4px 0 0; color: var(--ink); font: 21px/1.1 Newsreader, Georgia, serif; }
 .eyebrow { color: var(--accent-dark); font-size: 9px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }

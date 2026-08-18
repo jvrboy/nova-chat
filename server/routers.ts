@@ -51,6 +51,13 @@ export const appRouter = router({
       const content = response.choices[0]?.message.content;
       return { model: response.model, content: typeof content === "string" ? content : content.map((part) => part.type === "text" ? part.text : "").join("\n") };
     }),
+    createArtifact: protectedProcedure.input(z.object({ model: z.string().optional(), kind: z.enum(["document", "plan", "table", "code"]), prompt: z.string().min(3).max(6000), context: z.string().max(12000).optional() })).mutation(async ({ input }) => {
+      const kindLabel = { document: "a polished document", plan: "an actionable plan", table: "a clear markdown table", code: "a focused code artifact" }[input.kind];
+      const response = await invokeLLM({ model: input.model, messages: [{ role: "system", content: `You create ${kindLabel} for Nova. Return only valid JSON matching the requested schema. Make the content useful, self-contained, and formatted as markdown when appropriate.` }, { role: "user", content: `Create ${kindLabel} from this request:\n${input.prompt}\n\nConversation context:\n${input.context ?? "No additional context."}` }], response_format: { type: "json_schema", json_schema: { name: "nova_artifact", strict: true, schema: { type: "object", properties: { title: { type: "string" }, summary: { type: "string" }, content: { type: "string" }, language: { type: "string" } }, required: ["title", "summary", "content", "language"], additionalProperties: false } } } });
+      const raw = response.choices[0]?.message.content;
+      const parsed = JSON.parse(typeof raw === "string" ? raw : raw.map((part) => part.type === "text" ? part.text : "").join(""));
+      return { ...parsed, kind: input.kind, model: response.model };
+    }),
   }),
   conversations: router({
     list: protectedProcedure.input(z.object({ projectId: z.number().int().positive().optional() }).optional()).query(({ ctx, input }) => listConversations(ctx.user.id, input?.projectId)),
