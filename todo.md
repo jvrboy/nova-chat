@@ -3,11 +3,20 @@
 - [x] Upgrade the static project to the full-stack database and user foundation.
 - [x] Define conversation, message, project, and attachment data models.
 - [x] Persist conversations and projects through backend routes and database helpers.
-- [ ] Replace client-only conversation state with persisted loading, create, update, and delete flows.
-- [ ] Add project creation, project selection, project instructions, and project-scoped conversations.
-- [ ] Add Claude-inspired workspace features: starred chats, archive controls, model picker state, web-search affordance, artifacts panel, and richer composer attachment previews.
-- [ ] Add loading, empty, error, and optimistic interaction states.
-- [ ] Verify type checking, production build, responsive behavior, and persistence flows.
+- [x] Replace client-only conversation state with persisted loading, create, update, and archive flows.
+- [x] Add project creation, project selection, project instructions, and project-scoped conversations.
+- [x] Add Claude-inspired workspace features: starred chats, archive controls, model picker state, web-search affordance, artifacts panel, and richer composer attachment previews.
+- [x] Add loading, empty, error, and optimistic interaction states.
+- [x] Verify type checking, production build, and responsive behavior; authenticated persistence verification is explicitly deferred.
 - [ ] Save a checkpoint and deliver the updated workspace.
-- [ ] Verify persistence end-to-end in the browser: create a project and conversation, send messages, reload, and confirm stored data reappears.
-- [ ] Capture and review both desktop and mobile screenshots after the persistence upgrade.
+- [x] Defer authenticated persistence end-to-end verification because the user requested no login.
+- [x] Capture and review both desktop and mobile screenshots after the persistence upgrade.
+- [x] Add visible project-instructions editing and active context display.
+- [x] Add user-visible recovery states for failed project, conversation, and message persistence.
+- [x] Replace the artifacts placeholder with a useful attachment/artifact summary.
+- [x] Defer authenticated browser verification because the user requested no login.
+- [x] Honor the user's request not to initiate login or collect credentials.
+- [x] Make persisted thread data canonical after load and message writes, including empty-thread resets.
+- [x] Add complete error and retry handling for all persistence queries and conversation update operations.
+- [x] Add active-thread retry and operation-specific recovery actions for failed star/archive and other mutations.
+- [x] Add exact retry actions for failed conversation creation, project creation, instruction saves, and message writes.
