@@ -5,11 +5,21 @@ import { transcribeAudio } from "./_core/voiceTranscription";
 import { runAgent, listAgents, type AgentRole } from "./_core/agents";
 import { executePipeline, listPipelines, getPipeline } from "./_core/pipelines";
 import {
+  buildAuditEvent,
+  buildCachePolicy,
   chunkText,
+  createIdempotencyKey,
   createRunbook,
+  evaluateCircuitBreaker,
+  evaluateFeatureFlag,
   evaluateServiceHealth,
+  evaluateSlo,
+  evaluateTokenBucket,
   generateFeatureCatalog,
+  planCapacity,
+  planWorkflowExecution,
   redactSensitiveText,
+  scoreDataQuality,
 } from "./_core/backendTools";
 import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
@@ -863,6 +873,114 @@ export const appRouter = router({
         })
       )
       .mutation(({ input }) => createRunbook(input)),
+    tokenBucket: protectedProcedure
+      .input(
+        z.object({
+          capacity: z.number().int().min(1).max(1_000_000),
+          refillPerSecond: z.number().positive(),
+          currentTokens: z.number().min(0),
+          requestedTokens: z.number().int().min(1).optional(),
+          elapsedMs: z.number().min(0),
+        })
+      )
+      .query(({ input }) => evaluateTokenBucket(input)),
+    cachePolicy: protectedProcedure
+      .input(
+        z.object({
+          resource: z.string().min(1).max(160),
+          volatility: z.enum(["static", "daily", "hourly", "realtime"]),
+          userScoped: z.boolean().optional(),
+          tags: z.array(z.string().min(1).max(80)).max(20).optional(),
+        })
+      )
+      .query(({ input }) => buildCachePolicy(input)),
+    circuitBreaker: protectedProcedure
+      .input(
+        z.object({
+          successes: z.number().int().min(0),
+          failures: z.number().int().min(0),
+          minimumSamples: z.number().int().min(1).optional(),
+          failureThreshold: z.number().min(0).max(1).optional(),
+          openedAt: z.string().datetime().optional(),
+          cooldownMs: z.number().int().min(1).optional(),
+        })
+      )
+      .query(({ input }) => evaluateCircuitBreaker(input)),
+    workflowPlan: protectedProcedure
+      .input(
+        z.object({
+          steps: z
+            .array(
+              z.object({
+                id: z.string().min(1).max(120),
+                dependsOn: z.array(z.string().min(1).max(120)).optional(),
+                durationMs: z.number().int().min(0).optional(),
+                retryable: z.boolean().optional(),
+              })
+            )
+            .min(1)
+            .max(500),
+        })
+      )
+      .mutation(({ input }) => planWorkflowExecution(input.steps)),
+    featureFlag: protectedProcedure
+      .input(
+        z.object({
+          flagKey: z.string().min(1).max(120),
+          subjectId: z.string().min(1).max(240),
+          rolloutPercent: z.number().min(0).max(100),
+          enabled: z.boolean().optional(),
+          allowList: z.array(z.string()).max(1000).optional(),
+          denyList: z.array(z.string()).max(1000).optional(),
+        })
+      )
+      .query(({ input }) => evaluateFeatureFlag(input)),
+    idempotencyKey: protectedProcedure
+      .input(
+        z.object({
+          method: z.string().min(1).max(16),
+          path: z.string().min(1).max(2000),
+          body: z.unknown(),
+          tenantId: z.string().max(120).optional(),
+        })
+      )
+      .mutation(({ input }) => ({ key: createIdempotencyKey(input) })),
+    dataQuality: protectedProcedure
+      .input(
+        z.object({ rows: z.array(z.record(z.string(), z.unknown())).max(5000) })
+      )
+      .mutation(({ input }) => scoreDataQuality(input.rows)),
+    auditEvent: protectedProcedure
+      .input(
+        z.object({
+          actorId: z.string().min(1).max(120),
+          action: z.string().min(1).max(160),
+          resource: z.string().min(1).max(240),
+          metadata: z.record(z.string(), z.unknown()).optional(),
+        })
+      )
+      .mutation(({ input }) => buildAuditEvent(input)),
+    capacityPlan: protectedProcedure
+      .input(
+        z.object({
+          currentRps: z.number().min(0),
+          peakMultiplier: z.number().min(1),
+          targetCpuUtilization: z.number().min(0.01).max(1),
+          rpsPerInstance: z.number().positive(),
+          minimumInstances: z.number().int().min(1).optional(),
+        })
+      )
+      .query(({ input }) => planCapacity(input)),
+    slo: protectedProcedure
+      .input(
+        z.object({
+          target: z.number().min(0.0001).max(0.9999),
+          goodEvents: z.number().int().min(0),
+          totalEvents: z.number().int().min(0),
+          windowDays: z.number().int().min(1).max(366).optional(),
+        })
+      )
+      .query(({ input }) => evaluateSlo(input)),
   }),
   agents: router({
     list: protectedProcedure.query(() => listAgents()),

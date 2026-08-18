@@ -209,3 +209,351 @@ export function createRunbook(input: {
     ],
   };
 }
+
+export interface RateLimitDecision {
+  allowed: boolean;
+  limit: number;
+  remaining: number;
+  resetAt: string;
+  retryAfterMs: number;
+}
+
+export function evaluateTokenBucket(input: {
+  capacity: number;
+  refillPerSecond: number;
+  currentTokens: number;
+  requestedTokens?: number;
+  elapsedMs: number;
+  now?: Date;
+}): RateLimitDecision & { nextTokens: number } {
+  const requestedTokens = input.requestedTokens ?? 1;
+  if (input.capacity < 1) throw new Error("capacity must be positive");
+  if (input.refillPerSecond <= 0)
+    throw new Error("refillPerSecond must be positive");
+  if (requestedTokens < 1) throw new Error("requestedTokens must be positive");
+  const now = input.now ?? new Date();
+  const refilled = Math.min(
+    input.capacity,
+    Math.max(0, input.currentTokens) +
+      (input.elapsedMs / 1000) * input.refillPerSecond
+  );
+  const allowed = refilled >= requestedTokens;
+  const nextTokens = allowed ? refilled - requestedTokens : refilled;
+  const missing = Math.max(0, requestedTokens - refilled);
+  const retryAfterMs = allowed
+    ? 0
+    : Math.ceil((missing / input.refillPerSecond) * 1000);
+  return {
+    allowed,
+    limit: input.capacity,
+    remaining: Math.floor(nextTokens),
+    resetAt: new Date(now.getTime() + retryAfterMs).toISOString(),
+    retryAfterMs,
+    nextTokens,
+  };
+}
+
+export interface CachePolicy {
+  ttlSeconds: number;
+  staleWhileRevalidateSeconds: number;
+  cacheControl: string;
+  surrogateKey: string;
+  vary: string[];
+}
+
+export function buildCachePolicy(input: {
+  resource: string;
+  volatility: "static" | "daily" | "hourly" | "realtime";
+  userScoped?: boolean;
+  tags?: string[];
+}): CachePolicy {
+  const ttlByVolatility = {
+    static: 86_400,
+    daily: 21_600,
+    hourly: 900,
+    realtime: 15,
+  } as const;
+  const ttlSeconds = input.userScoped
+    ? Math.min(300, ttlByVolatility[input.volatility])
+    : ttlByVolatility[input.volatility];
+  const staleWhileRevalidateSeconds = Math.max(30, Math.round(ttlSeconds / 2));
+  const visibility = input.userScoped ? "private" : "public";
+  const tags = [input.resource, ...(input.tags ?? [])]
+    .map(tag => tag.toLowerCase().replace(/[^a-z0-9_-]+/g, "-"))
+    .filter(Boolean);
+  return {
+    ttlSeconds,
+    staleWhileRevalidateSeconds,
+    cacheControl: `${visibility}, max-age=${ttlSeconds}, stale-while-revalidate=${staleWhileRevalidateSeconds}`,
+    surrogateKey: tags.join(" "),
+    vary: input.userScoped ? ["authorization", "cookie"] : ["accept-encoding"],
+  };
+}
+
+export interface CircuitBreakerDecision {
+  state: "closed" | "open" | "half_open";
+  allowRequest: boolean;
+  failureRate: number;
+  nextCheckAt?: string;
+  reason: string;
+}
+
+export function evaluateCircuitBreaker(input: {
+  successes: number;
+  failures: number;
+  minimumSamples?: number;
+  failureThreshold?: number;
+  openedAt?: string;
+  cooldownMs?: number;
+  now?: Date;
+}): CircuitBreakerDecision {
+  const minimumSamples = input.minimumSamples ?? 20;
+  const failureThreshold = input.failureThreshold ?? 0.5;
+  const cooldownMs = input.cooldownMs ?? 30_000;
+  const total = input.successes + input.failures;
+  const failureRate = total === 0 ? 0 : input.failures / total;
+  const now = input.now ?? new Date();
+  if (input.openedAt) {
+    const openedAt = new Date(input.openedAt);
+    const nextCheck = new Date(openedAt.getTime() + cooldownMs);
+    if (now < nextCheck) {
+      return {
+        state: "open",
+        allowRequest: false,
+        failureRate,
+        nextCheckAt: nextCheck.toISOString(),
+        reason: "Circuit is cooling down after crossing the failure threshold.",
+      };
+    }
+    return {
+      state: "half_open",
+      allowRequest: true,
+      failureRate,
+      reason: "Cooldown elapsed; allow a limited probe request.",
+    };
+  }
+  if (total >= minimumSamples && failureRate >= failureThreshold) {
+    return {
+      state: "open",
+      allowRequest: false,
+      failureRate,
+      nextCheckAt: new Date(now.getTime() + cooldownMs).toISOString(),
+      reason: "Observed failure rate crossed the configured threshold.",
+    };
+  }
+  return {
+    state: "closed",
+    allowRequest: true,
+    failureRate,
+    reason: "Failure rate is within policy.",
+  };
+}
+
+export interface WorkflowStep {
+  id: string;
+  dependsOn?: string[];
+  durationMs?: number;
+  retryable?: boolean;
+}
+
+export function planWorkflowExecution(steps: WorkflowStep[]) {
+  const byId = new Map(steps.map(step => [step.id, step]));
+  if (byId.size !== steps.length)
+    throw new Error("workflow step ids must be unique");
+  const indegree = new Map<string, number>();
+  const outgoing = new Map<string, string[]>();
+  for (const step of steps) {
+    indegree.set(step.id, step.dependsOn?.length ?? 0);
+    for (const dependency of step.dependsOn ?? []) {
+      if (!byId.has(dependency))
+        throw new Error(`unknown dependency: ${dependency}`);
+      outgoing.set(dependency, [...(outgoing.get(dependency) ?? []), step.id]);
+    }
+  }
+  const ready = Array.from(indegree.entries())
+    .filter(([, degree]) => degree === 0)
+    .map(([id]) => id);
+  const order: string[] = [];
+  const waves: string[][] = [];
+  while (ready.length > 0) {
+    const wave = ready.splice(0).sort();
+    waves.push(wave);
+    for (const id of wave) {
+      order.push(id);
+      for (const child of outgoing.get(id) ?? []) {
+        indegree.set(child, (indegree.get(child) ?? 0) - 1);
+        if (indegree.get(child) === 0) ready.push(child);
+      }
+    }
+  }
+  if (order.length !== steps.length)
+    throw new Error("workflow contains a cycle");
+  const criticalPathMs = waves.reduce((total, wave) => {
+    const slowest = Math.max(...wave.map(id => byId.get(id)?.durationMs ?? 0));
+    return total + slowest;
+  }, 0);
+  return {
+    order,
+    waves,
+    criticalPathMs,
+    parallelism: Math.max(...waves.map(wave => wave.length)),
+  };
+}
+
+export function evaluateFeatureFlag(input: {
+  flagKey: string;
+  subjectId: string;
+  rolloutPercent: number;
+  enabled?: boolean;
+  allowList?: string[];
+  denyList?: string[];
+}) {
+  if (input.rolloutPercent < 0 || input.rolloutPercent > 100)
+    throw new Error("rolloutPercent must be between 0 and 100");
+  if (input.denyList?.includes(input.subjectId))
+    return { enabled: false, bucket: 0, reason: "subject is deny-listed" };
+  if (input.allowList?.includes(input.subjectId))
+    return { enabled: true, bucket: 0, reason: "subject is allow-listed" };
+  if (input.enabled === false)
+    return { enabled: false, bucket: 0, reason: "flag is globally disabled" };
+  const hash = createHash("sha256")
+    .update(`${input.flagKey}:${input.subjectId}`)
+    .digest("hex");
+  const bucket = Number.parseInt(hash.slice(0, 8), 16) % 100;
+  return {
+    enabled: bucket < input.rolloutPercent,
+    bucket,
+    reason: "deterministic percentage rollout",
+  };
+}
+
+export function createIdempotencyKey(input: {
+  method: string;
+  path: string;
+  body: unknown;
+  tenantId?: string;
+}) {
+  const payload = JSON.stringify({
+    method: input.method.toUpperCase(),
+    path: input.path,
+    tenantId: input.tenantId ?? null,
+    body: input.body,
+  });
+  return createHash("sha256").update(payload).digest("hex");
+}
+
+export function scoreDataQuality(rows: Array<Record<string, unknown>>) {
+  if (rows.length === 0)
+    return { score: 100, rowCount: 0, columns: [], issues: [] as string[] };
+  const columns = Array.from(new Set(rows.flatMap(row => Object.keys(row))));
+  const issues: string[] = [];
+  let penalties = 0;
+  for (const column of columns) {
+    const values = rows.map(row => row[column]);
+    const missing = values.filter(
+      value => value === null || value === undefined || value === ""
+    ).length;
+    if (missing > 0) {
+      const rate = missing / rows.length;
+      penalties += rate * 20;
+      issues.push(`${column} is missing in ${Math.round(rate * 100)}% of rows`);
+    }
+    const uniqueTypes = new Set(
+      values
+        .filter(value => value !== null && value !== undefined)
+        .map(value => (Array.isArray(value) ? "array" : typeof value))
+    );
+    if (uniqueTypes.size > 1) {
+      penalties += 10;
+      issues.push(
+        `${column} has mixed types: ${Array.from(uniqueTypes).join(", ")}`
+      );
+    }
+  }
+  const duplicateRows =
+    rows.length - new Set(rows.map(row => JSON.stringify(row))).size;
+  if (duplicateRows > 0) {
+    penalties += (duplicateRows / rows.length) * 15;
+    issues.push(`${duplicateRows} duplicate row(s) detected`);
+  }
+  return {
+    score: Math.max(0, Math.round(100 - penalties)),
+    rowCount: rows.length,
+    columns,
+    issues,
+  };
+}
+
+export function buildAuditEvent(input: {
+  actorId: string;
+  action: string;
+  resource: string;
+  metadata?: Record<string, unknown>;
+  occurredAt?: Date;
+}) {
+  const occurredAt = input.occurredAt ?? new Date();
+  const event = {
+    id: randomUUID(),
+    actorId: input.actorId,
+    action: input.action,
+    resource: input.resource,
+    metadata: input.metadata ?? {},
+    occurredAt: occurredAt.toISOString(),
+  };
+  return {
+    ...event,
+    signature: createHash("sha256").update(JSON.stringify(event)).digest("hex"),
+  };
+}
+
+export function planCapacity(input: {
+  currentRps: number;
+  peakMultiplier: number;
+  targetCpuUtilization: number;
+  rpsPerInstance: number;
+  minimumInstances?: number;
+}) {
+  if (input.targetCpuUtilization <= 0 || input.targetCpuUtilization > 1)
+    throw new Error("targetCpuUtilization must be > 0 and <= 1");
+  const requiredRps = input.currentRps * input.peakMultiplier;
+  const effectiveRpsPerInstance =
+    input.rpsPerInstance * input.targetCpuUtilization;
+  const instances = Math.max(
+    input.minimumInstances ?? 1,
+    Math.ceil(requiredRps / effectiveRpsPerInstance)
+  );
+  return {
+    requiredRps,
+    effectiveRpsPerInstance,
+    recommendedInstances: instances,
+    headroomRps: instances * effectiveRpsPerInstance - requiredRps,
+  };
+}
+
+export function evaluateSlo(input: {
+  target: number;
+  goodEvents: number;
+  totalEvents: number;
+  windowDays?: number;
+}) {
+  if (input.target <= 0 || input.target >= 1)
+    throw new Error("target must be between 0 and 1");
+  if (input.totalEvents < input.goodEvents)
+    throw new Error("totalEvents cannot be smaller than goodEvents");
+  const actual =
+    input.totalEvents === 0 ? 1 : input.goodEvents / input.totalEvents;
+  const errorBudget = 1 - input.target;
+  const consumed =
+    input.totalEvents === 0
+      ? 0
+      : (input.totalEvents - input.goodEvents) /
+        (input.totalEvents * errorBudget);
+  const status = actual >= input.target ? "within_budget" : "breached";
+  return {
+    target: input.target,
+    actual,
+    status,
+    errorBudgetConsumedPercent: Math.round(consumed * 100),
+    windowDays: input.windowDays ?? 30,
+  };
+}
