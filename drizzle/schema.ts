@@ -71,6 +71,25 @@ export const agentExecutions = mysqlTable("agentExecutions", {
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 }, (table) => ({ userIdx: index("agent_executions_user_idx").on(table.userId), conversationIdx: index("agent_executions_conversation_idx").on(table.conversationId) }));
 
+export const memoryEmbeddings = mysqlTable("memoryEmbeddings", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  memoryKey: varchar("memoryKey", { length: 128 }).notNull(),
+  kind: mysqlEnum("kind", ["preference", "fact", "goal", "conversation", "tool-result"]).notNull(),
+  content: text("content").notNull(),
+  tags: text("tags").notNull(),
+  embedding: text("embedding").notNull(),
+  embeddingModel: varchar("embeddingModel", { length: 128 }).notNull().default("nova-hash-v1"),
+  embeddingDimensions: int("embeddingDimensions").notNull().default(128),
+  importance: int("importance").notNull().default(50),
+  retentionDays: int("retentionDays").notNull().default(365),
+  expiresAt: timestamp("expiresAt"),
+  lastAccessedAt: timestamp("lastAccessedAt").defaultNow().notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  deletedAt: timestamp("deletedAt"),
+}, (table) => ({ userIdx: index("memory_embeddings_user_idx").on(table.userId), expiryIdx: index("memory_embeddings_expiry_idx").on(table.expiresAt), keyIdx: index("memory_embeddings_key_idx").on(table.memoryKey) }));
+
 export const pipelineExecutions = mysqlTable("pipelineExecutions", {
   id: int("id").autoincrement().primaryKey(),
   userId: int("userId").notNull(),
@@ -97,5 +116,7 @@ export type Attachment = typeof attachments.$inferSelect;
 export type InsertAttachment = typeof attachments.$inferInsert;
 export type AgentExecution = typeof agentExecutions.$inferSelect;
 export type InsertAgentExecution = typeof agentExecutions.$inferInsert;
+export type MemoryEmbedding = typeof memoryEmbeddings.$inferSelect;
+export type InsertMemoryEmbedding = typeof memoryEmbeddings.$inferInsert;
 export type PipelineExecution = typeof pipelineExecutions.$inferSelect;
 export type InsertPipelineExecution = typeof pipelineExecutions.$inferInsert;

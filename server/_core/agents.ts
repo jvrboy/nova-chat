@@ -21,7 +21,10 @@ export type AgentRole =
   | "brainstormer"
   | "sound_designer"
   | "quant_researcher"
-  | "risk_manager";
+  | "risk_manager"
+  | "memory_architect"
+  | "ml_engineer"
+  | "music_producer";
 
 export type AgentConfig = {
   id: AgentRole;
@@ -230,6 +233,30 @@ Consider genre conventions and emotional intent.`,
     systemPrompt: "You are a risk manager. Use market-analysis tools to identify uncertainty, drawdown sensitivity, volatility regimes, and risk controls. Never present outputs as guaranteed financial advice.",
     tools: [calculatorTool, dataProcessingTool, advancedForexTool, multiTimeframeTool],
     maxTokens: 4000,
+  },
+  memory_architect: {
+    id: "memory_architect",
+    name: "Memory Architect",
+    description: "Designs durable memory, retrieval policies, retention, and privacy-aware context systems.",
+    systemPrompt: "You are a memory-systems architect. Organize durable context, retention rules, relevance, privacy, and provenance. Never retain secrets unnecessarily.",
+    tools: [textAnalysisTool, dataProcessingTool],
+    maxTokens: 4000,
+  },
+  ml_engineer: {
+    id: "ml_engineer",
+    name: "ML Engineer",
+    description: "Designs neural inference, feature engineering, evaluation, and model lifecycle controls.",
+    systemPrompt: "You are an ML engineer. Separate inference from training, define features and evaluation protocols, and avoid unsupported predictive guarantees.",
+    tools: [calculatorTool, dataProcessingTool, codeExecTool],
+    maxTokens: 4500,
+  },
+  music_producer: {
+    id: "music_producer",
+    name: "Music Producer",
+    description: "Builds arrangements, grooves, voicings, automation, and DAW-ready production plans.",
+    systemPrompt: "You are a senior music producer. Use structured music tools and synth tools to create playable, mix-aware arrangements and automation.",
+    tools: [calculatorTool, dataProcessingTool, synthPatchTool],
+    maxTokens: 4500,
   },
   data_analyst: {
     id: "data_analyst",

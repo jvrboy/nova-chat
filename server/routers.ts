@@ -89,7 +89,9 @@ import { executeSandboxedCode } from "./_core/performanceTools";
 import { e2bRunCode, firecrawlScrape, invokeWithProviderFailover, kaggleListDatasets, listConnectionStatus, listProviderStatus, type ProviderId } from "./_core/providerGateway";
 import { computeIndicator, computeIndicators, indicatorSnapshot, listIndicators, type IndicatorCategory } from "./_core/indicatorEngine";
 import { runBacktest as runResearchBacktest, runForwardTest, walkForwardAnalysis, type ResearchConfig } from "./_core/researchEngine";
-import { listMemories, neuralFeatureVector, neuralForward, recallMemories, storeMemory, forgetMemory, runAgentSwarm, type DenseLayer, type MemoryKind } from "./_core/brainSystem";
+import { conv1d, ensembleForward, listMemories, neuralFeatureVector, neuralForward, recallMemories, recurrentSequenceForward, softmax, storeMemory, forgetMemory, runAgentSwarm, type DenseLayer, type MemoryKind } from "./_core/brainSystem";
+import { forgetPersistentMemory, listPersistentMemories, purgeExpiredMemories, recallPersistentMemories, retentionPolicy, storePersistentMemory } from "./_core/persistentMemory";
+import { generateArpeggio, generateGroove, generateMidiAutomation, reharmonize, voiceChord, voiceLeadProgression, type ChordEvent } from "./_core/musicAdvanced";
 import {
   createConversation,
   createMessage,
@@ -629,6 +631,12 @@ export const appRouter = router({
       .mutation(({ input }) => input.format === "midi-cc" ? exportMidiCcMap(input.patch as unknown as SynthPatch) : input.format === "serum-style" ? exportSerumStylePreset(input.patch as unknown as SynthPatch) : exportDawBundle(input.patch as unknown as SynthPatch)),
   }),
   music: router({
+    voiceChord: protectedProcedure.input(z.object({ root: z.string(), type: z.string(), octave: z.number().int().min(0).max(8).optional(), spread: z.number().min(0).max(8).optional(), inversion: z.number().int().min(0).max(8).optional() })).query(({ input }) => voiceChord(input as ChordEvent)),
+    voiceLead: protectedProcedure.input(z.object({ progression: z.array(z.object({ root: z.string(), type: z.string(), duration: z.number().optional() })).min(1).max(64), octave: z.number().int().min(0).max(8).optional() })).query(({ input }) => voiceLeadProgression(input.progression as ChordEvent[], input)),
+    arpeggio: protectedProcedure.input(z.object({ notes: z.array(z.number()).min(1).max(32), pattern: z.enum(["up", "down", "updown", "random"]).optional(), steps: z.number().int().min(1).max(512).optional(), subdivision: z.string().optional() })).query(({ input }) => generateArpeggio(input.notes, input.pattern, input.steps, input.subdivision)),
+    reharmonize: protectedProcedure.input(z.object({ progression: z.array(z.object({ root: z.string(), type: z.string(), duration: z.number().optional() })).min(1).max(64), mode: z.enum(["diatonic", "secondary-dominants", "modal-mixture"]).optional() })).query(({ input }) => reharmonize(input.progression as ChordEvent[], input.mode)),
+    groove: protectedProcedure.input(z.object({ steps: z.number().int().min(1).max(512).optional(), swing: z.number().min(0).max(.5).optional(), accentEvery: z.number().int().min(1).max(32).optional(), velocityMin: z.number().int().min(1).max(127).optional(), velocityMax: z.number().int().min(1).max(127).optional() })).query(({ input }) => generateGroove(input)),
+    midiAutomation: protectedProcedure.input(z.object({ destination: z.string().min(1).max(200), start: z.number(), end: z.number(), bars: z.number().int().min(1).max(256).optional(), resolution: z.number().int().min(1).max(128).optional(), curve: z.enum(["linear", "ease-in", "ease-out", "sine"]).optional() })).query(({ input }) => generateMidiAutomation(input)),
     scales: protectedProcedure
       .input(
         z.object({
@@ -1197,7 +1205,7 @@ export const appRouter = router({
   agents: router({
     list: protectedProcedure.query(() => listAgents()),
     swarm: protectedProcedure
-      .input(z.object({ roles: z.array(z.enum(["forex_analyst", "code_reviewer", "music_composer", "data_analyst", "research_agent", "writing_assistant", "math_tutor", "translator", "summarizer", "brainstormer", "sound_designer", "quant_researcher", "risk_manager"])).min(2).max(6), prompt: z.string().min(1).max(12000), model: z.string().optional(), maxSteps: z.number().int().min(1).max(8).default(3) }))
+      .input(z.object({ roles: z.array(z.enum(["forex_analyst", "code_reviewer", "music_composer", "data_analyst", "research_agent", "writing_assistant", "math_tutor", "translator", "summarizer", "brainstormer", "sound_designer", "quant_researcher", "risk_manager", "memory_architect", "ml_engineer", "music_producer"])).min(2).max(6), prompt: z.string().min(1).max(12000), model: z.string().optional(), maxSteps: z.number().int().min(1).max(8).default(3) }))
       .mutation(({ input }) => runAgentSwarm(input)),
     run: protectedProcedure
       .input(
@@ -1216,6 +1224,9 @@ export const appRouter = router({
             "sound_designer",
             "quant_researcher",
             "risk_manager",
+            "memory_architect",
+            "ml_engineer",
+            "music_producer",
           ]),
           messages: z.array(
             z.object({
@@ -1259,11 +1270,21 @@ export const appRouter = router({
   }),
   brain: router({
     memories: protectedProcedure.query(({ ctx }) => listMemories(String(ctx.user.id))),
+    persistentMemories: protectedProcedure.query(({ ctx }) => listPersistentMemories(ctx.user.id)),
+    persistentRecall: protectedProcedure.input(z.object({ query: z.string().min(1).max(2000), limit: z.number().int().min(1).max(25).default(8) })).query(({ ctx, input }) => recallPersistentMemories(ctx.user.id, input.query, input.limit)),
+    persistentRemember: protectedProcedure.input(z.object({ kind: z.enum(["preference", "fact", "goal", "conversation", "tool-result"]), content: z.string().min(1).max(10000), tags: z.array(z.string()).max(30).default([]), importance: z.number().min(0).max(1).default(.5), retentionDays: z.number().int().min(1).max(3650).optional() })).mutation(({ ctx, input }) => storePersistentMemory({ userId: ctx.user.id, ...input })),
+    persistentForget: protectedProcedure.input(z.object({ id: z.number().int().positive() })).mutation(({ ctx, input }) => forgetPersistentMemory(ctx.user.id, input.id)),
+    purgeExpired: adminProcedure.input(z.object({ userId: z.number().int().positive().optional() })).mutation(({ input }) => purgeExpiredMemories(input.userId)),
+    retentionPolicy: protectedProcedure.query(() => retentionPolicy()),
     recall: protectedProcedure.input(z.object({ query: z.string().min(1).max(2000), limit: z.number().int().min(1).max(25).default(8) })).query(({ ctx, input }) => recallMemories(String(ctx.user.id), input.query, input.limit)),
     remember: protectedProcedure.input(z.object({ kind: z.enum(["preference", "fact", "goal", "conversation", "tool-result"]), text: z.string().min(1).max(5000), tags: z.array(z.string()).max(20).default([]), importance: z.number().min(0).max(1).default(.5) })).mutation(({ ctx, input }) => storeMemory({ userId: String(ctx.user.id), kind: input.kind as MemoryKind, text: input.text, tags: input.tags, importance: input.importance })),
     forget: protectedProcedure.input(z.object({ id: z.string().uuid() })).mutation(({ ctx, input }) => forgetMemory(String(ctx.user.id), input.id)),
     neuralForward: protectedProcedure.input(z.object({ input: z.array(z.number()).max(2048), layers: z.array(z.object({ weights: z.array(z.array(z.number())), bias: z.array(z.number()), activation: z.enum(["relu", "tanh", "sigmoid", "linear"]).optional() })).max(32) })).mutation(({ input }) => neuralForward(input.input, input.layers as DenseLayer[])),
     neuralFeatures: protectedProcedure.input(z.object({ values: z.array(z.number()).max(10000) })).mutation(({ input }) => neuralFeatureVector(input.values)),
+    softmax: protectedProcedure.input(z.object({ values: z.array(z.number()).min(1).max(4096) })).mutation(({ input }) => softmax(input.values)),
+    convolution1d: protectedProcedure.input(z.object({ values: z.array(z.number()).min(1).max(10000), kernel: z.array(z.number()).min(1).max(128), bias: z.number().optional(), activation: z.enum(["relu", "tanh", "sigmoid", "linear"]).optional() })).mutation(({ input }) => conv1d(input.values, input.kernel, input.bias, input.activation)),
+    recurrentSequence: protectedProcedure.input(z.object({ sequence: z.array(z.array(z.number())).min(1).max(512), layers: z.array(z.object({ weights: z.array(z.array(z.number())), bias: z.array(z.number()), activation: z.enum(["relu", "tanh", "sigmoid", "linear"]).optional() })).max(32), carry: z.array(z.number()).optional() })).mutation(({ input }) => recurrentSequenceForward(input.sequence, input.layers as DenseLayer[], input.carry)),
+    ensemble: protectedProcedure.input(z.object({ input: z.array(z.number()).max(2048), models: z.array(z.array(z.object({ weights: z.array(z.array(z.number())), bias: z.array(z.number()), activation: z.enum(["relu", "tanh", "sigmoid", "linear"]).optional() }))).min(1).max(16) })).mutation(({ input }) => ensembleForward(input.input, input.models as DenseLayer[][])),
   }),
   trading: router({
     indicatorCatalog: protectedProcedure.input(z.object({ category: z.enum(["trend", "momentum", "volatility", "volume", "price"]).optional() })).query(({ input }) => listIndicators(input.category as IndicatorCategory | undefined)),

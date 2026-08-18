@@ -30,6 +30,29 @@ const familyCatalog: Array<{ key: string; label: string; category: IndicatorCate
   { key: "volume_sma", label: "Volume Moving Average", category: "volume" },
   { key: "volume_roc", label: "Volume Rate of Change", category: "volume" },
   { key: "obv_delta", label: "On Balance Volume Delta", category: "volume" },
+  { key: "adx_strength", label: "ADX Trend Strength", category: "trend" },
+  { key: "di_plus", label: "Directional Index Plus", category: "trend" },
+  { key: "di_minus", label: "Directional Index Minus", category: "trend" },
+  { key: "mfi", label: "Money Flow Index", category: "volume" },
+  { key: "force_index", label: "Force Index", category: "volume" },
+  { key: "cmf", label: "Chaikin Money Flow", category: "volume" },
+  { key: "vwap_distance", label: "VWAP Distance", category: "volume" },
+  { key: "donchian_position", label: "Donchian Position", category: "price" },
+  { key: "keltner_position", label: "Keltner Position", category: "volatility" },
+  { key: "candle_body_pct", label: "Candle Body Percentage", category: "price" },
+  { key: "upper_wick_pct", label: "Upper Wick Percentage", category: "price" },
+  { key: "lower_wick_pct", label: "Lower Wick Percentage", category: "price" },
+  { key: "gap_pct", label: "Gap Percentage", category: "price" },
+  { key: "hl2", label: "HL2 Price", category: "price" },
+  { key: "ohlc4", label: "OHLC4 Price", category: "price" },
+  { key: "realized_vol", label: "Realized Volatility", category: "volatility" },
+  { key: "upside_vol", label: "Upside Volatility", category: "volatility" },
+  { key: "downside_vol", label: "Downside Volatility", category: "volatility" },
+  { key: "efficiency_ratio", label: "Kaufman Efficiency Ratio", category: "trend" },
+  { key: "choppiness", label: "Choppiness Index", category: "volatility" },
+  { key: "volume_zscore", label: "Volume Z Score", category: "volume" },
+  { key: "pvt", label: "Price Volume Trend", category: "volume" },
+  { key: "ad_line", label: "Accumulation Distribution Line", category: "volume" },
 ];
 
 export const INDICATOR_CATALOG: IndicatorDefinition[] = familyCatalog.flatMap(family => PERIODS.map(period => ({ id: `${family.key}_${period}`, label: `${family.label} (${period})`, category: family.category, period })));
@@ -75,6 +98,26 @@ function calculate(family: string, period: number, data: OHLCV[]) {
   if (family === "volume_sma") return sma(data.map(bar => bar.volume), period);
   if (family === "volume_roc") { const volumes = data.map(bar => bar.volume); return volumes.map((value, index) => index < period ? NaN : volumes[index - period] === 0 ? 0 : ((value - volumes[index - period]) / volumes[index - period]) * 100); }
   if (family === "obv_delta") return diff(obv(data), period);
+  if (family === "adx_strength" || family === "di_plus" || family === "di_minus") { const plus: number[] = [], minus: number[] = [], ranges = trueRanges(data); for (let index = 1; index < data.length; index += 1) { const up = data[index].high - data[index - 1].high, down = data[index - 1].low - data[index].low; plus.push(up > down && up > 0 ? up : 0); minus.push(down > up && down > 0 ? down : 0); } const atrValues = rolling(ranges, period, window => mean(window)); const plusDI = plus.map((value, index) => atrValues[index + 1] ? 100 * value / atrValues[index + 1] : NaN); const minusDI = minus.map((value, index) => atrValues[index + 1] ? 100 * value / atrValues[index + 1] : NaN); return family === "di_plus" ? [NaN, ...plusDI] : family === "di_minus" ? [NaN, ...minusDI] : [NaN, ...plusDI.map((value, index) => { const total = value + minusDI[index]; return total ? 100 * Math.abs(value - minusDI[index]) / total : 0; })]; }
+  if (family === "mfi") return data.map((_, index) => { if (index < period) return NaN; const flows = data.slice(index - period + 1, index + 1).map(bar => ((bar.high + bar.low + bar.close) / 3) * bar.volume); const positive = flows.filter((_, offset) => data[index - period + 1 + offset].close >= (data[index - period + offset]?.close ?? data[index - period + 1 + offset].close)).reduce((sum, value) => sum + value, 0); const negative = Math.max(0, flows.reduce((sum, value) => sum + value, 0) - positive); return negative ? 100 - 100 / (1 + positive / negative) : 100; });
+  if (family === "force_index") return data.map((bar, index) => index === 0 ? 0 : (bar.close - data[index - 1].close) * bar.volume);
+  if (family === "cmf") return data.map((_, index) => { if (index < period - 1) return NaN; const window = data.slice(index - period + 1, index + 1); const volume = window.reduce((sum, bar) => sum + bar.volume, 0); return volume ? window.reduce((sum, bar) => sum + (((bar.close - bar.low) - (bar.high - bar.close)) / Math.max(1e-9, bar.high - bar.low)) * bar.volume, 0) / volume : 0; });
+  if (family === "vwap_distance") return data.map((_, index) => { const window = data.slice(Math.max(0, index - period + 1), index + 1); const volume = window.reduce((sum, bar) => sum + bar.volume, 0); const vwap = volume ? window.reduce((sum, bar) => sum + ((bar.high + bar.low + bar.close) / 3) * bar.volume, 0) / volume : data[index].close; return vwap ? ((data[index].close - vwap) / vwap) * 100 : 0; });
+  if (family === "donchian_position") return data.map((bar, index) => { if (index < period - 1) return NaN; const window = data.slice(index - period + 1, index + 1), high = Math.max(...window.map(item => item.high)), low = Math.min(...window.map(item => item.low)); return high === low ? .5 : (bar.close - low) / (high - low); });
+  if (family === "keltner_position") return data.map((bar, index) => { const center = ema(closes, period)[index], width = (rolling(tr, period, window => mean(window))[index] ?? 0) * 2; return width ? (bar.close - (center - width)) / (2 * width) : .5; });
+  if (family === "candle_body_pct") return data.map(bar => bar.high === bar.low ? 0 : Math.abs(bar.close - bar.open) / (bar.high - bar.low));
+  if (family === "upper_wick_pct") return data.map(bar => bar.high === bar.low ? 0 : (bar.high - Math.max(bar.open, bar.close)) / (bar.high - bar.low));
+  if (family === "lower_wick_pct") return data.map(bar => bar.high === bar.low ? 0 : (Math.min(bar.open, bar.close) - bar.low) / (bar.high - bar.low));
+  if (family === "gap_pct") return data.map((bar, index) => index === 0 || data[index - 1].close === 0 ? 0 : ((bar.open - data[index - 1].close) / data[index - 1].close) * 100);
+  if (family === "hl2") return data.map(bar => (bar.high + bar.low) / 2);
+  if (family === "ohlc4") return data.map(bar => (bar.open + bar.high + bar.low + bar.close) / 4);
+  if (family === "realized_vol") return rolling(closes.map((value, index) => index === 0 ? 0 : Math.log(value / closes[index - 1])), period, window => Math.sqrt(mean(window.map(value => value ** 2))) * Math.sqrt(252));
+  if (family === "upside_vol" || family === "downside_vol") return rolling(closes.map((value, index) => index === 0 ? 0 : Math.log(value / closes[index - 1])), period, window => Math.sqrt(mean(window.filter(value => family === "upside_vol" ? value > 0 : value < 0).map(value => value ** 2))) * Math.sqrt(252));
+  if (family === "efficiency_ratio") return closes.map((value, index) => { if (index < period) return NaN; const direction = Math.abs(value - closes[index - period]), noise = closes.slice(index - period + 1, index + 1).reduce((sum, close, offset) => sum + Math.abs(close - closes[index - period + offset]), 0); return noise ? direction / noise : 0; });
+  if (family === "choppiness") return data.map((_, index) => { if (index < period - 1) return NaN; const range = data.slice(index - period + 1, index + 1), high = Math.max(...range.map(bar => bar.high)), low = Math.min(...range.map(bar => bar.low)), atrSum = range.reduce((sum, bar) => sum + bar.high - bar.low, 0); return high === low ? 0 : 100 * Math.log10(atrSum / (high - low)) / Math.log10(period); });
+  if (family === "volume_zscore") return rolling(data.map(bar => bar.volume), period, (window, index) => { const average = mean(window), sd = Math.sqrt(mean(window.map(value => (value - average) ** 2))); return sd ? (data[index].volume - average) / sd : 0; });
+  if (family === "pvt") return data.map((_, index) => index === 0 ? 0 : (index === 1 ? 0 : data.slice(1, index + 1).reduce((sum, bar, offset) => sum + ((bar.close - data[offset].close) / Math.max(1e-9, data[offset].close)) * bar.volume, 0)));
+  if (family === "ad_line") return data.map((_, index) => data.slice(0, index + 1).reduce((sum, bar) => sum + (((bar.close - bar.low) - (bar.high - bar.close)) / Math.max(1e-9, bar.high - bar.low)) * bar.volume, 0));
   throw new Error(`Unknown indicator family: ${family}`);
 }
 
