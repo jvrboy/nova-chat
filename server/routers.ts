@@ -12,6 +12,16 @@ import { fullAnalysis, calculatePips, calculateRisk, fibonacciRetracement, pivot
 import { getScaleNotes, getChordNotes, getScaleChords, generateChordProgression, generateMelody, generateDrumPattern, melodyToABC, generateSong, SCALES, CHORD_TYPES } from "./_core/music";
 import { analyzeMetrics, detectIssues, suggestRefactors, convertCode, generateDocumentation, generateTestStubs, regexHelper } from "./_core/codeTools";
 import {
+  runBacktest, BUILT_IN_STRATEGIES, generateRSIBBSignal, generateMACDCrossSignal,
+  generateStochasticCrossSignal, generateEMACrossSignal, detectCandlePatterns,
+  DERIV_SYMBOLS, parseDerivCandles, buildDerivWebSocketURL, buildDerivCandleRequest,
+  sma as tsSma, ema as tsEma, rsi as tsRsi, atr as tsAtr, bollingerBands as tsBB,
+  macd as tsMacd, stochastic as tsStochastic, adx as tsAdx, williamsR as tsWilliamsR,
+  cci as tsCci, obv as tsObv, vwap as tsVwap,
+} from "./_core/tradingStrategy";
+import { runSwarmConsensus, listSwarmAgents, SWARM_AGENTS } from "./_core/swarmConsensus";
+import { executeSandboxedCode } from "./_core/performanceTools";
+import {
   createConversation,
   createMessage,
   createProject,
@@ -265,6 +275,87 @@ export const appRouter = router({
       model: z.string().optional(),
     })).mutation(async ({ input }) => {
       return executePipeline(input.id, input.input, { model: input.model });
+    }),
+  }),
+  trading: router({
+    strategies: protectedProcedure.query(() => BUILT_IN_STRATEGIES),
+    backtest: protectedProcedure.input(z.object({
+      candles: z.array(z.object({ timestamp: z.number(), open: z.number(), high: z.number(), low: z.number(), close: z.number(), volume: z.number() })).min(50),
+      strategyName: z.string().optional(),
+      customStrategy: z.object({
+        name: z.string(), description: z.string(), timeframe: z.string(), marketType: z.string(),
+        entryRules: z.array(z.object({ type: z.string(), params: z.record(z.union([z.number(), z.string(), z.boolean()])) })),
+        exitRules: z.object({ tpAtrMult: z.number(), slAtrMult: z.number(), trailingStop: z.boolean().optional(), trailingAtrMult: z.number().optional(), maxHoldingBars: z.number() }),
+        riskManagement: z.object({ riskPerTrade: z.number(), maxConcurrentPositions: z.number(), minBarsBetweenTrades: z.number() }),
+      }).optional(),
+    })).mutation(({ input }) => {
+      const strategy = input.customStrategy ?? BUILT_IN_STRATEGIES.find(s => s.name === input.strategyName) ?? BUILT_IN_STRATEGIES[0];
+      const { trades, equityCurve, drawdownCurve, ...stats } = runBacktest(input.candles, strategy);
+      return { ...stats, tradeCount: trades.length, sampleTrades: trades.slice(-10) };
+    }),
+    signals: protectedProcedure.input(z.object({
+      candles: z.array(z.object({ timestamp: z.number(), open: z.number(), high: z.number(), low: z.number(), close: z.number(), volume: z.number() })).min(30),
+      strategyType: z.enum(['rsi_bb_reversal', 'macd_cross', 'stochastic_cross', 'ema_cross']),
+      params: z.record(z.number()).optional(),
+    })).mutation(({ input }) => {
+      switch (input.strategyType) {
+        case 'rsi_bb_reversal': return { signals: generateRSIBBSignal(input.candles, input.params as any) };
+        case 'macd_cross': return { signals: generateMACDCrossSignal(input.candles, input.params as any) };
+        case 'stochastic_cross': return { signals: generateStochasticCrossSignal(input.candles, input.params as any) };
+        case 'ema_cross': return { signals: generateEMACrossSignal(input.candles, input.params as any) };
+      }
+    }),
+    patterns: protectedProcedure.input(z.object({
+      candles: z.array(z.object({ timestamp: z.number(), open: z.number(), high: z.number(), low: z.number(), close: z.number(), volume: z.number() })).min(5).max(500),
+    })).mutation(({ input }) => {
+      const allPatterns = detectCandlePatterns(input.candles);
+      const detected = allPatterns.map((patterns, i) => ({ bar: i + 1, time: input.candles[i].timestamp, patterns })).filter(p => p.patterns.length > 0);
+      return { totalBars: input.candles.length, barsWithPatterns: detected.length, patterns: detected };
+    }),
+    derivSymbols: protectedProcedure.query(() => DERIV_SYMBOLS),
+    derivWsUrl: protectedProcedure.input(z.object({ appId: z.string().default('1089') })).query(({ input }) => ({ url: buildDerivWebSocketURL(input.appId) })),
+    indicators: protectedProcedure.input(z.object({
+      closes: z.array(z.number()).min(5),
+      highs: z.array(z.number()).optional(),
+      lows: z.array(z.number()).optional(),
+      volumes: z.array(z.number()).optional(),
+      indicator: z.enum(['sma', 'ema', 'rsi', 'atr', 'bollinger', 'macd', 'stochastic', 'adx', 'williams_r', 'cci', 'obv', 'vwap']),
+      period: z.number().int().min(2).max(200).default(14),
+      period2: z.number().int().min(2).max(200).optional(),
+      period3: z.number().int().min(2).max(200).optional(),
+    })).mutation(({ input }) => {
+      const { closes, highs, lows, volumes, indicator, period, period2, period3 } = input;
+      switch (indicator) {
+        case 'sma': return { indicator: 'SMA', values: tsSma(closes, period) };
+        case 'ema': return { indicator: 'EMA', values: tsEma(closes, period) };
+        case 'rsi': return { indicator: 'RSI', values: tsRsi(closes, period) };
+        case 'macd': { const r = tsMacd(closes, period, period2 ?? 26, period3 ?? 9); return { indicator: 'MACD', values: r }; }
+        case 'stochastic': { if (!highs || !lows) throw new Error('highs and lows required'); return { indicator: 'Stochastic', values: tsStochastic(closes.map((c,i) => ({ timestamp: i, open: c, high: highs[i], low: lows[i], close: c, volume: 0 })), period, period2 ?? 3) }; }
+        case 'bollinger': return { indicator: 'Bollinger Bands', values: tsBB(closes, period) };
+        case 'atr': { if (!highs || !lows) throw new Error('highs and lows required'); return { indicator: 'ATR', values: tsAtr(closes.map((c,i) => ({ timestamp: i, open: c, high: highs[i], low: lows[i], close: c, volume: 0 })), period) }; }
+        case 'adx': { if (!highs || !lows) throw new Error('highs and lows required'); return { indicator: 'ADX', values: tsAdx(closes.map((c,i) => ({ timestamp: i, open: c, high: highs[i], low: lows[i], close: c, volume: 0 })), period) }; }
+        case 'williams_r': { if (!highs || !lows) throw new Error('highs and lows required'); return { indicator: 'Williams %R', values: tsWilliamsR(closes.map((c,i) => ({ timestamp: i, open: c, high: highs[i], low: lows[i], close: c, volume: 0 })), period) }; }
+        case 'cci': { if (!highs || !lows) throw new Error('highs and lows required'); return { indicator: 'CCI', values: tsCci(closes.map((c,i) => ({ timestamp: i, open: c, high: highs[i], low: lows[i], close: c, volume: 0 })), period) }; }
+        case 'obv': { if (!volumes) throw new Error('volumes required'); return { indicator: 'OBV', values: tsObv(closes.map((c,i) => ({ timestamp: i, open: c, high: c, low: c, close: c, volume: volumes[i] }))) }; }
+        case 'vwap': { if (!volumes) throw new Error('volumes required'); return { indicator: 'VWAP', values: tsVwap(closes.map((c,i) => ({ timestamp: i, open: c, high: c, low: c, close: c, volume: volumes[i] }))) }; }
+      }
+    }),
+  }),
+  swarm: router({
+    agents: protectedProcedure.query(() => listSwarmAgents()),
+    run: protectedProcedure.input(z.object({
+      candles: z.array(z.object({ timestamp: z.number(), open: z.number(), high: z.number(), low: z.number(), close: z.number(), volume: z.number() })).min(30),
+    })).mutation(({ input }) => {
+      return runSwarmConsensus(input.candles);
+    }),
+  }),
+  sandbox: router({
+    execute: protectedProcedure.input(z.object({
+      code: z.string().min(1).max(10000),
+      timeoutMs: z.number().int().min(100).max(30000).default(5000),
+      allowImports: z.boolean().default(false),
+    })).mutation(async ({ input }) => {
+      return executeSandboxedCode(input.code, { timeoutMs: input.timeoutMs, allowImports: input.allowImports });
     }),
   }),
 });
