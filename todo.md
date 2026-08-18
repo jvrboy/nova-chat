@@ -8,7 +8,7 @@
 - [x] Add Claude-inspired workspace features: starred chats, archive controls, model picker state, web-search affordance, artifacts panel, and richer composer attachment previews.
 - [x] Add loading, empty, error, and optimistic interaction states.
 - [x] Verify type checking, production build, and responsive behavior; authenticated persistence verification is explicitly deferred.
-- [ ] Save a checkpoint and deliver the updated workspace.
+- [x] Save a checkpoint and deliver the updated workspace.
 - [x] Defer authenticated persistence end-to-end verification because the user requested no login.
 - [x] Capture and review both desktop and mobile screenshots after the persistence upgrade.
 - [x] Add visible project-instructions editing and active context display.
@@ -20,3 +20,4 @@
 - [x] Add complete error and retry handling for all persistence queries and conversation update operations.
 - [x] Add active-thread retry and operation-specific recovery actions for failed star/archive and other mutations.
 - [x] Add exact retry actions for failed conversation creation, project creation, instruction saves, and message writes.
+- [x] Create a new private GitHub repository and push the current project to the main branch.
