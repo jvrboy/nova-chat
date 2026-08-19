@@ -5827,14 +5827,39 @@ var EventBus = class {
     return (this.subscribers.get(event)?.size ?? 0) + this.globalSubscribers.size;
   }
 };
+var SANDBOX_MAX_TIMEOUT_MS = 6e4;
+var normalizeSandboxTimeout = (timeoutMs) => Math.min(Math.max(timeoutMs, 100), SANDBOX_MAX_TIMEOUT_MS);
 var DEFAULT_SANDBOX_CONFIG = {
-  timeoutMs: 5e3,
+  timeoutMs: 6e4,
   maxOutputLength: 5e4,
   allowImports: false,
-  allowedImports: []
+  allowedImports: [],
+  allowNetwork: true,
+  allowedHosts: (process.env.SANDBOX_ALLOWED_HOSTS ?? "").split(",").map((host) => host.trim().toLowerCase()).filter(Boolean)
+};
+var isBlockedNetworkHost = (hostname) => {
+  const host = hostname.toLowerCase().replace(/\.$/, "");
+  return host === "localhost" || host === "127.0.0.1" || host === "::1" || host.endsWith(".local") || host.endsWith(".internal") || /^(10|127|169\.254|192\.168)\./.test(host) || /^172\.(1[6-9]|2\d|3[0-1])\./.test(host);
+};
+var createSandboxFetch = (cfg) => async (input, init = {}) => {
+  if (!cfg.allowNetwork) throw new Error("Network access is disabled for this sandbox run");
+  const url = new URL(String(input));
+  if (url.protocol !== "https:") throw new Error("Sandbox network access requires HTTPS");
+  if (isBlockedNetworkHost(url.hostname)) throw new Error("Sandbox network access blocks private or local hosts");
+  const hostAllowed = cfg.allowedHosts.some((allowed) => url.hostname === allowed || url.hostname.endsWith(`.${allowed}`));
+  if (!hostAllowed) throw new Error(`Sandbox network host is not allowlisted: ${url.hostname}`);
+  const method = String(init.method ?? "GET").toUpperCase();
+  if (method !== "GET" && method !== "HEAD") throw new Error("Sandbox network access permits only GET and HEAD requests");
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), Math.min(cfg.timeoutMs, SANDBOX_MAX_TIMEOUT_MS));
+  try {
+    return await fetch(url, { ...init, method, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
 };
 async function executeSandboxedCode(code, config = {}) {
-  const cfg = { ...DEFAULT_SANDBOX_CONFIG, ...config };
+  const cfg = { ...DEFAULT_SANDBOX_CONFIG, ...config, timeoutMs: normalizeSandboxTimeout(config.timeoutMs ?? DEFAULT_SANDBOX_CONFIG.timeoutMs) };
   const startTime = Date.now();
   let output = "";
   let error = null;
@@ -5875,13 +5900,13 @@ async function executeSandboxedCode(code, config = {}) {
   try {
     const AsyncFunction = Object.getPrototypeOf(async function() {
     }).constructor;
-    const fn = new AsyncFunction("console", "setTimeout", "setInterval", `"use strict";
+    const fn = new AsyncFunction("console", "setTimeout", "setInterval", "fetch", `"use strict";
 ${code}
 `);
     const timeoutPromise = new Promise((resolve) => setTimeout(() => resolve("timeout"), cfg.timeoutMs));
     const result = await Promise.race([fn(sandboxConsole, () => {
     }, () => {
-    }), timeoutPromise]);
+    }, createSandboxFetch(cfg)), timeoutPromise]);
     if (result === "timeout") {
       timedOut = true;
       error = `Execution timed out after ${cfg.timeoutMs}ms`;
@@ -7954,19 +7979,22 @@ ${input.context ?? "No additional context."}`
   sandbox: router({
     execute: protectedProcedure.input(z2.object({
       code: z2.string().min(1).max(1e4),
-      timeoutMs: z2.number().int().min(100).max(1e4).default(5e3),
+      timeoutMs: z2.number().int().min(100).max(6e4).default(6e4),
       maxOutputLength: z2.number().int().min(100).max(5e4).default(2e4),
-      allowImports: z2.literal(false).default(false)
+      allowImports: z2.literal(false).default(false),
+      allowNetwork: z2.boolean().default(true)
     })).mutation(async ({ input }) => {
-      return executeSandboxedCode(input.code, { timeoutMs: input.timeoutMs, maxOutputLength: input.maxOutputLength, allowImports: false, allowedImports: [] });
+      return executeSandboxedCode(input.code, { timeoutMs: input.timeoutMs, maxOutputLength: input.maxOutputLength, allowImports: false, allowedImports: [], allowNetwork: input.allowNetwork });
     }),
     capabilities: protectedProcedure.query(() => ({
-      execution: "isolated-in-process",
+      execution: "policy-controlled-in-process",
       imports: false,
-      maxTimeoutMs: 1e4,
+      network: "allowlisted-https-get-head",
+      maxTimeoutMs: 6e4,
       maxOutputLength: 5e4,
-      blockedCapabilities: ["filesystem", "network", "process", "dynamic-eval", "child-process"],
-      note: "Use E2B for untrusted or dependency-heavy workloads; this sandbox is intended for bounded calculations only."
+      blockedCapabilities: ["filesystem", "process", "dynamic-eval", "child-process", "private-network", "non-https", "mutating-network-methods"],
+      configuration: "Set SANDBOX_ALLOWED_HOSTS to a comma-separated host allowlist.",
+      note: "For arbitrary dependencies or long-running jobs, use an external isolated runner such as E2B; Vercel functions cannot safely provide unrestricted one-hour host control."
     }))
   })
 });

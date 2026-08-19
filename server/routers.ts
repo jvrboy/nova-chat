@@ -1476,19 +1476,22 @@ export const appRouter = router({
   sandbox: router({
     execute: protectedProcedure.input(z.object({
       code: z.string().min(1).max(10000),
-      timeoutMs: z.number().int().min(100).max(10000).default(5000),
+      timeoutMs: z.number().int().min(100).max(60000).default(60000),
       maxOutputLength: z.number().int().min(100).max(50000).default(20000),
       allowImports: z.literal(false).default(false),
+      allowNetwork: z.boolean().default(true),
     })).mutation(async ({ input }) => {
-      return executeSandboxedCode(input.code, { timeoutMs: input.timeoutMs, maxOutputLength: input.maxOutputLength, allowImports: false, allowedImports: [] });
+      return executeSandboxedCode(input.code, { timeoutMs: input.timeoutMs, maxOutputLength: input.maxOutputLength, allowImports: false, allowedImports: [], allowNetwork: input.allowNetwork });
     }),
     capabilities: protectedProcedure.query(() => ({
-      execution: "isolated-in-process",
+      execution: "policy-controlled-in-process",
       imports: false,
-      maxTimeoutMs: 10000,
+      network: "allowlisted-https-get-head",
+      maxTimeoutMs: 60000,
       maxOutputLength: 50000,
-      blockedCapabilities: ["filesystem", "network", "process", "dynamic-eval", "child-process"],
-      note: "Use E2B for untrusted or dependency-heavy workloads; this sandbox is intended for bounded calculations only.",
+      blockedCapabilities: ["filesystem", "process", "dynamic-eval", "child-process", "private-network", "non-https", "mutating-network-methods"],
+      configuration: "Set SANDBOX_ALLOWED_HOSTS to a comma-separated host allowlist.",
+      note: "For arbitrary dependencies or long-running jobs, use an external isolated runner such as E2B; Vercel functions cannot safely provide unrestricted one-hour host control.",
     })),
   }),
 });

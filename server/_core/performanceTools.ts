@@ -136,6 +136,8 @@ export type SandboxConfig = {
   maxOutputLength: number;
   allowImports: boolean;
   allowedImports: string[];
+  allowNetwork: boolean;
+  allowedHosts: string[];
 };
 
 export type SandboxResult = {
@@ -146,12 +148,38 @@ export type SandboxResult = {
   timeout: boolean;
 };
 
+export const SANDBOX_MAX_TIMEOUT_MS = 60_000;
+export const normalizeSandboxTimeout = (timeoutMs: number) => Math.min(Math.max(timeoutMs, 100), SANDBOX_MAX_TIMEOUT_MS);
 const DEFAULT_SANDBOX_CONFIG: SandboxConfig = {
-  timeoutMs: 5000, maxOutputLength: 50000, allowImports: false, allowedImports: [],
+  timeoutMs: 60_000, maxOutputLength: 50_000, allowImports: false, allowedImports: [], allowNetwork: true,
+  allowedHosts: (process.env.SANDBOX_ALLOWED_HOSTS ?? "").split(",").map((host) => host.trim().toLowerCase()).filter(Boolean),
+};
+
+const isBlockedNetworkHost = (hostname: string) => {
+  const host = hostname.toLowerCase().replace(/\.$/, "");
+  return host === "localhost" || host === "127.0.0.1" || host === "::1" || host.endsWith(".local") || host.endsWith(".internal") || /^(10|127|169\.254|192\.168)\./.test(host) || /^172\.(1[6-9]|2\d|3[0-1])\./.test(host);
+};
+
+const createSandboxFetch = (cfg: SandboxConfig) => async (input: string | URL, init: RequestInit = {}) => {
+  if (!cfg.allowNetwork) throw new Error("Network access is disabled for this sandbox run");
+  const url = new URL(String(input));
+  if (url.protocol !== "https:") throw new Error("Sandbox network access requires HTTPS");
+  if (isBlockedNetworkHost(url.hostname)) throw new Error("Sandbox network access blocks private or local hosts");
+  const hostAllowed = cfg.allowedHosts.some((allowed) => url.hostname === allowed || url.hostname.endsWith(`.${allowed}`));
+  if (!hostAllowed) throw new Error(`Sandbox network host is not allowlisted: ${url.hostname}`);
+  const method = String(init.method ?? "GET").toUpperCase();
+  if (method !== "GET" && method !== "HEAD") throw new Error("Sandbox network access permits only GET and HEAD requests");
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), Math.min(cfg.timeoutMs, SANDBOX_MAX_TIMEOUT_MS));
+  try {
+    return await fetch(url, { ...init, method, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
 };
 
 export async function executeSandboxedCode(code: string, config: Partial<SandboxConfig> = {}): Promise<SandboxResult> {
-  const cfg = { ...DEFAULT_SANDBOX_CONFIG, ...config };
+  const cfg = { ...DEFAULT_SANDBOX_CONFIG, ...config, timeoutMs: normalizeSandboxTimeout(config.timeoutMs ?? DEFAULT_SANDBOX_CONFIG.timeoutMs) };
   const startTime = Date.now();
   let output = '';
   let error: string | null = null;
@@ -190,9 +218,9 @@ export async function executeSandboxedCode(code: string, config: Partial<Sandbox
 
   try {
     const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
-    const fn = new AsyncFunction('console', 'setTimeout', 'setInterval', `"use strict";\n${code}\n`);
+    const fn = new AsyncFunction('console', 'setTimeout', 'setInterval', 'fetch', `"use strict";\n${code}\n`);
     const timeoutPromise = new Promise<'timeout'>(resolve => setTimeout(() => resolve('timeout'), cfg.timeoutMs));
-    const result = await Promise.race([fn(sandboxConsole, () => {}, () => {}), timeoutPromise]);
+    const result = await Promise.race([fn(sandboxConsole, () => {}, () => {}, createSandboxFetch(cfg)), timeoutPromise]);
     if (result === 'timeout') { timedOut = true; error = `Execution timed out after ${cfg.timeoutMs}ms`; }
     output = logs.join('\n').slice(0, cfg.maxOutputLength);
     if (result !== 'timeout' && result !== undefined) {
