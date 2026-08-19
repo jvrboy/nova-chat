@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { indicatorSuite, adxIndicator, bollingerIndicator, macdIndicator, vwapIndicator } from "./_core/technicalIndicators";
+import { indicatorSuite, adxIndicator, bollingerIndicator, macdIndicator, vwapIndicator, ichimokuCloudIndicator, fibonacciRetracementIndicator, superTrendIndicator } from "./_core/technicalIndicators";
 import { arpeggiate, chordProgression, humanizeNotes, midiNoteName, swingQuantize } from "./_core/musicPro";
 import { canInvokeTool, getToolPolicy } from "./_core/toolRegistry";
 
@@ -21,6 +21,13 @@ describe("expanded technical indicators", () => {
     expect(result.unknown_indicator).toEqual({ error: "Unknown indicator" });
     const extended = indicatorSuite(candles, ["awesomeOscillator", "forceIndex", "cmf", "vortex", "fisher", "rvi", "massIndex", "chandelier"]);
     expect(Object.keys(extended)).toHaveLength(8);
+    const advanced = indicatorSuite(candles, ["ichimoku", "fibonacci", "supertrend"]);
+    expect(advanced).toHaveProperty("ichimoku");
+    expect(advanced).toHaveProperty("fibonacci");
+    expect(advanced).toHaveProperty("supertrend");
+    expect(Number.isFinite(ichimokuCloudIndicator(candles).cloudTop)).toBe(true);
+    expect(Object.keys(fibonacciRetracementIndicator(candles).levels)).toHaveLength(7);
+    expect(["up", "down"].includes(superTrendIndicator(candles).direction)).toBe(true);
   });
 });
 

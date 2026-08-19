@@ -1696,6 +1696,53 @@ function pivotRangeIndicator(data) {
   const top = 2 * pivot - bottom;
   return { top, bottom, width: top - bottom };
 }
+function ichimokuCloudIndicator(data, conversionPeriod = 9, basePeriod = 26, spanPeriod = 52, displacement = 26) {
+  const midpoint = (period, offset = 0) => {
+    const sample = data.slice(Math.max(0, data.length - period - offset), Math.max(0, data.length - offset));
+    if (!sample.length) return 0;
+    return (Math.max(...sample.map((c) => c.high)) + Math.min(...sample.map((c) => c.low))) / 2;
+  };
+  const conversion = midpoint(conversionPeriod);
+  const base = midpoint(basePeriod);
+  const spanA = (conversion + base) / 2;
+  const spanB = midpoint(spanPeriod);
+  const close = data.at(-1)?.close ?? 0;
+  return { conversionPeriod, basePeriod, spanPeriod, displacement, conversion, base, spanA, spanB, cloudTop: Math.max(spanA, spanB), cloudBottom: Math.min(spanA, spanB), close, bias: close > Math.max(spanA, spanB) ? "above-cloud" : close < Math.min(spanA, spanB) ? "below-cloud" : "inside-cloud" };
+}
+function fibonacciRetracementIndicator(data, lookback = 100) {
+  const sample = data.slice(-Math.max(2, lookback));
+  if (!sample.length) return { lookback, high: 0, low: 0, range: 0, trend: "flat", levels: {} };
+  const high = Math.max(...sample.map((c) => c.high));
+  const low = Math.min(...sample.map((c) => c.low));
+  const range = high - low;
+  const first = sample[0]?.close ?? 0;
+  const last = sample.at(-1)?.close ?? 0;
+  const trend = last >= first ? "up" : "down";
+  const ratios = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1];
+  const levels = Object.fromEntries(ratios.map((ratio) => [String(ratio), trend === "up" ? high - range * ratio : low + range * ratio]));
+  return { lookback, high, low, range, trend, levels };
+}
+function superTrendIndicator(data, period = 10, multiplier = 3) {
+  if (!data.length) return { period, multiplier, value: 0, direction: "neutral", upperBand: 0, lowerBand: 0 };
+  const safePeriod = Math.max(1, period);
+  const trs = trueRange(data);
+  let finalUpper = 0;
+  let finalLower = 0;
+  let direction = "up";
+  let value = data[0].close;
+  for (let i = 0; i < data.length; i++) {
+    const atr4 = sma3(trs.slice(0, i + 1), safePeriod);
+    const hl2 = (data[i].high + data[i].low) / 2;
+    const basicUpper = hl2 + multiplier * atr4;
+    const basicLower = hl2 - multiplier * atr4;
+    finalUpper = i === 0 ? basicUpper : basicUpper < finalUpper || data[i - 1].close > finalUpper ? basicUpper : finalUpper;
+    finalLower = i === 0 ? basicLower : basicLower > finalLower || data[i - 1].close < finalLower ? basicLower : finalLower;
+    if (direction === "up" && data[i].close < finalLower) direction = "down";
+    else if (direction === "down" && data[i].close > finalUpper) direction = "up";
+    value = direction === "up" ? finalLower : finalUpper;
+  }
+  return { period: safePeriod, multiplier, value, direction, upperBand: finalUpper, lowerBand: finalLower };
+}
 function indicatorSuite(data, requested) {
   const names = requested?.length ? requested : ["sma", "ema", "macd", "rsi", "bollinger", "atr", "adx", "stochastic", "vwap", "obv", "mfi", "donchian", "roc", "zscore", "volatility"];
   const output = {};
@@ -1793,6 +1840,15 @@ function indicatorSuite(data, requested) {
         break;
       case "chandelier":
         output.chandelier = chandelierExitIndicator(data);
+        break;
+      case "ichimoku":
+        output.ichimoku = ichimokuCloudIndicator(data);
+        break;
+      case "fibonacci":
+        output.fibonacci = fibonacciRetracementIndicator(data);
+        break;
+      case "supertrend":
+        output.supertrend = superTrendIndicator(data);
         break;
       default:
         output[name] = { error: "Unknown indicator" };
