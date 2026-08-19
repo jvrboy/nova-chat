@@ -19,6 +19,12 @@ export function runtimeConfigurationStatus() {
     { id: "firecrawl", label: "Firecrawl", keyCount: countKeys("FIRECRAWL") },
     { id: "e2b", label: "E2B", keyCount: countKeys("E2B") },
   ].map(item => ({ ...item, configured: item.keyCount > 0 }));
+  const checks = {
+    authentication: present(ENV.cookieSecret) && present(ENV.passwordHash),
+    aiRouting: providers.some(provider => provider.configured) || present(ENV.forgeApiKey),
+    persistence: present(ENV.databaseUrl) || (present(ENV.supabaseUrl) && present(ENV.supabaseAnonKey)),
+    optionalConnections: connections.some(connection => connection.configured),
+  };
   return {
     environment: { production: ENV.isProduction, vercel: present(process.env.VERCEL), nodeVersion: process.version },
     providers,
@@ -31,5 +37,11 @@ export function runtimeConfigurationStatus() {
     },
     auth: { passwordOnly: present(ENV.passwordHash), sessionSecret: present(ENV.cookieSecret) },
     routing: { providerOrder: ENV.providerOrder },
+    readiness: { overall: Object.values(checks).every(Boolean) ? "ready" : "degraded", checks },
   };
+}
+
+export function runtimeReadinessSnapshot() {
+  const status = runtimeConfigurationStatus();
+  return { ok: status.readiness.overall === "ready", service: "nova-chat", timestamp: new Date().toISOString(), environment: status.environment, readiness: status.readiness, providerCount: status.providers.filter(provider => provider.configured).length, connectionCount: status.connections.filter(connection => connection.configured).length };
 }

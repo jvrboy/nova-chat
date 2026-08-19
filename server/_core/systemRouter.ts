@@ -1,8 +1,11 @@
 import { z } from "zod";
 import { notifyOwner } from "./notification";
+import { runtimeReadinessSnapshot } from "./runtimeConfig";
 import { adminProcedure, publicProcedure, router } from "./trpc";
 
 export const systemRouter = router({
+  readiness: publicProcedure.query(() => runtimeReadinessSnapshot()),
+
   health: publicProcedure
     .input(
       z.object({

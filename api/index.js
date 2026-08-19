@@ -4580,6 +4580,51 @@ async function notifyOwner(payload) {
   }
 }
 
+// server/_core/runtimeConfig.ts
+var present = (value) => Boolean(value?.trim());
+var countKeys = (prefix) => {
+  const values = [process.env[`${prefix}_API_KEYS`], process.env[`${prefix}_KEYS`], process.env[`${prefix}_API_KEY`]];
+  for (let index2 = 1; index2 <= 50; index2 += 1) values.push(process.env[`${prefix}_${index2}`]);
+  return [...new Set(values.flatMap((value) => (value ?? "").split(/[\n,;]+/).map((item) => item.trim()).filter(Boolean)))].length;
+};
+function runtimeConfigurationStatus() {
+  const providers = [
+    { id: "gemini", label: "Gemini", keyCount: countKeys("GEMINI"), model: ENV.geminiModel, baseUrl: "https://generativelanguage.googleapis.com/v1beta" },
+    { id: "groq", label: "Groq", keyCount: countKeys("GROQ"), model: ENV.groqModel, baseUrl: "https://api.groq.com/openai/v1" },
+    { id: "ollama-cloud", label: "Ollama Cloud", keyCount: countKeys("OLLAMA_CLOUD"), model: ENV.ollamaCloudModel, baseUrl: ENV.ollamaCloudBaseUrl },
+    { id: "openrouter", label: "OpenRouter", keyCount: countKeys("OPENROUTER"), model: ENV.openrouterModel, baseUrl: ENV.openrouterBaseUrl }
+  ].map((item) => ({ ...item, configured: item.keyCount > 0 }));
+  const connections = [
+    { id: "kaggle", label: "Kaggle", keyCount: countKeys("KAGGLE") },
+    { id: "firecrawl", label: "Firecrawl", keyCount: countKeys("FIRECRAWL") },
+    { id: "e2b", label: "E2B", keyCount: countKeys("E2B") }
+  ].map((item) => ({ ...item, configured: item.keyCount > 0 }));
+  const checks = {
+    authentication: present(ENV.cookieSecret) && present(ENV.passwordHash),
+    aiRouting: providers.some((provider) => provider.configured) || present(ENV.forgeApiKey),
+    persistence: present(ENV.databaseUrl) || present(ENV.supabaseUrl) && present(ENV.supabaseAnonKey),
+    optionalConnections: connections.some((connection) => connection.configured)
+  };
+  return {
+    environment: { production: ENV.isProduction, vercel: present(process.env.VERCEL), nodeVersion: process.version },
+    providers,
+    connections,
+    data: {
+      database: present(ENV.databaseUrl),
+      supabase: present(ENV.supabaseUrl) && present(ENV.supabaseAnonKey),
+      cloudflareWorker: present(ENV.cloudflareWorkerUrl),
+      massiveMarketData: present(ENV.massiveWsUrl) && present(ENV.massiveApiKey)
+    },
+    auth: { passwordOnly: present(ENV.passwordHash), sessionSecret: present(ENV.cookieSecret) },
+    routing: { providerOrder: ENV.providerOrder },
+    readiness: { overall: Object.values(checks).every(Boolean) ? "ready" : "degraded", checks }
+  };
+}
+function runtimeReadinessSnapshot() {
+  const status = runtimeConfigurationStatus();
+  return { ok: status.readiness.overall === "ready", service: "nova-chat", timestamp: (/* @__PURE__ */ new Date()).toISOString(), environment: status.environment, readiness: status.readiness, providerCount: status.providers.filter((provider) => provider.configured).length, connectionCount: status.connections.filter((connection) => connection.configured).length };
+}
+
 // server/_core/trpc.ts
 import { initTRPC, TRPCError as TRPCError2 } from "@trpc/server";
 import superjson from "superjson";
@@ -4618,6 +4663,7 @@ var adminProcedure = t.procedure.use(
 
 // server/_core/systemRouter.ts
 var systemRouter = router({
+  readiness: publicProcedure.query(() => runtimeReadinessSnapshot()),
   health: publicProcedure.input(
     z.object({
       timestamp: z.number().min(0, "timestamp cannot be negative")
@@ -5276,40 +5322,6 @@ function regexHelper(input) {
     }
   }
   return { pattern: "", description: "No common pattern matched", test: false, matches: [] };
-}
-
-// server/_core/runtimeConfig.ts
-var present = (value) => Boolean(value?.trim());
-var countKeys = (prefix) => {
-  const values = [process.env[`${prefix}_API_KEYS`], process.env[`${prefix}_KEYS`], process.env[`${prefix}_API_KEY`]];
-  for (let index2 = 1; index2 <= 50; index2 += 1) values.push(process.env[`${prefix}_${index2}`]);
-  return [...new Set(values.flatMap((value) => (value ?? "").split(/[\n,;]+/).map((item) => item.trim()).filter(Boolean)))].length;
-};
-function runtimeConfigurationStatus() {
-  const providers = [
-    { id: "gemini", label: "Gemini", keyCount: countKeys("GEMINI"), model: ENV.geminiModel, baseUrl: "https://generativelanguage.googleapis.com/v1beta" },
-    { id: "groq", label: "Groq", keyCount: countKeys("GROQ"), model: ENV.groqModel, baseUrl: "https://api.groq.com/openai/v1" },
-    { id: "ollama-cloud", label: "Ollama Cloud", keyCount: countKeys("OLLAMA_CLOUD"), model: ENV.ollamaCloudModel, baseUrl: ENV.ollamaCloudBaseUrl },
-    { id: "openrouter", label: "OpenRouter", keyCount: countKeys("OPENROUTER"), model: ENV.openrouterModel, baseUrl: ENV.openrouterBaseUrl }
-  ].map((item) => ({ ...item, configured: item.keyCount > 0 }));
-  const connections = [
-    { id: "kaggle", label: "Kaggle", keyCount: countKeys("KAGGLE") },
-    { id: "firecrawl", label: "Firecrawl", keyCount: countKeys("FIRECRAWL") },
-    { id: "e2b", label: "E2B", keyCount: countKeys("E2B") }
-  ].map((item) => ({ ...item, configured: item.keyCount > 0 }));
-  return {
-    environment: { production: ENV.isProduction, vercel: present(process.env.VERCEL), nodeVersion: process.version },
-    providers,
-    connections,
-    data: {
-      database: present(ENV.databaseUrl),
-      supabase: present(ENV.supabaseUrl) && present(ENV.supabaseAnonKey),
-      cloudflareWorker: present(ENV.cloudflareWorkerUrl),
-      massiveMarketData: present(ENV.massiveWsUrl) && present(ENV.massiveApiKey)
-    },
-    auth: { passwordOnly: present(ENV.passwordHash), sessionSecret: present(ENV.cookieSecret) },
-    routing: { providerOrder: ENV.providerOrder }
-  };
 }
 
 // server/_core/swarmConsensus.ts
