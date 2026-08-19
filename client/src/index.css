@@ -530,3 +530,16 @@ html { font-size: var(--nova-font-scale); }
 .preference-row select, .preference-row input[type="text"], .preference-row input:not([type]) { max-width: 170px; min-height: 30px; border: 1px solid var(--line); border-radius: 7px; padding: 4px 8px; background: var(--paper); color: inherit; }
 .preference-row input[type="range"] { width: 130px; accent-color: var(--accent); }
 @media (max-width: 720px) { .preferences-grid { grid-template-columns: 1fr; gap: 12px; } .preferences-card { width: calc(100vw - 20px); max-height: calc(100vh - 20px); } }
+
+.live-market-ticker { display: grid; gap: 8px; margin: 0 18px 10px; padding: 10px 12px; background: color-mix(in srgb, var(--paper) 88%, transparent); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 8px 22px rgba(45,35,25,.05); }
+.live-market-heading, .live-market-heading > span, .live-market-status { display: flex; align-items: center; gap: 6px; }
+.live-market-heading { justify-content: space-between; color: var(--ink-soft); font-size: 11px; letter-spacing: .04em; text-transform: uppercase; }
+.live-market-status { color: var(--ink-faint); font-size: 10px; }
+.live-market-status.live { color: var(--accent-green); }
+.live-market-status.reconnecting, .live-market-status.connecting { color: var(--accent-gold); }
+.live-market-items { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.live-market-item { display: grid; gap: 2px; min-width: 0; padding: 8px 9px; border: 1px solid var(--line); border-radius: 9px; background: color-mix(in srgb, var(--paper-deep) 48%, transparent); }
+.live-market-item strong { overflow: hidden; color: var(--foreground); font-size: 11px; text-overflow: ellipsis; }
+.live-market-item span { color: var(--accent); font-family: var(--font-mono); font-size: 12px; font-variant-numeric: tabular-nums; }
+.live-market-item small { overflow: hidden; color: var(--ink-faint); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 720px) { .live-market-ticker { margin: 0 10px 8px; } .live-market-items { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; } .live-market-item { padding: 7px; } }
