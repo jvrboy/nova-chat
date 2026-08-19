@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { scryptSync, timingSafeEqual } from "node:crypto";
+import { parse as parseCookieHeader } from "cookie";
 import { invokeLLM, listLLMModels } from "./_core/llm";
 import { generateImage, listImageModels } from "./_core/imageGeneration";
 import { transcribeAudio } from "./_core/voiceTranscription";
@@ -112,6 +113,14 @@ import {
   updateConversation,
   updateProject,
   upsertUser,
+  getUserByOpenId,
+  createUserSession,
+  revokeUserSession,
+  getActiveUserSession,
+  createRealtimeConnection,
+  heartbeatRealtimeConnection,
+  disconnectRealtimeConnection,
+  listActiveRealtimeConnections,
 } from "./db";
 
 const projectInput = z.object({
@@ -119,6 +128,13 @@ const projectInput = z.object({
   description: z.string().max(2000).optional(),
   instructions: z.string().max(10000).optional(),
 });
+const readSessionToken = (req: { headers: Record<string, string | string[] | undefined> }) => {
+  const cookieToken = parseCookieHeader(typeof req.headers.cookie === "string" ? req.headers.cookie : "")[COOKIE_NAME];
+  if (cookieToken) return cookieToken;
+  const authorization = req.headers.authorization;
+  return typeof authorization === "string" && authorization.startsWith("Bearer ") ? authorization.slice(7) : undefined;
+};
+
 const conversationInput = z.object({
   title: z.string().min(1).max(240),
   projectId: z.number().int().positive().optional(),
@@ -127,9 +143,37 @@ const conversationInput = z.object({
 
 export const appRouter = router({
   system: systemRouter,
+  realtime: router({
+    start: protectedProcedure.input(z.object({ transport: z.enum(["websocket", "sse"]), channel: z.string().min(1).max(128) })).mutation(async ({ ctx, input }) => {
+      const token = readSessionToken(ctx.req);
+      if (!token) throw new Error("Active session token is required");
+      const session = await getActiveUserSession(token);
+      if (!session || session.userId !== ctx.user.id) throw new Error("Persistent session is not active");
+      const connection = await createRealtimeConnection({ sessionId: session.id, userId: ctx.user.id, transport: input.transport, channel: input.channel });
+      if (!connection) throw new Error("Database is not available");
+      return { id: connection.id, sessionId: connection.sessionId, connectedAt: connection.connectedAt };
+    }),
+    heartbeat: protectedProcedure.input(z.object({ connectionId: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
+      const token = readSessionToken(ctx.req);
+      const session = token ? await getActiveUserSession(token) : undefined;
+      if (!session || session.userId !== ctx.user.id) throw new Error("Persistent session is not active");
+      await heartbeatRealtimeConnection(input.connectionId, session.id);
+      return { ok: true, at: new Date() };
+    }),
+    disconnect: protectedProcedure.input(z.object({ connectionId: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
+      const token = readSessionToken(ctx.req);
+      const session = token ? await getActiveUserSession(token) : undefined;
+      if (!session || session.userId !== ctx.user.id) throw new Error("Persistent session is not active");
+      await disconnectRealtimeConnection(input.connectionId, session.id);
+      return { ok: true };
+    }),
+    active: protectedProcedure.query(({ ctx }) => listActiveRealtimeConnections(ctx.user.id)),
+  }),
   auth: router({
     me: publicProcedure.query(({ ctx }) => ctx.user),
-    logout: publicProcedure.mutation(({ ctx }) => {
+    logout: publicProcedure.mutation(async ({ ctx }) => {
+      const token = parseCookieHeader(ctx.req.headers.cookie ?? "")[COOKIE_NAME];
+      if (token && ENV.databaseUrl) await revokeUserSession(token);
       const cookieOptions = getSessionCookieOptions(ctx.req);
       ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
       return { success: true } as const;
@@ -145,6 +189,8 @@ export const appRouter = router({
       const openId = `password:${salt}`;
       await upsertUser({ openId, name: "Nova Workspace", email: null, loginMethod: "password" });
       const token = await sdk.createSessionToken(openId, { name: "Nova Workspace" });
+      const sessionUser = await getUserByOpenId(openId);
+      if (sessionUser && ENV.databaseUrl) await createUserSession({ token, userId: sessionUser.id, userAgent: ctx.req.headers["user-agent"]?.slice(0, 512) ?? null, ipHash: null, expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24 * 365) });
       ctx.res.cookie(COOKIE_NAME, token, { ...getSessionCookieOptions(ctx.req), maxAge: 1000 * 60 * 60 * 24 * 30 });
       return { success: true } as const;
     }),

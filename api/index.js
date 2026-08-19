@@ -28,7 +28,8 @@ var decodeOAuthState = (state) => {
 import { parse as parseCookieHeader2 } from "cookie";
 
 // server/db.ts
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, gt, isNull, lt } from "drizzle-orm";
+import { createHash } from "node:crypto";
 import { drizzle } from "drizzle-orm/mysql2";
 
 // server/_core/env.ts
@@ -150,6 +151,27 @@ var memoryEmbeddings = mysqlTable("memoryEmbeddings", {
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   deletedAt: timestamp("deletedAt")
 }, (table) => ({ userIdx: index("memory_embeddings_user_idx").on(table.userId), expiryIdx: index("memory_embeddings_expiry_idx").on(table.expiresAt), keyIdx: index("memory_embeddings_key_idx").on(table.memoryKey) }));
+var userSessions = mysqlTable("userSessions", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  tokenHash: varchar("tokenHash", { length: 128 }).notNull().unique(),
+  userAgent: varchar("userAgent", { length: 512 }),
+  ipHash: varchar("ipHash", { length: 128 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  lastSeenAt: timestamp("lastSeenAt").defaultNow().notNull(),
+  expiresAt: timestamp("expiresAt").notNull(),
+  revokedAt: timestamp("revokedAt")
+}, (table) => ({ userIdx: index("user_sessions_user_idx").on(table.userId), expiryIdx: index("user_sessions_expiry_idx").on(table.expiresAt), activeIdx: index("user_sessions_active_idx").on(table.revokedAt, table.expiresAt) }));
+var realtimeConnections = mysqlTable("realtimeConnections", {
+  id: int("id").autoincrement().primaryKey(),
+  sessionId: int("sessionId").notNull(),
+  userId: int("userId").notNull(),
+  transport: mysqlEnum("transport", ["websocket", "sse"]).notNull(),
+  channel: varchar("channel", { length: 128 }).notNull(),
+  connectedAt: timestamp("connectedAt").defaultNow().notNull(),
+  lastHeartbeatAt: timestamp("lastHeartbeatAt").defaultNow().notNull(),
+  disconnectedAt: timestamp("disconnectedAt")
+}, (table) => ({ sessionIdx: index("realtime_connections_session_idx").on(table.sessionId), userIdx: index("realtime_connections_user_idx").on(table.userId), activeIdx: index("realtime_connections_active_idx").on(table.disconnectedAt, table.lastHeartbeatAt) }));
 var pipelineExecutions = mysqlTable("pipelineExecutions", {
   id: int("id").autoincrement().primaryKey(),
   userId: int("userId").notNull(),
@@ -247,6 +269,52 @@ async function getConversation(userId, id) {
   if (!conversation) return void 0;
   const thread = await db.select().from(messages).where(eq(messages.conversationId, id)).orderBy(asc(messages.createdAt));
   return { ...conversation, messages: thread };
+}
+function hashSessionToken(token) {
+  return createHash("sha256").update(token).digest("hex");
+}
+async function createUserSession(input) {
+  const db = await getDb();
+  if (!db) return void 0;
+  const { token, ...values } = input;
+  const result = await db.insert(userSessions).values({ ...values, tokenHash: hashSessionToken(token) });
+  return db.select().from(userSessions).where(eq(userSessions.id, Number(result[0].insertId))).limit(1).then((rows) => rows[0]);
+}
+async function getActiveUserSession(token) {
+  const db = await getDb();
+  if (!db) return void 0;
+  return db.select().from(userSessions).where(and(eq(userSessions.tokenHash, hashSessionToken(token)), isNull(userSessions.revokedAt), gt(userSessions.expiresAt, /* @__PURE__ */ new Date()))).limit(1).then((rows) => rows[0]);
+}
+async function touchUserSession(id) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(userSessions).set({ lastSeenAt: /* @__PURE__ */ new Date() }).where(and(eq(userSessions.id, id), isNull(userSessions.revokedAt)));
+}
+async function revokeUserSession(token) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(userSessions).set({ revokedAt: /* @__PURE__ */ new Date() }).where(and(eq(userSessions.tokenHash, hashSessionToken(token)), isNull(userSessions.revokedAt)));
+}
+async function createRealtimeConnection(input) {
+  const db = await getDb();
+  if (!db) return void 0;
+  const result = await db.insert(realtimeConnections).values(input);
+  return db.select().from(realtimeConnections).where(eq(realtimeConnections.id, Number(result[0].insertId))).limit(1).then((rows) => rows[0]);
+}
+async function heartbeatRealtimeConnection(id, sessionId) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(realtimeConnections).set({ lastHeartbeatAt: /* @__PURE__ */ new Date() }).where(and(eq(realtimeConnections.id, id), eq(realtimeConnections.sessionId, sessionId), isNull(realtimeConnections.disconnectedAt)));
+}
+async function disconnectRealtimeConnection(id, sessionId) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(realtimeConnections).set({ disconnectedAt: /* @__PURE__ */ new Date() }).where(and(eq(realtimeConnections.id, id), eq(realtimeConnections.sessionId, sessionId), isNull(realtimeConnections.disconnectedAt)));
+}
+async function listActiveRealtimeConnections(userId) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(realtimeConnections).where(and(eq(realtimeConnections.userId, userId), isNull(realtimeConnections.disconnectedAt))).orderBy(desc(realtimeConnections.lastHeartbeatAt));
 }
 async function createMessage(input) {
   const db = await getDb();
@@ -481,6 +549,11 @@ var SDKServer = class {
       }
       return buildCronUser(userInfo);
     }
+    if (ENV.databaseUrl) {
+      const persistedSession = await getActiveUserSession(sessionToken ?? "");
+      if (!persistedSession) throw ForbiddenError("Session is not active or has expired");
+      await touchUserSession(persistedSession.id);
+    }
     const sessionUserId = session.openId;
     const signedInAt = /* @__PURE__ */ new Date();
     let user = await getUserByOpenId(sessionUserId);
@@ -563,10 +636,12 @@ function registerOAuthRoutes(app2) {
         loginMethod: userInfo.loginMethod ?? userInfo.platform ?? null,
         lastSignedIn: /* @__PURE__ */ new Date()
       });
+      const persistedUser = await getUserByOpenId(userInfo.openId);
       const sessionToken = await sdk.createSessionToken(userInfo.openId, {
         name: userInfo.name || "",
         expiresInMs: ONE_YEAR_MS
       });
+      if (persistedUser && process.env.DATABASE_URL) await createUserSession({ token: sessionToken, userId: persistedUser.id, userAgent: req.headers["user-agent"]?.slice(0, 512) ?? null, ipHash: null, expiresAt: new Date(Date.now() + ONE_YEAR_MS) });
       const cookieOptions = getSessionCookieOptions(req);
       res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: ONE_YEAR_MS });
       res.redirect(302, "/");
@@ -621,6 +696,7 @@ function registerStorageProxy(app2) {
 // server/routers.ts
 import { z as z2 } from "zod";
 import { scryptSync, timingSafeEqual } from "node:crypto";
+import { parse as parseCookieHeader3 } from "cookie";
 
 // server/_core/llm.ts
 var ensureArray = (value) => Array.isArray(value) ? value : [value];
@@ -3902,7 +3978,7 @@ async function executePipeline(pipelineId, input, options) {
 }
 
 // server/_core/backendTools.ts
-import { createHash, randomUUID } from "node:crypto";
+import { createHash as createHash2, randomUUID } from "node:crypto";
 var categories = [
   "security",
   "observability",
@@ -4005,7 +4081,7 @@ function chunkText(text2, maxChars = 1200, overlap = 120) {
       id: randomUUID(),
       index: chunks.length,
       text: chunk,
-      sha256: createHash("sha256").update(chunk).digest("hex")
+      sha256: createHash2("sha256").update(chunk).digest("hex")
     });
     if (end === text2.length) break;
     cursor = end - overlap;
@@ -4031,7 +4107,7 @@ function evaluateServiceHealth(metrics) {
 }
 function createRunbook(input) {
   return {
-    id: `runbook-${createHash("sha1").update(`${input.service}:${input.symptom}`).digest("hex").slice(0, 10)}`,
+    id: `runbook-${createHash2("sha1").update(`${input.service}:${input.symptom}`).digest("hex").slice(0, 10)}`,
     service: input.service,
     severity: input.severity,
     objective: `Restore ${input.service} when ${input.symptom} is observed.`,
@@ -4193,7 +4269,7 @@ function evaluateFeatureFlag(input) {
     return { enabled: true, bucket: 0, reason: "subject is allow-listed" };
   if (input.enabled === false)
     return { enabled: false, bucket: 0, reason: "flag is globally disabled" };
-  const hash = createHash("sha256").update(`${input.flagKey}:${input.subjectId}`).digest("hex");
+  const hash = createHash2("sha256").update(`${input.flagKey}:${input.subjectId}`).digest("hex");
   const bucket = Number.parseInt(hash.slice(0, 8), 16) % 100;
   return {
     enabled: bucket < input.rolloutPercent,
@@ -4208,7 +4284,7 @@ function createIdempotencyKey(input) {
     tenantId: input.tenantId ?? null,
     body: input.body
   });
-  return createHash("sha256").update(payload).digest("hex");
+  return createHash2("sha256").update(payload).digest("hex");
 }
 function scoreDataQuality(rows) {
   if (rows.length === 0)
@@ -4260,7 +4336,7 @@ function buildAuditEvent(input) {
   };
   return {
     ...event,
-    signature: createHash("sha256").update(JSON.stringify(event)).digest("hex")
+    signature: createHash2("sha256").update(JSON.stringify(event)).digest("hex")
   };
 }
 function planCapacity(input) {
@@ -6437,7 +6513,7 @@ ${result.finalResponse}`).join("\n\n"), consensusCount: results.length };
 }
 
 // server/_core/persistentMemory.ts
-import { and as and2, desc as desc2, eq as eq2, gt, isNull, lt, or } from "drizzle-orm";
+import { and as and2, desc as desc2, eq as eq2, gt as gt2, isNull as isNull2, lt as lt2, or } from "drizzle-orm";
 var DIMENSIONS = 128;
 var retentionDefaults = { preference: 730, fact: 365, goal: 180, conversation: 90, "tool-result": 30 };
 function hashToken(token) {
@@ -6487,7 +6563,7 @@ async function recallPersistentMemories(userId, query, limit = 8) {
   const db = await getDb();
   if (!db) throw new Error("Database is not available");
   await purgeExpiredMemories(userId);
-  const rows = await db.select().from(memoryEmbeddings).where(and2(eq2(memoryEmbeddings.userId, userId), isNull(memoryEmbeddings.deletedAt), or(isNull(memoryEmbeddings.expiresAt), gt(memoryEmbeddings.expiresAt, /* @__PURE__ */ new Date())))).orderBy(desc2(memoryEmbeddings.updatedAt)).limit(500);
+  const rows = await db.select().from(memoryEmbeddings).where(and2(eq2(memoryEmbeddings.userId, userId), isNull2(memoryEmbeddings.deletedAt), or(isNull2(memoryEmbeddings.expiresAt), gt2(memoryEmbeddings.expiresAt, /* @__PURE__ */ new Date())))).orderBy(desc2(memoryEmbeddings.updatedAt)).limit(500);
   const queryVector = createEmbedding(query);
   const ranked = rows.map((row) => {
     let embedding = [];
@@ -6505,7 +6581,7 @@ async function listPersistentMemories(userId, limit = 100) {
   const db = await getDb();
   if (!db) throw new Error("Database is not available");
   await purgeExpiredMemories(userId);
-  return db.select().from(memoryEmbeddings).where(and2(eq2(memoryEmbeddings.userId, userId), isNull(memoryEmbeddings.deletedAt))).orderBy(desc2(memoryEmbeddings.updatedAt)).limit(limit);
+  return db.select().from(memoryEmbeddings).where(and2(eq2(memoryEmbeddings.userId, userId), isNull2(memoryEmbeddings.deletedAt))).orderBy(desc2(memoryEmbeddings.updatedAt)).limit(limit);
 }
 async function forgetPersistentMemory(userId, id) {
   const db = await getDb();
@@ -6516,7 +6592,7 @@ async function forgetPersistentMemory(userId, id) {
 async function purgeExpiredMemories(userId) {
   const db = await getDb();
   if (!db) throw new Error("Database is not available");
-  const conditions = [isNull(memoryEmbeddings.deletedAt), lt(memoryEmbeddings.expiresAt, /* @__PURE__ */ new Date())];
+  const conditions = [isNull2(memoryEmbeddings.deletedAt), lt2(memoryEmbeddings.expiresAt, /* @__PURE__ */ new Date())];
   if (userId !== void 0) conditions.push(eq2(memoryEmbeddings.userId, userId));
   await db.update(memoryEmbeddings).set({ deletedAt: /* @__PURE__ */ new Date() }).where(and2(...conditions));
   return { purged: true, userId: userId ?? null };
@@ -6712,6 +6788,12 @@ var projectInput = z2.object({
   description: z2.string().max(2e3).optional(),
   instructions: z2.string().max(1e4).optional()
 });
+var readSessionToken = (req) => {
+  const cookieToken = parseCookieHeader3(typeof req.headers.cookie === "string" ? req.headers.cookie : "")[COOKIE_NAME];
+  if (cookieToken) return cookieToken;
+  const authorization = req.headers.authorization;
+  return typeof authorization === "string" && authorization.startsWith("Bearer ") ? authorization.slice(7) : void 0;
+};
 var conversationInput = z2.object({
   title: z2.string().min(1).max(240),
   projectId: z2.number().int().positive().optional(),
@@ -6719,9 +6801,37 @@ var conversationInput = z2.object({
 });
 var appRouter = router({
   system: systemRouter,
+  realtime: router({
+    start: protectedProcedure.input(z2.object({ transport: z2.enum(["websocket", "sse"]), channel: z2.string().min(1).max(128) })).mutation(async ({ ctx, input }) => {
+      const token = readSessionToken(ctx.req);
+      if (!token) throw new Error("Active session token is required");
+      const session = await getActiveUserSession(token);
+      if (!session || session.userId !== ctx.user.id) throw new Error("Persistent session is not active");
+      const connection = await createRealtimeConnection({ sessionId: session.id, userId: ctx.user.id, transport: input.transport, channel: input.channel });
+      if (!connection) throw new Error("Database is not available");
+      return { id: connection.id, sessionId: connection.sessionId, connectedAt: connection.connectedAt };
+    }),
+    heartbeat: protectedProcedure.input(z2.object({ connectionId: z2.number().int().positive() })).mutation(async ({ ctx, input }) => {
+      const token = readSessionToken(ctx.req);
+      const session = token ? await getActiveUserSession(token) : void 0;
+      if (!session || session.userId !== ctx.user.id) throw new Error("Persistent session is not active");
+      await heartbeatRealtimeConnection(input.connectionId, session.id);
+      return { ok: true, at: /* @__PURE__ */ new Date() };
+    }),
+    disconnect: protectedProcedure.input(z2.object({ connectionId: z2.number().int().positive() })).mutation(async ({ ctx, input }) => {
+      const token = readSessionToken(ctx.req);
+      const session = token ? await getActiveUserSession(token) : void 0;
+      if (!session || session.userId !== ctx.user.id) throw new Error("Persistent session is not active");
+      await disconnectRealtimeConnection(input.connectionId, session.id);
+      return { ok: true };
+    }),
+    active: protectedProcedure.query(({ ctx }) => listActiveRealtimeConnections(ctx.user.id))
+  }),
   auth: router({
     me: publicProcedure.query(({ ctx }) => ctx.user),
-    logout: publicProcedure.mutation(({ ctx }) => {
+    logout: publicProcedure.mutation(async ({ ctx }) => {
+      const token = parseCookieHeader3(ctx.req.headers.cookie ?? "")[COOKIE_NAME];
+      if (token && ENV.databaseUrl) await revokeUserSession(token);
       const cookieOptions = getSessionCookieOptions(ctx.req);
       ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
       return { success: true };
@@ -6737,6 +6847,8 @@ var appRouter = router({
       const openId = `password:${salt}`;
       await upsertUser({ openId, name: "Nova Workspace", email: null, loginMethod: "password" });
       const token = await sdk.createSessionToken(openId, { name: "Nova Workspace" });
+      const sessionUser = await getUserByOpenId(openId);
+      if (sessionUser && ENV.databaseUrl) await createUserSession({ token, userId: sessionUser.id, userAgent: ctx.req.headers["user-agent"]?.slice(0, 512) ?? null, ipHash: null, expiresAt: new Date(Date.now() + 1e3 * 60 * 60 * 24 * 365) });
       ctx.res.cookie(COOKIE_NAME, token, { ...getSessionCookieOptions(ctx.req), maxAge: 1e3 * 60 * 60 * 24 * 30 });
       return { success: true };
     })

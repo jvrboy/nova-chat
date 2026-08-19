@@ -1,4 +1,5 @@
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, gt, isNull, lt } from "drizzle-orm";
+import { createHash } from "node:crypto";
 import { drizzle } from "drizzle-orm/mysql2";
 import { ENV } from "./_core/env";
 import {
@@ -10,6 +11,10 @@ import {
   messages,
   projects,
   users,
+  realtimeConnections,
+  userSessions,
+  type InsertRealtimeConnection,
+  type InsertUserSession,
 } from "../drizzle/schema";
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -98,6 +103,68 @@ export async function getConversation(userId: number, id: number) {
   if (!conversation) return undefined;
   const thread = await db.select().from(messages).where(eq(messages.conversationId, id)).orderBy(asc(messages.createdAt));
   return { ...conversation, messages: thread };
+}
+
+export function hashSessionToken(token: string) {
+  return createHash("sha256").update(token).digest("hex");
+}
+
+export async function createUserSession(input: Omit<InsertUserSession, "tokenHash"> & { token: string }) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const { token, ...values } = input;
+  const result = await db.insert(userSessions).values({ ...values, tokenHash: hashSessionToken(token) });
+  return db.select().from(userSessions).where(eq(userSessions.id, Number(result[0].insertId))).limit(1).then((rows) => rows[0]);
+}
+
+export async function getActiveUserSession(token: string) {
+  const db = await getDb();
+  if (!db) return undefined;
+  return db.select().from(userSessions).where(and(eq(userSessions.tokenHash, hashSessionToken(token)), isNull(userSessions.revokedAt), gt(userSessions.expiresAt, new Date()))).limit(1).then((rows) => rows[0]);
+}
+
+export async function touchUserSession(id: number) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(userSessions).set({ lastSeenAt: new Date() }).where(and(eq(userSessions.id, id), isNull(userSessions.revokedAt)));
+}
+
+export async function revokeUserSession(token: string) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(userSessions).set({ revokedAt: new Date() }).where(and(eq(userSessions.tokenHash, hashSessionToken(token)), isNull(userSessions.revokedAt)));
+}
+
+export async function pruneExpiredUserSessions() {
+  const db = await getDb();
+  if (!db) return 0;
+  const result = await db.update(userSessions).set({ revokedAt: new Date() }).where(and(lt(userSessions.expiresAt, new Date()), isNull(userSessions.revokedAt)));
+  return Number(result[0].affectedRows ?? 0);
+}
+
+export async function createRealtimeConnection(input: InsertRealtimeConnection) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.insert(realtimeConnections).values(input);
+  return db.select().from(realtimeConnections).where(eq(realtimeConnections.id, Number(result[0].insertId))).limit(1).then((rows) => rows[0]);
+}
+
+export async function heartbeatRealtimeConnection(id: number, sessionId: number) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(realtimeConnections).set({ lastHeartbeatAt: new Date() }).where(and(eq(realtimeConnections.id, id), eq(realtimeConnections.sessionId, sessionId), isNull(realtimeConnections.disconnectedAt)));
+}
+
+export async function disconnectRealtimeConnection(id: number, sessionId: number) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(realtimeConnections).set({ disconnectedAt: new Date() }).where(and(eq(realtimeConnections.id, id), eq(realtimeConnections.sessionId, sessionId), isNull(realtimeConnections.disconnectedAt)));
+}
+
+export async function listActiveRealtimeConnections(userId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(realtimeConnections).where(and(eq(realtimeConnections.userId, userId), isNull(realtimeConnections.disconnectedAt))).orderBy(desc(realtimeConnections.lastHeartbeatAt));
 }
 
 export async function createMessage(input: InsertMessage) {

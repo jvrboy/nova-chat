@@ -90,6 +90,29 @@ export const memoryEmbeddings = mysqlTable("memoryEmbeddings", {
   deletedAt: timestamp("deletedAt"),
 }, (table) => ({ userIdx: index("memory_embeddings_user_idx").on(table.userId), expiryIdx: index("memory_embeddings_expiry_idx").on(table.expiresAt), keyIdx: index("memory_embeddings_key_idx").on(table.memoryKey) }));
 
+export const userSessions = mysqlTable("userSessions", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  tokenHash: varchar("tokenHash", { length: 128 }).notNull().unique(),
+  userAgent: varchar("userAgent", { length: 512 }),
+  ipHash: varchar("ipHash", { length: 128 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  lastSeenAt: timestamp("lastSeenAt").defaultNow().notNull(),
+  expiresAt: timestamp("expiresAt").notNull(),
+  revokedAt: timestamp("revokedAt"),
+}, (table) => ({ userIdx: index("user_sessions_user_idx").on(table.userId), expiryIdx: index("user_sessions_expiry_idx").on(table.expiresAt), activeIdx: index("user_sessions_active_idx").on(table.revokedAt, table.expiresAt) }));
+
+export const realtimeConnections = mysqlTable("realtimeConnections", {
+  id: int("id").autoincrement().primaryKey(),
+  sessionId: int("sessionId").notNull(),
+  userId: int("userId").notNull(),
+  transport: mysqlEnum("transport", ["websocket", "sse"]).notNull(),
+  channel: varchar("channel", { length: 128 }).notNull(),
+  connectedAt: timestamp("connectedAt").defaultNow().notNull(),
+  lastHeartbeatAt: timestamp("lastHeartbeatAt").defaultNow().notNull(),
+  disconnectedAt: timestamp("disconnectedAt"),
+}, (table) => ({ sessionIdx: index("realtime_connections_session_idx").on(table.sessionId), userIdx: index("realtime_connections_user_idx").on(table.userId), activeIdx: index("realtime_connections_active_idx").on(table.disconnectedAt, table.lastHeartbeatAt) }));
+
 export const pipelineExecutions = mysqlTable("pipelineExecutions", {
   id: int("id").autoincrement().primaryKey(),
   userId: int("userId").notNull(),
@@ -120,3 +143,7 @@ export type MemoryEmbedding = typeof memoryEmbeddings.$inferSelect;
 export type InsertMemoryEmbedding = typeof memoryEmbeddings.$inferInsert;
 export type PipelineExecution = typeof pipelineExecutions.$inferSelect;
 export type InsertPipelineExecution = typeof pipelineExecutions.$inferInsert;
+export type UserSession = typeof userSessions.$inferSelect;
+export type InsertUserSession = typeof userSessions.$inferInsert;
+export type RealtimeConnection = typeof realtimeConnections.$inferSelect;
+export type InsertRealtimeConnection = typeof realtimeConnections.$inferInsert;

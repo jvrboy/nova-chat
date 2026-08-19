@@ -285,6 +285,12 @@ class SDKServer {
       return buildCronUser(userInfo);
     }
 
+    if (ENV.databaseUrl) {
+      const persistedSession = await db.getActiveUserSession(sessionToken ?? "");
+      if (!persistedSession) throw ForbiddenError("Session is not active or has expired");
+      await db.touchUserSession(persistedSession.id);
+    }
+
     const sessionUserId = session.openId;
     const signedInAt = new Date();
     let user = await db.getUserByOpenId(sessionUserId);
