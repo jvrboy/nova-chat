@@ -1,5 +1,7 @@
 import type { InvokeParams, InvokeResult, Message } from "./llm";
 
+import { ENV } from "./env";
+
 type ProviderId = "gemini" | "groq" | "ollama-cloud" | "openrouter";
 type ConnectionId = "kaggle" | "firecrawl" | "e2b";
 
@@ -57,7 +59,7 @@ const getKeys = (prefix: string) => [
 ].filter((key, index, all) => all.indexOf(key) === index);
 
 const configuredOrder = () =>
-  (process.env.NOVA_PROVIDER_ORDER ?? "gemini,groq,ollama-cloud,openrouter")
+  (ENV.providerOrder || "gemini,groq,ollama-cloud,openrouter")
     .split(",")
     .map(item => item.trim().toLowerCase())
     .filter((item): item is ProviderId =>
@@ -70,28 +72,28 @@ const providerConfigs = (): ProviderConfig[] => {
       id: "gemini",
       label: "Gemini",
       baseUrl: "https://generativelanguage.googleapis.com/v1beta",
-      defaultModel: process.env.GEMINI_MODEL ?? "gemini-2.5-flash",
+      defaultModel: ENV.geminiModel,
       keys: getKeys("GEMINI"),
     },
     groq: {
       id: "groq",
       label: "Groq",
       baseUrl: "https://api.groq.com/openai/v1",
-      defaultModel: process.env.GROQ_MODEL ?? "llama-3.3-70b-versatile",
+      defaultModel: ENV.groqModel,
       keys: getKeys("GROQ"),
     },
     "ollama-cloud": {
       id: "ollama-cloud",
       label: "Ollama Cloud",
-      baseUrl: process.env.OLLAMA_CLOUD_BASE_URL ?? "https://ollama.com/v1",
-      defaultModel: process.env.OLLAMA_CLOUD_MODEL ?? "llama3.2",
+      baseUrl: ENV.ollamaCloudBaseUrl,
+      defaultModel: ENV.ollamaCloudModel,
       keys: getKeys("OLLAMA_CLOUD"),
     },
     openrouter: {
       id: "openrouter",
       label: "OpenRouter",
-      baseUrl: process.env.OPENROUTER_BASE_URL ?? "https://openrouter.ai/api/v1",
-      defaultModel: process.env.OPENROUTER_MODEL ?? "openai/gpt-4o-mini",
+      baseUrl: ENV.openrouterBaseUrl,
+      defaultModel: ENV.openrouterModel,
       keys: getKeys("OPENROUTER"),
     },
   };

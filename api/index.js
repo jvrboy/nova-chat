@@ -34,6 +34,7 @@ import { drizzle } from "drizzle-orm/mysql2";
 // server/_core/env.ts
 var ENV = {
   appId: process.env.VITE_APP_ID ?? "",
+  oauthPortalUrl: process.env.VITE_OAUTH_PORTAL_URL ?? "",
   cookieSecret: process.env.JWT_SECRET ?? "",
   databaseUrl: process.env.DATABASE_URL ?? "",
   oAuthServerUrl: process.env.OAUTH_SERVER_URL ?? "",
@@ -46,12 +47,22 @@ var ENV = {
   groqApiKeys: process.env.GROQ_API_KEYS ?? process.env.GROQ_API_KEY ?? "",
   ollamaCloudApiKeys: process.env.OLLAMA_CLOUD_API_KEYS ?? process.env.OLLAMA_CLOUD_API_KEY ?? "",
   openrouterApiKeys: process.env.OPENROUTER_API_KEYS ?? process.env.OPENROUTER_API_KEY ?? "",
+  geminiModel: process.env.GEMINI_MODEL ?? "gemini-2.5-flash",
+  groqModel: process.env.GROQ_MODEL ?? "llama-3.3-70b-versatile",
+  ollamaCloudModel: process.env.OLLAMA_CLOUD_MODEL ?? "llama3.2",
+  ollamaCloudBaseUrl: process.env.OLLAMA_CLOUD_BASE_URL ?? "https://ollama.com/v1",
+  openrouterModel: process.env.OPENROUTER_MODEL ?? "openai/gpt-4o-mini",
+  openrouterBaseUrl: process.env.OPENROUTER_BASE_URL ?? "https://openrouter.ai/api/v1",
   kaggleApiKeys: process.env.KAGGLE_API_KEYS ?? process.env.KAGGLE_API_KEY ?? "",
   firecrawlApiKeys: process.env.FIRECRAWL_API_KEYS ?? process.env.FIRECRAWL_API_KEY ?? "",
   e2bApiKeys: process.env.E2B_API_KEYS ?? process.env.E2B_API_KEY ?? "",
   cloudflareWorkerUrl: process.env.CLOUDFLARE_WORKER_URL ?? "",
   supabaseUrl: process.env.SUPABASE_URL ?? "",
-  supabaseAnonKey: process.env.SUPABASE_ANON_KEY ?? ""
+  supabaseAnonKey: process.env.SUPABASE_ANON_KEY ?? "",
+  supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY ?? "",
+  massiveWsUrl: process.env.MASSIVE_WS_URL ?? "",
+  massiveApiKey: process.env.MASSIVE_API_KEY ?? "",
+  passwordHash: process.env.NOVA_ACCESS_PASSWORD_HASH ?? ""
 };
 
 // drizzle/schema.ts
@@ -2863,7 +2874,7 @@ var coinbaseUrl = "wss://advanced-trade-ws.coinbase.com";
 function listMarketStreams() {
   return [
     { provider: "coinbase", assets: ["crypto"], url: coinbaseUrl, authRequired: false, channels: ["ticker", "market_trades", "level2", "candles"], configured: true, note: "Public market-data channels; keep keys server-side if authenticated channels are enabled." },
-    { provider: "massive", assets: ["stock", "crypto"], url: process.env.MASSIVE_WS_URL ?? null, authRequired: true, channels: ["trades", "quotes", "bars"], configured: Boolean(process.env.MASSIVE_WS_URL && process.env.MASSIVE_API_KEY), note: "Configure MASSIVE_WS_URL and MASSIVE_API_KEY server-side; never expose the key to browsers." }
+    { provider: "massive", assets: ["stock", "crypto"], url: ENV.massiveWsUrl || null, authRequired: true, channels: ["trades", "quotes", "bars"], configured: Boolean(ENV.massiveWsUrl && ENV.massiveApiKey), note: "Configure MASSIVE_WS_URL and MASSIVE_API_KEY server-side; never expose the key to browsers." }
   ];
 }
 function buildCoinbaseSubscription(productIds, channel = "ticker") {
@@ -5267,6 +5278,40 @@ function regexHelper(input) {
   return { pattern: "", description: "No common pattern matched", test: false, matches: [] };
 }
 
+// server/_core/runtimeConfig.ts
+var present = (value) => Boolean(value?.trim());
+var countKeys = (prefix) => {
+  const values = [process.env[`${prefix}_API_KEYS`], process.env[`${prefix}_KEYS`], process.env[`${prefix}_API_KEY`]];
+  for (let index2 = 1; index2 <= 50; index2 += 1) values.push(process.env[`${prefix}_${index2}`]);
+  return [...new Set(values.flatMap((value) => (value ?? "").split(/[\n,;]+/).map((item) => item.trim()).filter(Boolean)))].length;
+};
+function runtimeConfigurationStatus() {
+  const providers = [
+    { id: "gemini", label: "Gemini", keyCount: countKeys("GEMINI"), model: ENV.geminiModel, baseUrl: "https://generativelanguage.googleapis.com/v1beta" },
+    { id: "groq", label: "Groq", keyCount: countKeys("GROQ"), model: ENV.groqModel, baseUrl: "https://api.groq.com/openai/v1" },
+    { id: "ollama-cloud", label: "Ollama Cloud", keyCount: countKeys("OLLAMA_CLOUD"), model: ENV.ollamaCloudModel, baseUrl: ENV.ollamaCloudBaseUrl },
+    { id: "openrouter", label: "OpenRouter", keyCount: countKeys("OPENROUTER"), model: ENV.openrouterModel, baseUrl: ENV.openrouterBaseUrl }
+  ].map((item) => ({ ...item, configured: item.keyCount > 0 }));
+  const connections = [
+    { id: "kaggle", label: "Kaggle", keyCount: countKeys("KAGGLE") },
+    { id: "firecrawl", label: "Firecrawl", keyCount: countKeys("FIRECRAWL") },
+    { id: "e2b", label: "E2B", keyCount: countKeys("E2B") }
+  ].map((item) => ({ ...item, configured: item.keyCount > 0 }));
+  return {
+    environment: { production: ENV.isProduction, vercel: present(process.env.VERCEL), nodeVersion: process.version },
+    providers,
+    connections,
+    data: {
+      database: present(ENV.databaseUrl),
+      supabase: present(ENV.supabaseUrl) && present(ENV.supabaseAnonKey),
+      cloudflareWorker: present(ENV.cloudflareWorkerUrl),
+      massiveMarketData: present(ENV.massiveWsUrl) && present(ENV.massiveApiKey)
+    },
+    auth: { passwordOnly: present(ENV.passwordHash), sessionSecret: present(ENV.cookieSecret) },
+    routing: { providerOrder: ENV.providerOrder }
+  };
+}
+
 // server/_core/swarmConsensus.ts
 var SWARM_AGENTS = [
   // Trend agents
@@ -5861,7 +5906,7 @@ var getKeys = (prefix) => [
   ...splitKeys(process.env[`${prefix}_API_KEY`]),
   ...indexedKeys(prefix)
 ].filter((key, index2, all) => all.indexOf(key) === index2);
-var configuredOrder = () => (process.env.NOVA_PROVIDER_ORDER ?? "gemini,groq,ollama-cloud,openrouter").split(",").map((item) => item.trim().toLowerCase()).filter(
+var configuredOrder = () => (ENV.providerOrder || "gemini,groq,ollama-cloud,openrouter").split(",").map((item) => item.trim().toLowerCase()).filter(
   (item) => ["gemini", "groq", "ollama-cloud", "openrouter"].includes(item)
 );
 var providerConfigs = () => {
@@ -5870,28 +5915,28 @@ var providerConfigs = () => {
       id: "gemini",
       label: "Gemini",
       baseUrl: "https://generativelanguage.googleapis.com/v1beta",
-      defaultModel: process.env.GEMINI_MODEL ?? "gemini-2.5-flash",
+      defaultModel: ENV.geminiModel,
       keys: getKeys("GEMINI")
     },
     groq: {
       id: "groq",
       label: "Groq",
       baseUrl: "https://api.groq.com/openai/v1",
-      defaultModel: process.env.GROQ_MODEL ?? "llama-3.3-70b-versatile",
+      defaultModel: ENV.groqModel,
       keys: getKeys("GROQ")
     },
     "ollama-cloud": {
       id: "ollama-cloud",
       label: "Ollama Cloud",
-      baseUrl: process.env.OLLAMA_CLOUD_BASE_URL ?? "https://ollama.com/v1",
-      defaultModel: process.env.OLLAMA_CLOUD_MODEL ?? "llama3.2",
+      baseUrl: ENV.ollamaCloudBaseUrl,
+      defaultModel: ENV.ollamaCloudModel,
       keys: getKeys("OLLAMA_CLOUD")
     },
     openrouter: {
       id: "openrouter",
       label: "OpenRouter",
-      baseUrl: process.env.OPENROUTER_BASE_URL ?? "https://openrouter.ai/api/v1",
-      defaultModel: process.env.OPENROUTER_MODEL ?? "openai/gpt-4o-mini",
+      baseUrl: ENV.openrouterBaseUrl,
+      defaultModel: ENV.openrouterModel,
       keys: getKeys("OPENROUTER")
     }
   };
@@ -6670,7 +6715,7 @@ var appRouter = router({
       return { success: true };
     }),
     passwordLogin: publicProcedure.input(z2.object({ password: z2.string().min(1).max(256) })).mutation(async ({ ctx, input }) => {
-      const configured = process.env.NOVA_ACCESS_PASSWORD_HASH;
+      const configured = ENV.passwordHash;
       if (!configured) throw new Error("Password-only access is not configured. Set NOVA_ACCESS_PASSWORD_HASH in Vercel.");
       const [salt, expectedHex] = configured.split(":");
       if (!salt || !expectedHex || !/^[0-9a-f]+$/i.test(expectedHex)) throw new Error("NOVA_ACCESS_PASSWORD_HASH has an invalid format.");
@@ -6774,6 +6819,7 @@ var appRouter = router({
     models: protectedProcedure.query(async () => (await listLLMModels()).data),
     providers: protectedProcedure.query(() => listProviderStatus()),
     providerStatus: publicProcedure.query(() => listProviderStatus()),
+    runtimeConfigurationStatus: protectedProcedure.query(() => runtimeConfigurationStatus()),
     connections: protectedProcedure.query(() => listConnectionStatus()),
     backendConnections: protectedProcedure.query(() => listBackendConnections()),
     backendHealth: protectedProcedure.mutation(() => probeBackendConnections()),
@@ -7659,7 +7705,7 @@ ${input.context ?? "No additional context."}`
     strategies: protectedProcedure.query(() => BUILT_IN_STRATEGIES),
     streamCatalog: protectedProcedure.query(() => listMarketStreams()),
     coinbaseSubscription: protectedProcedure.input(z2.object({ productIds: z2.array(z2.string()).min(1).max(50), channel: z2.enum(["ticker", "market_trades", "level2", "candles"]).default("ticker") })).query(({ input }) => ({ url: "wss://advanced-trade-ws.coinbase.com", payload: buildCoinbaseSubscription(input.productIds, input.channel), authRequired: false })),
-    massiveSubscription: protectedProcedure.input(z2.object({ symbols: z2.array(z2.string()).min(1).max(100), channel: z2.enum(["trades", "quotes", "bars"]).default("trades") })).query(({ input }) => ({ url: process.env.MASSIVE_WS_URL ?? null, payload: buildMassiveSubscription(input.symbols, input.channel), configured: Boolean(process.env.MASSIVE_WS_URL && process.env.MASSIVE_API_KEY), authRequired: true })),
+    massiveSubscription: protectedProcedure.input(z2.object({ symbols: z2.array(z2.string()).min(1).max(100), channel: z2.enum(["trades", "quotes", "bars"]).default("trades") })).query(({ input }) => ({ url: ENV.massiveWsUrl || null, payload: buildMassiveSubscription(input.symbols, input.channel), configured: Boolean(ENV.massiveWsUrl && ENV.massiveApiKey), authRequired: true })),
     backtest: protectedProcedure.input(z2.object({
       candles: z2.array(z2.object({ timestamp: z2.number(), open: z2.number(), high: z2.number(), low: z2.number(), close: z2.number(), volume: z2.number() })).min(50),
       strategyName: z2.string().optional(),

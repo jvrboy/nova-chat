@@ -1,3 +1,5 @@
+import { ENV } from "./env";
+
 export type MarketStreamProvider = "coinbase" | "massive";
 export type MarketStreamAsset = "crypto" | "stock";
 export type NormalizedMarketEvent = { provider: MarketStreamProvider; asset: MarketStreamAsset; symbol: string; event: "trade" | "quote" | "bar" | "status" | "unknown"; price?: number; size?: number; bid?: number; ask?: number; timestamp?: number; sequence?: number; rawType?: string };
@@ -6,7 +8,7 @@ const coinbaseUrl = "wss://advanced-trade-ws.coinbase.com";
 
 export function listMarketStreams() { return [
   { provider: "coinbase" as const, assets: ["crypto" as const], url: coinbaseUrl, authRequired: false, channels: ["ticker", "market_trades", "level2", "candles"], configured: true, note: "Public market-data channels; keep keys server-side if authenticated channels are enabled." },
-  { provider: "massive" as const, assets: ["stock" as const, "crypto" as const], url: process.env.MASSIVE_WS_URL ?? null, authRequired: true, channels: ["trades", "quotes", "bars"], configured: Boolean(process.env.MASSIVE_WS_URL && process.env.MASSIVE_API_KEY), note: "Configure MASSIVE_WS_URL and MASSIVE_API_KEY server-side; never expose the key to browsers." },
+  { provider: "massive" as const, assets: ["stock" as const, "crypto" as const], url: ENV.massiveWsUrl || null, authRequired: true, channels: ["trades", "quotes", "bars"], configured: Boolean(ENV.massiveWsUrl && ENV.massiveApiKey), note: "Configure MASSIVE_WS_URL and MASSIVE_API_KEY server-side; never expose the key to browsers." },
 ]; }
 
 export function buildCoinbaseSubscription(productIds: string[], channel: "ticker" | "market_trades" | "level2" | "candles" = "ticker") { const products = productIds.map(String).filter(Boolean).slice(0, 50); if (!products.length) throw new Error("At least one product is required"); return { type: "subscribe", channel, product_ids: products }; }

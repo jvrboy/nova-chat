@@ -89,6 +89,7 @@ import { runBacktest, BUILT_IN_STRATEGIES, generateRSIBBSignal, generateMACDCros
 } from "./_core/tradingStrategy";
 import { runAutomatedBacktest } from "./_core/automatedBacktest";
 import { buildCoinbaseSubscription, buildMassiveSubscription, listMarketStreams } from "./_core/marketStreams";
+import { runtimeConfigurationStatus } from "./_core/runtimeConfig";
 import { runSwarmConsensus, listSwarmAgents, SWARM_AGENTS } from "./_core/swarmConsensus";
 import { executeSandboxedCode } from "./_core/performanceTools";
 import { listBackendConnections, probeBackendConnections } from "./_core/backendConnections";
@@ -134,7 +135,7 @@ export const appRouter = router({
       return { success: true } as const;
     }),
     passwordLogin: publicProcedure.input(z.object({ password: z.string().min(1).max(256) })).mutation(async ({ ctx, input }) => {
-      const configured = process.env.NOVA_ACCESS_PASSWORD_HASH;
+      const configured = ENV.passwordHash;
       if (!configured) throw new Error("Password-only access is not configured. Set NOVA_ACCESS_PASSWORD_HASH in Vercel.");
       const [salt, expectedHex] = configured.split(":");
       if (!salt || !expectedHex || !/^[0-9a-f]+$/i.test(expectedHex)) throw new Error("NOVA_ACCESS_PASSWORD_HASH has an invalid format.");
@@ -271,6 +272,7 @@ export const appRouter = router({
     models: protectedProcedure.query(async () => (await listLLMModels()).data),
     providers: protectedProcedure.query(() => listProviderStatus()),
     providerStatus: publicProcedure.query(() => listProviderStatus()),
+    runtimeConfigurationStatus: protectedProcedure.query(() => runtimeConfigurationStatus()),
     connections: protectedProcedure.query(() => listConnectionStatus()),
     backendConnections: protectedProcedure.query(() => listBackendConnections()),
     backendHealth: protectedProcedure.mutation(() => probeBackendConnections()),
@@ -1344,7 +1346,7 @@ export const appRouter = router({
     strategies: protectedProcedure.query(() => BUILT_IN_STRATEGIES),
     streamCatalog: protectedProcedure.query(() => listMarketStreams()),
     coinbaseSubscription: protectedProcedure.input(z.object({ productIds: z.array(z.string()).min(1).max(50), channel: z.enum(["ticker", "market_trades", "level2", "candles"]).default("ticker") })).query(({ input }) => ({ url: "wss://advanced-trade-ws.coinbase.com", payload: buildCoinbaseSubscription(input.productIds, input.channel), authRequired: false })),
-    massiveSubscription: protectedProcedure.input(z.object({ symbols: z.array(z.string()).min(1).max(100), channel: z.enum(["trades", "quotes", "bars"]).default("trades") })).query(({ input }) => ({ url: process.env.MASSIVE_WS_URL ?? null, payload: buildMassiveSubscription(input.symbols, input.channel), configured: Boolean(process.env.MASSIVE_WS_URL && process.env.MASSIVE_API_KEY), authRequired: true })),
+    massiveSubscription: protectedProcedure.input(z.object({ symbols: z.array(z.string()).min(1).max(100), channel: z.enum(["trades", "quotes", "bars"]).default("trades") })).query(({ input }) => ({ url: ENV.massiveWsUrl || null, payload: buildMassiveSubscription(input.symbols, input.channel), configured: Boolean(ENV.massiveWsUrl && ENV.massiveApiKey), authRequired: true })),
     backtest: protectedProcedure.input(z.object({
       candles: z.array(z.object({ timestamp: z.number(), open: z.number(), high: z.number(), low: z.number(), close: z.number(), volume: z.number() })).min(50),
       strategyName: z.string().optional(),
