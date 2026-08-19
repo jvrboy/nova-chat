@@ -2115,7 +2115,9 @@ var TOOL_POLICIES = {
   technical_indicator_suite: { name: "technical_indicator_suite", description: "Compute a bounded suite of deterministic technical-analysis indicators.", risk: "compute", allowedAgents: ["forex_analyst", "quant_researcher", "risk_manager", "market_microstructure", "data_analyst", "ui_architect", "multimodal_curator"], maxCallsPerMinute: 30, failureThreshold: 0.5, minimumSamples: 5, cooldownMs: 2e4 },
   agentic_workflow_plan: { name: "agentic_workflow_plan", description: "Create a safe role-aware workflow plan with verification and rollback gates.", risk: "compute", allowedAgents: ["brainstormer", "research_agent", "automation_orchestrator", "qa_engineer", "ui_architect", "multimodal_curator", "observability_engineer", "security_reviewer"], maxCallsPerMinute: 30, failureThreshold: 0.5, minimumSamples: 5, cooldownMs: 15e3 },
   advanced_music_arrangement: { name: "advanced_music_arrangement", description: "Generate bounded chord, arpeggio, swing, humanization, velocity, and MIDI-note outputs.", risk: "compute", allowedAgents: ["music_composer", "music_producer", "audio_engineer", "sound_designer", "brainstormer"], maxCallsPerMinute: 60, failureThreshold: 0.5, minimumSamples: 5, cooldownMs: 15e3 },
-  market_screening_snapshot: { name: "market_screening_snapshot", description: "Screen supplied crypto or stock OHLCV assets with deterministic indicators; never executes trades.", risk: "compute", allowedAgents: ["crypto_screening_analyst", "equity_screening_analyst", "market_data_steward", "screening_synthesizer", "quant_researcher", "risk_manager"], maxCallsPerMinute: 20, failureThreshold: 0.45, minimumSamples: 5, cooldownMs: 2e4 }
+  market_screening_snapshot: { name: "market_screening_snapshot", description: "Screen supplied crypto or stock OHLCV assets with deterministic indicators; never executes trades.", risk: "compute", allowedAgents: ["crypto_screening_analyst", "equity_screening_analyst", "market_data_steward", "screening_synthesizer", "quant_researcher", "risk_manager"], maxCallsPerMinute: 20, failureThreshold: 0.45, minimumSamples: 5, cooldownMs: 2e4 },
+  advanced_strategy_backtest: { name: "advanced_strategy_backtest", description: "Run cost-aware historical strategy simulations; never places orders.", risk: "compute", allowedAgents: ["crypto_screening_analyst", "equity_screening_analyst", "quant_researcher", "risk_manager"], maxCallsPerMinute: 10, failureThreshold: 0.4, minimumSamples: 5, cooldownMs: 3e4 },
+  market_stream_subscription: { name: "market_stream_subscription", description: "Build bounded provider subscription payloads without exposing credentials.", risk: "external", allowedAgents: ["market_data_steward", "crypto_screening_analyst", "equity_screening_analyst", "market_microstructure"], maxCallsPerMinute: 30, failureThreshold: 0.5, minimumSamples: 5, cooldownMs: 2e4 }
 };
 var runtime = /* @__PURE__ */ new Map();
 var callWindow = /* @__PURE__ */ new Map();
@@ -2173,6 +2175,706 @@ function resetToolCircuit(toolName) {
   runtime.set(toolName, { successes: 0, failures: 0 });
   callWindow.delete(toolName);
   return { toolName, reset: true };
+}
+
+// server/_core/tradingStrategy.ts
+function sma4(data, period) {
+  const result = [];
+  for (let i = period - 1; i < data.length; i++) {
+    result.push(data.slice(i - period + 1, i + 1).reduce((a, b) => a + b, 0) / period);
+  }
+  return result;
+}
+function ema3(data, period) {
+  const result = [];
+  const k = 2 / (period + 1);
+  let prev = data.slice(0, period).reduce((a, b) => a + b, 0) / period;
+  result.push(prev);
+  for (let i = period; i < data.length; i++) {
+    prev = data[i] * k + prev * (1 - k);
+    result.push(prev);
+  }
+  return result;
+}
+function rsi2(data, period = 14) {
+  const result = [];
+  const gains = [];
+  const losses = [];
+  for (let i = 1; i < data.length; i++) gains.push(data[i] > data[i - 1] ? data[i] - data[i - 1] : 0);
+  for (let i = 1; i < data.length; i++) losses.push(data[i] < data[i - 1] ? data[i - 1] - data[i] : 0);
+  if (gains.length < period) return result;
+  let avgGain = gains.slice(0, period).reduce((a, b) => a + b, 0) / period;
+  let avgLoss = losses.slice(0, period).reduce((a, b) => a + b, 0) / period;
+  for (let i = period; i <= gains.length; i++) {
+    if (i > period) {
+      avgGain = (avgGain * (period - 1) + gains[i - 1]) / period;
+      avgLoss = (avgLoss * (period - 1) + losses[i - 1]) / period;
+    }
+    const rs = avgLoss === 0 ? 100 : avgGain / avgLoss;
+    result.push(100 - 100 / (1 + rs));
+  }
+  return result;
+}
+function trueRange2(data) {
+  const result = [];
+  for (let i = 1; i < data.length; i++) {
+    result.push(Math.max(data[i].high - data[i].low, Math.abs(data[i].high - data[i - 1].close), Math.abs(data[i].low - data[i - 1].close)));
+  }
+  return result;
+}
+function atr2(data, period = 14) {
+  const tr = trueRange2(data);
+  const result = [];
+  if (tr.length < period) return result;
+  let prev = tr.slice(0, period).reduce((a, b) => a + b, 0) / period;
+  result.push(prev);
+  for (let i = period; i < tr.length; i++) {
+    prev = (prev * (period - 1) + tr[i]) / period;
+    result.push(prev);
+  }
+  return result;
+}
+function bollingerBands2(data, period = 20, stdMult = 2) {
+  const middle = sma4(data, period);
+  const upper = [];
+  const lower = [];
+  const pctB = [];
+  const bandwidth = [];
+  for (let i = 0; i < middle.length; i++) {
+    const slice = data.slice(i, i + period);
+    const mean4 = middle[i];
+    const variance = slice.reduce((s, v) => s + (v - mean4) ** 2, 0) / period;
+    const sd = Math.sqrt(variance);
+    const u = mean4 + stdMult * sd;
+    const l = mean4 - stdMult * sd;
+    upper.push(u);
+    lower.push(l);
+    pctB.push(sd === 0 ? 0.5 : (data[i + period - 1] - l) / (u - l));
+    bandwidth.push(mean4 === 0 ? 0 : (u - l) / mean4 * 100);
+  }
+  return { upper, middle, lower, pctB, bandwidth };
+}
+function macd2(data, fast = 12, slow = 26, signal = 9) {
+  const fastEma = ema3(data, fast);
+  const slowEma = ema3(data, slow);
+  const offset = slow - fast;
+  const macdLine = [];
+  for (let i = 0; i < slowEma.length; i++) macdLine.push(fastEma[i + offset] - slowEma[i]);
+  const signalLine = ema3(macdLine, signal);
+  const histOffset = signal - 1;
+  const histogram = [];
+  for (let i = 0; i < signalLine.length; i++) histogram.push(macdLine[i + histOffset] - signalLine[i]);
+  return { macdLine, signalLine, histogram };
+}
+function stochastic2(data, kPeriod = 14, dPeriod = 3) {
+  const kValues = [];
+  for (let i = kPeriod - 1; i < data.length; i++) {
+    const highs = data.slice(i - kPeriod + 1, i + 1).map((d) => d.high);
+    const lows = data.slice(i - kPeriod + 1, i + 1).map((d) => d.low);
+    const hh = Math.max(...highs);
+    const ll = Math.min(...lows);
+    kValues.push(hh === ll ? 50 : (data[i].close - ll) / (hh - ll) * 100);
+  }
+  const dValues = sma4(kValues, dPeriod);
+  return { k: kValues, d: dValues };
+}
+function adx2(data, period = 14) {
+  const tr = trueRange2(data);
+  if (tr.length < period) return { adx: [], plusDI: [], minusDI: [] };
+  const plusDM = [];
+  const minusDM = [];
+  for (let i = 1; i < data.length; i++) {
+    const upMove = data[i].high - data[i - 1].high;
+    const downMove = data[i - 1].low - data[i].low;
+    plusDM.push(upMove > downMove && upMove > 0 ? upMove : 0);
+    minusDM.push(downMove > upMove && downMove > 0 ? downMove : 0);
+  }
+  const smoothTR = [];
+  const smoothPDM = [];
+  const smoothMDM = [];
+  let sTR = tr.slice(0, period).reduce((a, b) => a + b, 0);
+  let sPDM = plusDM.slice(0, period).reduce((a, b) => a + b, 0);
+  let sMDM = minusDM.slice(0, period).reduce((a, b) => a + b, 0);
+  smoothTR.push(sTR);
+  smoothPDM.push(sPDM);
+  smoothMDM.push(sMDM);
+  for (let i = period; i < tr.length; i++) {
+    sTR = sTR - sTR / period + tr[i];
+    sPDM = sPDM - sPDM / period + plusDM[i];
+    sMDM = sMDM - sMDM / period + minusDM[i];
+    smoothTR.push(sTR);
+    smoothPDM.push(sPDM);
+    smoothMDM.push(sMDM);
+  }
+  const plusDI = smoothPDM.map((v, i) => smoothTR[i] === 0 ? 0 : v / smoothTR[i] * 100);
+  const minusDI = smoothMDM.map((v, i) => smoothTR[i] === 0 ? 0 : v / smoothTR[i] * 100);
+  const dx = plusDI.map((v, i) => {
+    const sum = v + minusDI[i];
+    return sum === 0 ? 0 : Math.abs(v - minusDI[i]) / sum * 100;
+  });
+  const adxValues = ema3(dx, period);
+  return { adx: adxValues, plusDI, minusDI };
+}
+function williamsR2(data, period = 14) {
+  const result = [];
+  for (let i = period - 1; i < data.length; i++) {
+    const highs = data.slice(i - period + 1, i + 1).map((d) => d.high);
+    const lows = data.slice(i - period + 1, i + 1).map((d) => d.low);
+    const hh = Math.max(...highs);
+    const ll = Math.min(...lows);
+    result.push(hh === ll ? -50 : (hh - data[i].close) / (hh - ll) * -100);
+  }
+  return result;
+}
+function cci2(data, period = 20) {
+  const tp = data.map((d) => (d.high + d.low + d.close) / 3);
+  const tpSma = sma4(tp, period);
+  const result = [];
+  for (let i = 0; i < tpSma.length; i++) {
+    const slice = tp.slice(i, i + period);
+    const mean4 = tpSma[i];
+    const meanDev = slice.reduce((s, v) => s + Math.abs(v - mean4), 0) / period;
+    result.push(meanDev === 0 ? 0 : (tp[i + period - 1] - mean4) / (0.015 * meanDev));
+  }
+  return result;
+}
+function obv2(data) {
+  const result = [0];
+  for (let i = 1; i < data.length; i++) {
+    if (data[i].close > data[i - 1].close) result.push(result[i - 1] + data[i].volume);
+    else if (data[i].close < data[i - 1].close) result.push(result[i - 1] - data[i].volume);
+    else result.push(result[i - 1]);
+  }
+  return result;
+}
+function vwap(data) {
+  const result = [];
+  let cumTPV = 0;
+  let cumV = 0;
+  for (const bar of data) {
+    const tp = (bar.high + bar.low + bar.close) / 3;
+    cumTPV += tp * bar.volume;
+    cumV += bar.volume;
+    result.push(cumV === 0 ? bar.close : cumTPV / cumV);
+  }
+  return result;
+}
+function generateRSIBBSignal(candles, params) {
+  const rsiPeriod = params?.rsiPeriod ?? 14;
+  const rsiOversold = params?.rsiOversold ?? 35;
+  const rsiOverbought = params?.rsiOverbought ?? 65;
+  const bbPeriod = params?.bbPeriod ?? 20;
+  const bbStdDev = params?.bbStdDev ?? 2;
+  const closes2 = candles.map((c) => c.close);
+  const rsiVals = rsi2(closes2, rsiPeriod);
+  const bb = bollingerBands2(closes2, bbPeriod, bbStdDev);
+  const signals = [];
+  const offset = Math.max(rsiPeriod, bbPeriod) - 1;
+  for (let i = 0; i < candles.length; i++) {
+    const rsiIdx = i - offset;
+    const bbIdx = i - bbPeriod + 1;
+    if (rsiIdx < 0 || bbIdx < 0 || bbIdx >= bb.lower.length) {
+      signals.push("NEUTRAL");
+      continue;
+    }
+    const price = candles[i].close;
+    const rsiVal = rsiVals[rsiIdx];
+    const lowerBand = bb.lower[bbIdx];
+    const upperBand = bb.upper[bbIdx];
+    if (price <= lowerBand && rsiVal < rsiOversold) signals.push("LONG");
+    else if (price >= upperBand && rsiVal > rsiOverbought) signals.push("SHORT");
+    else signals.push("NEUTRAL");
+  }
+  return signals;
+}
+function generateMACDCrossSignal(candles, params) {
+  const { histogram } = macd2(candles.map((c) => c.close), params?.fast ?? 12, params?.slow ?? 26, params?.signal ?? 9);
+  const signals = [];
+  const offset = 26 - 1 + 9 - 1;
+  for (let i = 0; i < candles.length; i++) {
+    const histIdx = i - offset;
+    if (histIdx < 1 || histIdx >= histogram.length) {
+      signals.push("NEUTRAL");
+      continue;
+    }
+    if (histogram[histIdx - 1] <= 0 && histogram[histIdx] > 0) signals.push("LONG");
+    else if (histogram[histIdx - 1] >= 0 && histogram[histIdx] < 0) signals.push("SHORT");
+    else signals.push("NEUTRAL");
+  }
+  return signals;
+}
+function generateStochasticCrossSignal(candles, params) {
+  const kP = params?.kPeriod ?? 14;
+  const dP = params?.dPeriod ?? 3;
+  const ob = params?.overbought ?? 80;
+  const os = params?.oversold ?? 20;
+  const { k, d } = stochastic2(candles, kP, dP);
+  const signals = [];
+  const offset = kP - 1 + dP - 1;
+  for (let i = 0; i < candles.length; i++) {
+    const dIdx = i - offset;
+    if (dIdx < 1 || dIdx >= d.length) {
+      signals.push("NEUTRAL");
+      continue;
+    }
+    const kIdx = dIdx + dP - 1;
+    if (k[kIdx] > d[dIdx] && k[kIdx] < ob && k[kIdx - 1] <= d[dIdx - 1]) signals.push("LONG");
+    else if (k[kIdx] < d[dIdx] && k[kIdx] > os && k[kIdx - 1] >= d[dIdx - 1]) signals.push("SHORT");
+    else signals.push("NEUTRAL");
+  }
+  return signals;
+}
+function generateIchimokuSuperTrendSignal(candles, params) {
+  return candles.map((_, i) => {
+    const slice = candles.slice(0, i + 1);
+    if (slice.length < Math.max(params?.spanPeriod ?? 52, params?.superTrendPeriod ?? 10)) return "NEUTRAL";
+    const cloud = ichimokuCloudIndicator(slice, params?.conversionPeriod ?? 9, params?.basePeriod ?? 26, params?.spanPeriod ?? 52, params?.displacement ?? 26);
+    const trend = superTrendIndicator(slice, params?.superTrendPeriod ?? 10, params?.multiplier ?? 3);
+    return cloud.bias === "above-cloud" && trend.direction === "up" ? "LONG" : cloud.bias === "below-cloud" && trend.direction === "down" ? "SHORT" : "NEUTRAL";
+  });
+}
+function generateFibonacciBreakoutSignal(candles, params) {
+  const lookback = params?.lookback ?? 100;
+  const threshold = (params?.thresholdBps ?? 5) / 1e4;
+  return candles.map((_, i) => {
+    const slice = candles.slice(0, i + 1);
+    if (slice.length < Math.min(lookback, 20)) return "NEUTRAL";
+    const fib = fibonacciRetracementIndicator(slice, lookback);
+    const close = slice.at(-1)?.close ?? 0;
+    const levels = Object.values(fib.levels).map(Number);
+    const upper = Math.max(...levels);
+    const lower = Math.min(...levels);
+    return close > upper * (1 + threshold) ? "LONG" : close < lower * (1 - threshold) ? "SHORT" : "NEUTRAL";
+  });
+}
+function generateConfluenceSignal(candles) {
+  return candles.map((_, i) => {
+    const slice = candles.slice(0, i + 1);
+    if (slice.length < 30) return "NEUTRAL";
+    const cloud = ichimokuCloudIndicator(slice);
+    const trend = superTrendIndicator(slice);
+    const emaSignal = generateEMACrossSignal(slice).at(-1);
+    const votes = [cloud.bias === "above-cloud" ? 1 : cloud.bias === "below-cloud" ? -1 : 0, trend.direction === "up" ? 1 : -1, emaSignal === "LONG" ? 1 : emaSignal === "SHORT" ? -1 : 0];
+    return votes.reduce((sum, vote) => sum + vote, 0) >= 2 ? "LONG" : votes.reduce((sum, vote) => sum + vote, 0) <= -2 ? "SHORT" : "NEUTRAL";
+  });
+}
+function generateEMACrossSignal(candles, params) {
+  const fast = params?.fast ?? 12;
+  const slow = params?.slow ?? 26;
+  const fastEma = ema3(candles.map((c) => c.close), fast);
+  const slowEma = ema3(candles.map((c) => c.close), slow);
+  const signals = [];
+  const offset = slow - 1;
+  const fastOffset = slow - fast;
+  for (let i = 0; i < candles.length; i++) {
+    const sIdx = i - offset;
+    if (sIdx < 1 || sIdx >= slowEma.length) {
+      signals.push("NEUTRAL");
+      continue;
+    }
+    const fIdx = sIdx + fastOffset;
+    if (fastEma[fIdx] > slowEma[sIdx] && fastEma[fIdx - 1] <= slowEma[sIdx - 1]) signals.push("LONG");
+    else if (fastEma[fIdx] < slowEma[sIdx] && fastEma[fIdx - 1] >= slowEma[sIdx - 1]) signals.push("SHORT");
+    else signals.push("NEUTRAL");
+  }
+  return signals;
+}
+function runBacktest(candles, strategy) {
+  const signals = generateSignals(candles, strategy.entryRules);
+  const atrVals = atr2(candles, 14);
+  const atrOffset = 14;
+  const trades = [];
+  let tradeId = 0;
+  let activeTrade = null;
+  let lastExitBar = -999;
+  const equity = 1e4;
+  const equityCurve = [equity];
+  let peak = equity;
+  const drawdownCurve = [0];
+  let maxDD = 0;
+  const isJpy = strategy.name.toLowerCase().includes("jpy");
+  const pipSize = isJpy ? 0.01 : 1e-4;
+  for (let i = 0; i < candles.length; i++) {
+    const currentAtr = i - atrOffset >= 0 && i - atrOffset < atrVals.length ? atrVals[i - atrOffset] : candles[i].high - candles[i].low;
+    if (activeTrade) {
+      const trade = activeTrade;
+      trade.holdingBars++;
+      let exitPrice = null;
+      let exitReason = null;
+      if (trade.direction === "LONG") {
+        if (candles[i].high >= trade.tpPrice) {
+          exitPrice = trade.tpPrice;
+          exitReason = "TAKE_PROFIT";
+        } else if (candles[i].low <= trade.slPrice) {
+          exitPrice = trade.slPrice;
+          exitReason = "STOP_LOSS";
+        }
+      } else {
+        if (candles[i].low <= trade.tpPrice) {
+          exitPrice = trade.tpPrice;
+          exitReason = "TAKE_PROFIT";
+        } else if (candles[i].high >= trade.slPrice) {
+          exitPrice = trade.slPrice;
+          exitReason = "STOP_LOSS";
+        }
+      }
+      if (trade.holdingBars >= strategy.exitRules.maxHoldingBars && !exitPrice) {
+        exitPrice = candles[i].close;
+        exitReason = "TIME_EXIT";
+      }
+      if (!exitPrice && signals[i] !== "NEUTRAL") {
+        if (trade.direction === "LONG" && signals[i] === "SHORT") {
+          exitPrice = candles[i].close;
+          exitReason = "SIGNAL_REVERSAL";
+        } else if (trade.direction === "SHORT" && signals[i] === "LONG") {
+          exitPrice = candles[i].close;
+          exitReason = "SIGNAL_REVERSAL";
+        }
+      }
+      if (exitPrice && exitReason) {
+        trade.exitPrice = exitPrice;
+        trade.exitTime = candles[i].timestamp;
+        trade.exitReason = exitReason;
+        const pipDiff = trade.direction === "LONG" ? exitPrice - trade.entryPrice : trade.entryPrice - exitPrice;
+        trade.pnlPips = Math.round(pipDiff / pipSize * 100) / 100;
+        trade.pnl = pipDiff * trade.quantity;
+        trades.push(trade);
+        activeTrade = null;
+        lastExitBar = i;
+      }
+    }
+    if (!activeTrade && signals[i] !== "NEUTRAL" && i - lastExitBar >= (strategy.riskManagement.minBarsBetweenTrades ?? 5)) {
+      const tpAtrMult = strategy.exitRules.tpAtrMult;
+      const slAtrMult = strategy.exitRules.slAtrMult;
+      const direction = signals[i];
+      const entryPrice = candles[i].close;
+      const tpPrice = direction === "LONG" ? entryPrice + tpAtrMult * currentAtr : entryPrice - tpAtrMult * currentAtr;
+      const slPrice = direction === "LONG" ? entryPrice - slAtrMult * currentAtr : entryPrice + slAtrMult * currentAtr;
+      tradeId++;
+      activeTrade = {
+        id: tradeId,
+        entryTime: candles[i].timestamp,
+        exitTime: null,
+        direction,
+        entryPrice,
+        exitPrice: null,
+        quantity: 1,
+        pnl: null,
+        pnlPips: null,
+        exitReason: null,
+        holdingBars: 0,
+        tpPrice,
+        slPrice
+      };
+    }
+    const currentEquity = equity + trades.reduce((sum, t2) => sum + (t2.pnl ?? 0), 0);
+    equityCurve.push(currentEquity);
+    if (currentEquity > peak) peak = currentEquity;
+    const dd = peak > 0 ? (peak - currentEquity) / peak * 100 : 0;
+    drawdownCurve.push(-dd);
+    if (dd > maxDD) maxDD = dd;
+  }
+  return computeStats(trades, equityCurve, drawdownCurve);
+}
+function generateSignals(candles, rules) {
+  for (const rule of rules) {
+    switch (rule.type) {
+      case "rsi_bb_reversal":
+        return generateRSIBBSignal(candles, rule.params);
+      case "macd_cross":
+        return generateMACDCrossSignal(candles, rule.params);
+      case "stochastic_cross":
+        return generateStochasticCrossSignal(candles, rule.params);
+      case "ema_cross":
+        return generateEMACrossSignal(candles, rule.params);
+      case "ichimoku_supertrend":
+        return generateIchimokuSuperTrendSignal(candles, rule.params);
+      case "fibonacci_breakout":
+        return generateFibonacciBreakoutSignal(candles, rule.params);
+      case "multi_indicator_confluence":
+        return generateConfluenceSignal(candles);
+    }
+  }
+  return candles.map(() => "NEUTRAL");
+}
+function computeStats(trades, equityCurve, drawdownCurve) {
+  const wins = trades.filter((t2) => (t2.pnl ?? 0) > 0);
+  const losses = trades.filter((t2) => (t2.pnl ?? 0) < 0);
+  const totalWin = wins.reduce((s, t2) => s + (t2.pnl ?? 0), 0);
+  const totalLoss = Math.abs(losses.reduce((s, t2) => s + (t2.pnl ?? 0), 0));
+  const longs = trades.filter((t2) => t2.direction === "LONG");
+  const shorts = trades.filter((t2) => t2.direction === "SHORT");
+  const longWins = longs.filter((t2) => (t2.pnl ?? 0) > 0);
+  const shortWins = shorts.filter((t2) => (t2.pnl ?? 0) > 0);
+  const returns = equityCurve.slice(1).map((v, i) => i === 0 ? 0 : (v - equityCurve[i]) / equityCurve[i]);
+  const avgReturn = returns.reduce((s, r) => s + r, 0) / (returns.length || 1);
+  const stdReturn = Math.sqrt(returns.reduce((s, r) => s + (r - avgReturn) ** 2, 0) / (returns.length || 1));
+  const negReturns = returns.filter((r) => r < 0);
+  const downDev = Math.sqrt(negReturns.reduce((s, r) => s + r ** 2, 0) / (negReturns.length || 1));
+  let maxConsWins = 0, maxConsLosses = 0, consWins = 0, consLosses = 0;
+  for (const t2 of trades) {
+    if ((t2.pnl ?? 0) > 0) {
+      consWins++;
+      consLosses = 0;
+      maxConsWins = Math.max(maxConsWins, consWins);
+    } else if ((t2.pnl ?? 0) < 0) {
+      consLosses++;
+      consWins = 0;
+      maxConsLosses = Math.max(maxConsLosses, consLosses);
+    } else {
+      consWins = 0;
+      consLosses = 0;
+    }
+  }
+  return {
+    trades,
+    totalTrades: trades.length,
+    winRate: trades.length > 0 ? wins.length / trades.length * 100 : 0,
+    totalPnl: Math.round(trades.reduce((s, t2) => s + (t2.pnl ?? 0), 0) * 100) / 100,
+    totalPnlPips: Math.round(trades.reduce((s, t2) => s + (t2.pnlPips ?? 0), 0) * 100) / 100,
+    avgWin: wins.length > 0 ? totalWin / wins.length : 0,
+    avgLoss: losses.length > 0 ? -totalLoss / losses.length : 0,
+    profitFactor: totalLoss === 0 ? 0 : totalWin / totalLoss,
+    maxDrawdown: Math.round(Math.max(...drawdownCurve.map(Math.abs)) * 100) / 100,
+    maxDrawdownPct: Math.round(Math.max(...drawdownCurve.map(Math.abs)) * 100) / 100,
+    sharpeRatio: stdReturn === 0 ? 0 : Math.round(avgReturn / stdReturn * 100) / 100,
+    sortinoRatio: downDev === 0 ? 0 : Math.round(avgReturn / downDev * 100) / 100,
+    avgHoldingBars: trades.length > 0 ? Math.round(trades.reduce((s, t2) => s + t2.holdingBars, 0) / trades.length * 10) / 10 : 0,
+    longTrades: longs.length,
+    shortTrades: shorts.length,
+    longWinRate: longs.length > 0 ? longWins.length / longs.length * 100 : 0,
+    shortWinRate: shorts.length > 0 ? shortWins.length / shorts.length * 100 : 0,
+    tpHits: trades.filter((t2) => t2.exitReason === "TAKE_PROFIT").length,
+    slHits: trades.filter((t2) => t2.exitReason === "STOP_LOSS").length,
+    timeExits: trades.filter((t2) => t2.exitReason === "TIME_EXIT").length,
+    consecutiveWins: maxConsWins,
+    consecutiveLosses: maxConsLosses,
+    expectancy: trades.length > 0 ? trades.reduce((s, t2) => s + (t2.pnl ?? 0), 0) / trades.length : 0,
+    equityCurve,
+    drawdownCurve
+  };
+}
+var BUILT_IN_STRATEGIES = [
+  {
+    name: "RSI + BB Reversal",
+    description: "Mean reversion combining RSI overbought/oversold with Bollinger Band extremes. Best for ranging markets on V75.",
+    timeframe: "1M",
+    marketType: "ranging",
+    entryRules: [{ type: "rsi_bb_reversal", params: { rsiPeriod: 14, rsiOversold: 35, rsiOverbought: 65, bbPeriod: 20, bbStdDev: 2 } }],
+    exitRules: { tpAtrMult: 1.5, slAtrMult: 1.2, maxHoldingBars: 30 },
+    riskManagement: { riskPerTrade: 2, maxConcurrentPositions: 3, minBarsBetweenTrades: 5 }
+  },
+  {
+    name: "MACD Crossover",
+    description: "Classic MACD histogram zero-line crossover strategy. Good for trending markets.",
+    timeframe: "5M",
+    marketType: "trending",
+    entryRules: [{ type: "macd_cross", params: { fast: 12, slow: 26, signal: 9 } }],
+    exitRules: { tpAtrMult: 2, slAtrMult: 1, trailingStop: true, trailingAtrMult: 1, maxHoldingBars: 60 },
+    riskManagement: { riskPerTrade: 2, maxConcurrentPositions: 2, minBarsBetweenTrades: 10 }
+  },
+  {
+    name: "Stochastic Cross",
+    description: "Stochastic %K/%D crossover in overbought/oversold zones. Ranging market scalping.",
+    timeframe: "1M",
+    marketType: "ranging",
+    entryRules: [{ type: "stochastic_cross", params: { kPeriod: 14, dPeriod: 3, overbought: 80, oversold: 20 } }],
+    exitRules: { tpAtrMult: 1.5, slAtrMult: 1, maxHoldingBars: 20 },
+    riskManagement: { riskPerTrade: 1.5, maxConcurrentPositions: 3, minBarsBetweenTrades: 3 }
+  },
+  {
+    name: "EMA Cross Trend",
+    description: "Fast/slow EMA crossover for trend following. Works well on higher timeframes.",
+    timeframe: "15M",
+    marketType: "trending",
+    entryRules: [{ type: "ema_cross", params: { fast: 12, slow: 26 } }],
+    exitRules: { tpAtrMult: 3, slAtrMult: 1.5, trailingStop: true, trailingAtrMult: 1.5, maxHoldingBars: 100 },
+    riskManagement: { riskPerTrade: 2, maxConcurrentPositions: 2, minBarsBetweenTrades: 15 }
+  },
+  {
+    name: "Ichimoku + SuperTrend Regime",
+    description: "Trend-regime strategy requiring price above/below the Ichimoku cloud and matching SuperTrend direction.",
+    timeframe: "1H",
+    marketType: "trending",
+    entryRules: [{ type: "ichimoku_supertrend", params: { conversionPeriod: 9, basePeriod: 26, spanPeriod: 52, superTrendPeriod: 10, multiplier: 3 } }],
+    exitRules: { tpAtrMult: 3, slAtrMult: 1.5, trailingStop: true, trailingAtrMult: 1.5, maxHoldingBars: 120 },
+    riskManagement: { riskPerTrade: 1, maxConcurrentPositions: 1, minBarsBetweenTrades: 20 }
+  },
+  {
+    name: "Fibonacci Range Breakout",
+    description: "Breakout screen using recent Fibonacci range extremes with ATR-based exits and bounded lookback.",
+    timeframe: "15M",
+    marketType: "breakout",
+    entryRules: [{ type: "fibonacci_breakout", params: { lookback: 100, thresholdBps: 5 } }],
+    exitRules: { tpAtrMult: 2.5, slAtrMult: 1.25, trailingStop: true, trailingAtrMult: 1.25, maxHoldingBars: 80 },
+    riskManagement: { riskPerTrade: 1, maxConcurrentPositions: 1, minBarsBetweenTrades: 25 }
+  },
+  {
+    name: "Multi-Indicator Confluence",
+    description: "Requires agreement from Ichimoku location, SuperTrend direction, and EMA crossover before entering.",
+    timeframe: "4H",
+    marketType: "trending",
+    entryRules: [{ type: "multi_indicator_confluence", params: {} }],
+    exitRules: { tpAtrMult: 3.5, slAtrMult: 1.75, trailingStop: true, trailingAtrMult: 1.5, maxHoldingBars: 160 },
+    riskManagement: { riskPerTrade: 0.75, maxConcurrentPositions: 1, minBarsBetweenTrades: 30 }
+  }
+];
+function detectCandlePatterns(candles) {
+  return candles.map((c, i) => {
+    const patterns = [];
+    if (i < 1) return patterns;
+    const prev = candles[i - 1];
+    const body = Math.abs(c.close - c.open);
+    const range = c.high - c.low;
+    const upperWick = c.high - Math.max(c.open, c.close);
+    const lowerWick = Math.min(c.open, c.close) - c.low;
+    const isBullish = c.close > c.open;
+    const prevBody = Math.abs(prev.close - prev.open);
+    const prevRange = prev.high - prev.low;
+    const prevIsBullish = prev.close > prev.open;
+    if (body < range * 0.1 && range > 0) patterns.push({ name: "Doji", type: "neutral", reliability: "medium", description: "Indecision candle - potential reversal" });
+    if (lowerWick > body * 2 && upperWick < body * 0.5 && !isBullish && lowerWick > range * 0.6) patterns.push({ name: "Hammer", type: "bullish", reliability: "high", description: "Bullish reversal after downtrend" });
+    if (upperWick > body * 2 && lowerWick < body * 0.5 && isBullish && upperWick > range * 0.6) patterns.push({ name: "Shooting Star", type: "bearish", reliability: "high", description: "Bearish reversal after uptrend" });
+    if (isBullish && !prevIsBullish && c.open <= prev.close && c.close >= prev.open && body > prevBody) patterns.push({ name: "Bullish Engulfing", type: "bullish", reliability: "high", description: "Strong bullish reversal pattern" });
+    if (!isBullish && prevIsBullish && c.open >= prev.close && c.close <= prev.open && body > prevBody) patterns.push({ name: "Bearish Engulfing", type: "bearish", reliability: "high", description: "Strong bearish reversal pattern" });
+    if (i >= 2) {
+      const twoBefore = candles[i - 2];
+      const twoBeforeBody = Math.abs(twoBefore.close - twoBefore.open);
+      if (!prevIsBullish && prevBody < twoBeforeBody * 0.3 && isBullish && body > twoBeforeBody * 0.5 && c.close > (twoBefore.open + twoBefore.close) / 2) patterns.push({ name: "Morning Star", type: "bullish", reliability: "high", description: "Three-candle bullish reversal" });
+      if (prevIsBullish && prevBody < twoBeforeBody * 0.3 && !isBullish && body > twoBeforeBody * 0.5 && c.close < (twoBefore.open + twoBefore.close) / 2) patterns.push({ name: "Evening Star", type: "bearish", reliability: "high", description: "Three-candle bearish reversal" });
+    }
+    if (!isBullish && prevIsBullish && c.open < prev.low && c.close > (prev.open + prev.close) / 2 && c.close < prev.open) patterns.push({ name: "Piercing Line", type: "bullish", reliability: "medium", description: "Bullish reversal - price pierces midpoint" });
+    if (isBullish && !prevIsBullish && c.open > prev.high && c.close < (prev.open + prev.close) / 2 && c.close > prev.open) patterns.push({ name: "Dark Cloud Cover", type: "bearish", reliability: "medium", description: "Bearish reversal - dark cloud pattern" });
+    if (body < range * 0.25 && upperWick > body * 0.5 && lowerWick > body * 0.5) patterns.push({ name: "Spinning Top", type: "neutral", reliability: "low", description: "Indecision with significant wicks" });
+    if (upperWick < range * 0.05 && lowerWick < range * 0.05 && body > range * 0.8) {
+      patterns.push({ name: isBullish ? "Bullish Marubozu" : "Bearish Marubozu", type: isBullish ? "bullish" : "bearish", reliability: "medium", description: `Strong ${isBullish ? "buying" : "selling"} pressure` });
+    }
+    return patterns;
+  });
+}
+function buildDerivWebSocketURL(appId = "1089") {
+  return `wss://ws.derivws.com/websockets/v3?app_id=${appId}`;
+}
+var DERIV_SYMBOLS = [
+  { symbol: "R_10", name: "Volatility 10 Index", pipSize: 1e-3 },
+  { symbol: "R_25", name: "Volatility 25 Index", pipSize: 1e-3 },
+  { symbol: "R_50", name: "Volatility 50 Index", pipSize: 1e-3 },
+  { symbol: "R_75", name: "Volatility 75 Index", pipSize: 1e-3 },
+  { symbol: "R_100", name: "Volatility 100 Index", pipSize: 1e-3 },
+  { symbol: "1HZ10V", name: "Volatility 10 (1s) Index", pipSize: 1e-5 },
+  { symbol: "1HZ25V", name: "Volatility 25 (1s) Index", pipSize: 1e-5 },
+  { symbol: "1HZ50V", name: "Volatility 50 (1s) Index", pipSize: 1e-5 },
+  { symbol: "1HZ75V", name: "Volatility 75 (1s) Index", pipSize: 1e-5 },
+  { symbol: "1HZ100V", name: "Volatility 100 (1s) Index", pipSize: 1e-5 }
+];
+
+// server/_core/researchEngine.ts
+var defaults = { fastPeriod: 20, slowPeriod: 50, rsiPeriod: 14, longRsi: 55, shortRsi: 45, initialCapital: 1e5, riskPerTrade: 0.01, feeBps: 1, slippageBps: 2, maxHoldingBars: 40 };
+var resolveConfig = (config = {}) => ({ ...defaults, ...config });
+var mean2 = (values) => values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
+var std = (values) => {
+  const average = mean2(values);
+  return Math.sqrt(mean2(values.map((value) => (value - average) ** 2)));
+};
+function signalAt(index2, data, config) {
+  const closes2 = data.map((bar) => bar.close), fast = ema(closes2, config.fastPeriod), slow = ema(closes2, config.slowPeriod), momentum = rsi(closes2, config.rsiPeriod);
+  const fastValue = fast[index2] ?? closes2[index2], slowValue = slow[index2] ?? closes2[index2], rsiValue2 = momentum[index2] ?? 50;
+  if (fastValue > slowValue && rsiValue2 >= config.longRsi) return "long";
+  if (fastValue < slowValue && rsiValue2 <= config.shortRsi) return "short";
+  return "flat";
+}
+function runBacktest2(data, inputConfig = {}) {
+  if (data.length < 60) throw new Error("Backtest requires at least 60 OHLCV candles.");
+  const config = resolveConfig(inputConfig), atrValues = atr(data, Math.min(config.rsiPeriod, 20));
+  let equity = config.initialCapital, peak = equity, maxDrawdown = 0;
+  const trades = [];
+  let open = null;
+  for (let index2 = Math.max(config.slowPeriod, config.rsiPeriod) + 1; index2 < data.length; index2 += 1) {
+    const current = data[index2], signal = signalAt(index2, data, config);
+    if (!open && signal !== "flat") {
+      const price = current.close * (1 + (signal === "long" ? config.slippageBps : -config.slippageBps) / 1e4);
+      const riskAmount = equity * config.riskPerTrade;
+      const stopDistance = Math.max(atrValues[index2] ?? price * 5e-3, price * 1e-3);
+      open = { index: index2, side: signal, price, quantity: riskAmount / stopDistance };
+      continue;
+    }
+    if (!open) continue;
+    const holding = index2 - open.index;
+    const reverse = open.side === "long" && signal === "short" || open.side === "short" && signal === "long";
+    if (reverse || holding >= config.maxHoldingBars || signal === "flat") {
+      const exit = current.close * (1 + (open.side === "long" ? -config.slippageBps : config.slippageBps) / 1e4);
+      const grossPnl = (open.side === "long" ? exit - open.price : open.price - exit) * open.quantity;
+      const notional = (open.price + exit) * open.quantity;
+      const costs = notional * (config.feeBps / 1e4);
+      const netPnl = grossPnl - costs;
+      equity += netPnl;
+      trades.push({ entryIndex: open.index, exitIndex: index2, side: open.side, entry: open.price, exit, quantity: open.quantity, grossPnl, costs, netPnl, returnPct: open.price ? netPnl / (open.price * open.quantity) * 100 : 0, reason: reverse ? "signal-reversal" : holding >= config.maxHoldingBars ? "time-stop" : "flat-signal" });
+      open = null;
+      peak = Math.max(peak, equity);
+      maxDrawdown = Math.max(maxDrawdown, peak ? (peak - equity) / peak : 0);
+    }
+  }
+  const winners = trades.filter((trade) => trade.netPnl > 0), losers = trades.filter((trade) => trade.netPnl <= 0), returns = trades.map((trade) => trade.returnPct);
+  const grossProfit = winners.reduce((sum, trade) => sum + trade.netPnl, 0), grossLoss = Math.abs(losers.reduce((sum, trade) => sum + trade.netPnl, 0));
+  return { mode: "backtest", config, initialCapital: config.initialCapital, finalEquity: equity, netPnl: equity - config.initialCapital, returnPct: (equity / config.initialCapital - 1) * 100, tradeCount: trades.length, winRate: trades.length ? winners.length / trades.length : 0, profitFactor: grossLoss ? grossProfit / grossLoss : grossProfit ? Infinity : 0, expectancy: mean2(trades.map((trade) => trade.netPnl)), volatility: std(returns), maxDrawdownPct: maxDrawdown * 100, trades, disclaimer: "Historical simulation is not a guarantee of future performance. Results depend on data quality, costs, and execution assumptions." };
+}
+function runForwardTest(data, inputConfig = {}) {
+  const trainPercent = Math.min(90, Math.max(50, inputConfig.trainPercent ?? 70));
+  const split = Math.max(60, Math.floor(data.length * trainPercent / 100));
+  if (data.length - split < Math.max(60, (inputConfig.slowPeriod ?? defaults.slowPeriod) + 10)) throw new Error("Forward test requires a sufficiently large holdout segment for out-of-sample simulation.");
+  const config = resolveConfig(inputConfig);
+  const train = runBacktest2(data.slice(0, split), config);
+  const holdout = data.slice(Math.max(0, split - config.slowPeriod), data.length).map((bar, index2, values) => ({ ...bar, timestamp: bar.timestamp || index2 + split - config.slowPeriod }));
+  const test = runBacktest2(holdout, config);
+  return { mode: "forward-test", splitIndex: split, trainPercent, train: { finalEquity: train.finalEquity, returnPct: train.returnPct, tradeCount: train.tradeCount, maxDrawdownPct: train.maxDrawdownPct }, holdout: { finalEquity: test.finalEquity, returnPct: test.returnPct, tradeCount: test.tradeCount, maxDrawdownPct: test.maxDrawdownPct, trades: test.trades }, generalizationGapPct: train.returnPct - test.returnPct, disclaimer: "Forward testing is an out-of-sample research report, not a live execution result or financial recommendation." };
+}
+function walkForwardAnalysis(data, config = {}) {
+  const folds = Math.max(2, Math.min(8, config.folds ?? 4));
+  const results = [];
+  const foldSize = Math.floor(data.length / (folds + 1));
+  for (let fold = 0; fold < folds; fold += 1) {
+    const trainEnd = foldSize * (fold + 2), testEnd = Math.min(data.length, trainEnd + foldSize);
+    if (testEnd - trainEnd < 10) continue;
+    const report = runForwardTest(data.slice(0, testEnd), { ...config, trainPercent: trainEnd / testEnd * 100 });
+    results.push({ fold: fold + 1, trainEnd, testEnd, holdoutReturnPct: report.holdout.returnPct, maxDrawdownPct: report.holdout.maxDrawdownPct, tradeCount: report.holdout.tradeCount });
+  }
+  return { folds: results, averageHoldoutReturnPct: mean2(results.map((result) => result.holdoutReturnPct)), averageDrawdownPct: mean2(results.map((result) => result.maxDrawdownPct)), disclaimer: "Walk-forward results are research diagnostics and require independent validation." };
+}
+
+// server/_core/automatedBacktest.ts
+function runAutomatedBacktest(candles, strategy, execution = {}) {
+  const commissionBps = Math.max(0, execution.commissionBps ?? 0);
+  const slippageBps = Math.max(0, execution.slippageBps ?? 0);
+  const base = runBacktest(candles, strategy);
+  const frictionRate = (commissionBps + slippageBps) / 1e4;
+  const adjustedTrades = base.trades.map((trade) => {
+    const notional = Math.abs(trade.entryPrice) * Math.max(1, trade.quantity) + Math.abs(trade.exitPrice ?? trade.entryPrice) * Math.max(1, trade.quantity);
+    const friction = notional * frictionRate;
+    return { ...trade, pnl: (trade.pnl ?? 0) - friction };
+  });
+  const adjustedPnl = adjustedTrades.reduce((sum, trade) => sum + (trade.pnl ?? 0), 0);
+  const adjusted = { ...base, trades: adjustedTrades, totalPnl: adjustedPnl, expectancy: adjustedTrades.length ? adjustedPnl / adjustedTrades.length : 0, execution: { commissionBps, slippageBps, frictionRate }, disclaimer: "Automated backtests are historical simulations, not live execution or financial advice. Results are sensitive to data quality, costs, slippage, liquidity, and regime changes." };
+  const walkForward = execution.walkForwardFolds && execution.walkForwardFolds >= 2 ? walkForwardAnalysis(candles, { folds: Math.min(8, Math.floor(execution.walkForwardFolds)) }) : void 0;
+  return { ...adjusted, walkForward };
+}
+
+// server/_core/marketStreams.ts
+var coinbaseUrl = "wss://advanced-trade-ws.coinbase.com";
+function listMarketStreams() {
+  return [
+    { provider: "coinbase", assets: ["crypto"], url: coinbaseUrl, authRequired: false, channels: ["ticker", "market_trades", "level2", "candles"], configured: true, note: "Public market-data channels; keep keys server-side if authenticated channels are enabled." },
+    { provider: "massive", assets: ["stock", "crypto"], url: process.env.MASSIVE_WS_URL ?? null, authRequired: true, channels: ["trades", "quotes", "bars"], configured: Boolean(process.env.MASSIVE_WS_URL && process.env.MASSIVE_API_KEY), note: "Configure MASSIVE_WS_URL and MASSIVE_API_KEY server-side; never expose the key to browsers." }
+  ];
+}
+function buildCoinbaseSubscription(productIds, channel = "ticker") {
+  const products = productIds.map(String).filter(Boolean).slice(0, 50);
+  if (!products.length) throw new Error("At least one product is required");
+  return { type: "subscribe", channel, product_ids: products };
+}
+function buildMassiveSubscription(symbols, channel = "trades") {
+  const safe = symbols.map((symbol) => String(symbol).trim().toUpperCase()).filter(Boolean).slice(0, 100);
+  if (!safe.length) throw new Error("At least one symbol is required");
+  return { action: "subscribe", params: `${channel}:${safe.join(",")}` };
 }
 
 // server/_core/agents.ts
@@ -2233,6 +2935,8 @@ var technicalIndicatorSuiteTool = {
   type: "function",
   function: { name: "technical_indicator_suite", description: "Compute a bounded deterministic suite of technical-analysis indicators from OHLCV candles.", parameters: { type: "object", properties: { data: { type: "array" }, indicators: { type: "array" } }, required: ["data"] } }
 };
+var advancedStrategyBacktestTool = { type: "function", function: { name: "advanced_strategy_backtest", description: "Run a bounded, cost-aware historical simulation with slippage, commissions, and optional walk-forward diagnostics; never places orders.", parameters: { type: "object", properties: { data: { type: "array" }, strategy: { type: "string" }, commissionBps: { type: "number" }, slippageBps: { type: "number" }, walkForwardFolds: { type: "number" } }, required: ["data"] } } };
+var marketStreamSubscriptionTool = { type: "function", function: { name: "market_stream_subscription", description: "Build a safe server-side subscription payload for public Coinbase or configured Massive market data; never exposes credentials or executes trades.", parameters: { type: "object", properties: { provider: { type: "string", enum: ["coinbase", "massive"] }, symbols: { type: "array" }, channel: { type: "string" } }, required: ["provider", "symbols"] } } };
 var agenticWorkflowPlanTool = {
   type: "function",
   function: { name: "agentic_workflow_plan", description: "Create a safe role-aware workflow plan with verification and rollback gates.", parameters: { type: "object", properties: { goal: { type: "string" }, constraints: { type: "array" }, riskLevel: { type: "string", enum: ["low", "medium", "high"] } }, required: ["goal"] } }
@@ -2610,9 +3314,9 @@ Adapt length and format to the user's needs.`,
     tools: [textAnalysisTool, codeExecTool, agenticWorkflowPlanTool],
     maxTokens: 4e3
   },
-  crypto_screening_analyst: { id: "crypto_screening_analyst", name: "Crypto Screening Analyst", description: "Screens supplied crypto OHLCV data with regime, liquidity, volatility, and technical-factor caveats.", systemPrompt: "You are a crypto market research analyst. Use only supplied or freshly retrieved data, label timestamps and uncertainty, separate descriptive screening from forecasts, and never execute trades.", tools: [technicalIndicatorSuiteTool, marketScreeningTool, agenticWorkflowPlanTool], maxTokens: 4e3 },
-  equity_screening_analyst: { id: "equity_screening_analyst", name: "Equity Screening Analyst", description: "Screens supplied equity OHLCV data with session, trend, momentum, and data-quality caveats.", systemPrompt: "You are an equity technical-screening analyst. Use only supplied or freshly retrieved data, respect exchange-session context, document assumptions, and never execute trades.", tools: [technicalIndicatorSuiteTool, marketScreeningTool, agenticWorkflowPlanTool], maxTokens: 4e3 },
-  market_data_steward: { id: "market_data_steward", name: "Market Data Steward", description: "Validates timestamp, symbol, timeframe, completeness, and provenance of market data.", systemPrompt: "You are a market-data steward. Check symbol identity, asset class, timestamp freshness, candle continuity, duplicates, missing values, and source provenance before analysis.", tools: [dataProcessingTool, agenticWorkflowPlanTool], maxTokens: 3500 },
+  crypto_screening_analyst: { id: "crypto_screening_analyst", name: "Crypto Screening Analyst", description: "Screens supplied crypto OHLCV data with regime, liquidity, volatility, and technical-factor caveats.", systemPrompt: "You are a crypto market research analyst. Use only supplied or freshly retrieved data, label timestamps and uncertainty, separate descriptive screening from forecasts, and never execute trades.", tools: [technicalIndicatorSuiteTool, marketScreeningTool, advancedStrategyBacktestTool, agenticWorkflowPlanTool], maxTokens: 4e3 },
+  equity_screening_analyst: { id: "equity_screening_analyst", name: "Equity Screening Analyst", description: "Screens supplied equity OHLCV data with session, trend, momentum, and data-quality caveats.", systemPrompt: "You are an equity technical-screening analyst. Use only supplied or freshly retrieved data, respect exchange-session context, document assumptions, and never execute trades.", tools: [technicalIndicatorSuiteTool, marketScreeningTool, advancedStrategyBacktestTool, agenticWorkflowPlanTool], maxTokens: 4e3 },
+  market_data_steward: { id: "market_data_steward", name: "Market Data Steward", description: "Validates timestamp, symbol, timeframe, completeness, and provenance of market data.", systemPrompt: "You are a market-data steward. Check symbol identity, asset class, timestamp freshness, candle continuity, duplicates, missing values, and source provenance before analysis.", tools: [dataProcessingTool, marketStreamSubscriptionTool, agenticWorkflowPlanTool], maxTokens: 3500 },
   screening_synthesizer: { id: "screening_synthesizer", name: "Screening Synthesizer", description: "Combines independent crypto and equity screens into a cautious comparative research brief.", systemPrompt: "You synthesize independent market screens. Preserve disagreement, rank evidence quality, state as-of times, avoid certainty, and include the finance disclaimer that screening is not investment advice.", tools: [textAnalysisTool, dataProcessingTool, agenticWorkflowPlanTool], maxTokens: 4500 },
   brainstormer: {
     id: "brainstormer",
@@ -2652,6 +3356,21 @@ async function executeToolCall(toolName, args, agentRole) {
   if (!permission.allowed) return `Permission denied: ${permission.reason}`;
   try {
     switch (toolName) {
+      case "advanced_strategy_backtest": {
+        const data = Array.isArray(args.data) ? args.data : [];
+        if (data.length < 60 || data.length > 1e4) return "Error: data must contain between 60 and 10000 candles";
+        const strategyName = args.strategy ? String(args.strategy) : void 0;
+        const strategy = BUILT_IN_STRATEGIES.find((item) => item.name === strategyName) ?? BUILT_IN_STRATEGIES[0];
+        return JSON.stringify(runAutomatedBacktest(data, strategy, { commissionBps: Math.max(0, Math.min(500, Number(args.commissionBps ?? 0))), slippageBps: Math.max(0, Math.min(500, Number(args.slippageBps ?? 0))), walkForwardFolds: Math.max(0, Math.min(8, Number(args.walkForwardFolds ?? 0))) }));
+      }
+      case "market_stream_subscription": {
+        const provider = String(args.provider ?? "coinbase");
+        const symbols = Array.isArray(args.symbols) ? args.symbols.map(String).slice(0, 100) : [];
+        if (!symbols.length) return "Error: symbols must contain at least one item";
+        if (provider === "coinbase") return JSON.stringify({ url: "wss://advanced-trade-ws.coinbase.com", authRequired: false, payload: buildCoinbaseSubscription(symbols, String(args.channel ?? "ticker")) });
+        if (provider === "massive") return JSON.stringify({ url: process.env.MASSIVE_WS_URL ?? null, authRequired: true, configured: Boolean(process.env.MASSIVE_WS_URL && process.env.MASSIVE_API_KEY), payload: buildMassiveSubscription(symbols, String(args.channel ?? "trades")) });
+        return "Error: provider must be coinbase or massive";
+      }
       case "market_screening_snapshot": {
         const assets = Array.isArray(args.assets) ? args.assets : [];
         if (!assets.length || assets.length > 100) return "Error: assets must contain between 1 and 100 items";
@@ -4548,530 +5267,6 @@ function regexHelper(input) {
   return { pattern: "", description: "No common pattern matched", test: false, matches: [] };
 }
 
-// server/_core/tradingStrategy.ts
-function sma4(data, period) {
-  const result = [];
-  for (let i = period - 1; i < data.length; i++) {
-    result.push(data.slice(i - period + 1, i + 1).reduce((a, b) => a + b, 0) / period);
-  }
-  return result;
-}
-function ema3(data, period) {
-  const result = [];
-  const k = 2 / (period + 1);
-  let prev = data.slice(0, period).reduce((a, b) => a + b, 0) / period;
-  result.push(prev);
-  for (let i = period; i < data.length; i++) {
-    prev = data[i] * k + prev * (1 - k);
-    result.push(prev);
-  }
-  return result;
-}
-function rsi2(data, period = 14) {
-  const result = [];
-  const gains = [];
-  const losses = [];
-  for (let i = 1; i < data.length; i++) gains.push(data[i] > data[i - 1] ? data[i] - data[i - 1] : 0);
-  for (let i = 1; i < data.length; i++) losses.push(data[i] < data[i - 1] ? data[i - 1] - data[i] : 0);
-  if (gains.length < period) return result;
-  let avgGain = gains.slice(0, period).reduce((a, b) => a + b, 0) / period;
-  let avgLoss = losses.slice(0, period).reduce((a, b) => a + b, 0) / period;
-  for (let i = period; i <= gains.length; i++) {
-    if (i > period) {
-      avgGain = (avgGain * (period - 1) + gains[i - 1]) / period;
-      avgLoss = (avgLoss * (period - 1) + losses[i - 1]) / period;
-    }
-    const rs = avgLoss === 0 ? 100 : avgGain / avgLoss;
-    result.push(100 - 100 / (1 + rs));
-  }
-  return result;
-}
-function trueRange2(data) {
-  const result = [];
-  for (let i = 1; i < data.length; i++) {
-    result.push(Math.max(data[i].high - data[i].low, Math.abs(data[i].high - data[i - 1].close), Math.abs(data[i].low - data[i - 1].close)));
-  }
-  return result;
-}
-function atr2(data, period = 14) {
-  const tr = trueRange2(data);
-  const result = [];
-  if (tr.length < period) return result;
-  let prev = tr.slice(0, period).reduce((a, b) => a + b, 0) / period;
-  result.push(prev);
-  for (let i = period; i < tr.length; i++) {
-    prev = (prev * (period - 1) + tr[i]) / period;
-    result.push(prev);
-  }
-  return result;
-}
-function bollingerBands2(data, period = 20, stdMult = 2) {
-  const middle = sma4(data, period);
-  const upper = [];
-  const lower = [];
-  const pctB = [];
-  const bandwidth = [];
-  for (let i = 0; i < middle.length; i++) {
-    const slice = data.slice(i, i + period);
-    const mean4 = middle[i];
-    const variance = slice.reduce((s, v) => s + (v - mean4) ** 2, 0) / period;
-    const sd = Math.sqrt(variance);
-    const u = mean4 + stdMult * sd;
-    const l = mean4 - stdMult * sd;
-    upper.push(u);
-    lower.push(l);
-    pctB.push(sd === 0 ? 0.5 : (data[i + period - 1] - l) / (u - l));
-    bandwidth.push(mean4 === 0 ? 0 : (u - l) / mean4 * 100);
-  }
-  return { upper, middle, lower, pctB, bandwidth };
-}
-function macd2(data, fast = 12, slow = 26, signal = 9) {
-  const fastEma = ema3(data, fast);
-  const slowEma = ema3(data, slow);
-  const offset = slow - fast;
-  const macdLine = [];
-  for (let i = 0; i < slowEma.length; i++) macdLine.push(fastEma[i + offset] - slowEma[i]);
-  const signalLine = ema3(macdLine, signal);
-  const histOffset = signal - 1;
-  const histogram = [];
-  for (let i = 0; i < signalLine.length; i++) histogram.push(macdLine[i + histOffset] - signalLine[i]);
-  return { macdLine, signalLine, histogram };
-}
-function stochastic2(data, kPeriod = 14, dPeriod = 3) {
-  const kValues = [];
-  for (let i = kPeriod - 1; i < data.length; i++) {
-    const highs = data.slice(i - kPeriod + 1, i + 1).map((d) => d.high);
-    const lows = data.slice(i - kPeriod + 1, i + 1).map((d) => d.low);
-    const hh = Math.max(...highs);
-    const ll = Math.min(...lows);
-    kValues.push(hh === ll ? 50 : (data[i].close - ll) / (hh - ll) * 100);
-  }
-  const dValues = sma4(kValues, dPeriod);
-  return { k: kValues, d: dValues };
-}
-function adx2(data, period = 14) {
-  const tr = trueRange2(data);
-  if (tr.length < period) return { adx: [], plusDI: [], minusDI: [] };
-  const plusDM = [];
-  const minusDM = [];
-  for (let i = 1; i < data.length; i++) {
-    const upMove = data[i].high - data[i - 1].high;
-    const downMove = data[i - 1].low - data[i].low;
-    plusDM.push(upMove > downMove && upMove > 0 ? upMove : 0);
-    minusDM.push(downMove > upMove && downMove > 0 ? downMove : 0);
-  }
-  const smoothTR = [];
-  const smoothPDM = [];
-  const smoothMDM = [];
-  let sTR = tr.slice(0, period).reduce((a, b) => a + b, 0);
-  let sPDM = plusDM.slice(0, period).reduce((a, b) => a + b, 0);
-  let sMDM = minusDM.slice(0, period).reduce((a, b) => a + b, 0);
-  smoothTR.push(sTR);
-  smoothPDM.push(sPDM);
-  smoothMDM.push(sMDM);
-  for (let i = period; i < tr.length; i++) {
-    sTR = sTR - sTR / period + tr[i];
-    sPDM = sPDM - sPDM / period + plusDM[i];
-    sMDM = sMDM - sMDM / period + minusDM[i];
-    smoothTR.push(sTR);
-    smoothPDM.push(sPDM);
-    smoothMDM.push(sMDM);
-  }
-  const plusDI = smoothPDM.map((v, i) => smoothTR[i] === 0 ? 0 : v / smoothTR[i] * 100);
-  const minusDI = smoothMDM.map((v, i) => smoothTR[i] === 0 ? 0 : v / smoothTR[i] * 100);
-  const dx = plusDI.map((v, i) => {
-    const sum = v + minusDI[i];
-    return sum === 0 ? 0 : Math.abs(v - minusDI[i]) / sum * 100;
-  });
-  const adxValues = ema3(dx, period);
-  return { adx: adxValues, plusDI, minusDI };
-}
-function williamsR2(data, period = 14) {
-  const result = [];
-  for (let i = period - 1; i < data.length; i++) {
-    const highs = data.slice(i - period + 1, i + 1).map((d) => d.high);
-    const lows = data.slice(i - period + 1, i + 1).map((d) => d.low);
-    const hh = Math.max(...highs);
-    const ll = Math.min(...lows);
-    result.push(hh === ll ? -50 : (hh - data[i].close) / (hh - ll) * -100);
-  }
-  return result;
-}
-function cci2(data, period = 20) {
-  const tp = data.map((d) => (d.high + d.low + d.close) / 3);
-  const tpSma = sma4(tp, period);
-  const result = [];
-  for (let i = 0; i < tpSma.length; i++) {
-    const slice = tp.slice(i, i + period);
-    const mean4 = tpSma[i];
-    const meanDev = slice.reduce((s, v) => s + Math.abs(v - mean4), 0) / period;
-    result.push(meanDev === 0 ? 0 : (tp[i + period - 1] - mean4) / (0.015 * meanDev));
-  }
-  return result;
-}
-function obv2(data) {
-  const result = [0];
-  for (let i = 1; i < data.length; i++) {
-    if (data[i].close > data[i - 1].close) result.push(result[i - 1] + data[i].volume);
-    else if (data[i].close < data[i - 1].close) result.push(result[i - 1] - data[i].volume);
-    else result.push(result[i - 1]);
-  }
-  return result;
-}
-function vwap(data) {
-  const result = [];
-  let cumTPV = 0;
-  let cumV = 0;
-  for (const bar of data) {
-    const tp = (bar.high + bar.low + bar.close) / 3;
-    cumTPV += tp * bar.volume;
-    cumV += bar.volume;
-    result.push(cumV === 0 ? bar.close : cumTPV / cumV);
-  }
-  return result;
-}
-function generateRSIBBSignal(candles, params) {
-  const rsiPeriod = params?.rsiPeriod ?? 14;
-  const rsiOversold = params?.rsiOversold ?? 35;
-  const rsiOverbought = params?.rsiOverbought ?? 65;
-  const bbPeriod = params?.bbPeriod ?? 20;
-  const bbStdDev = params?.bbStdDev ?? 2;
-  const closes2 = candles.map((c) => c.close);
-  const rsiVals = rsi2(closes2, rsiPeriod);
-  const bb = bollingerBands2(closes2, bbPeriod, bbStdDev);
-  const signals = [];
-  const offset = Math.max(rsiPeriod, bbPeriod) - 1;
-  for (let i = 0; i < candles.length; i++) {
-    const rsiIdx = i - offset;
-    const bbIdx = i - bbPeriod + 1;
-    if (rsiIdx < 0 || bbIdx < 0 || bbIdx >= bb.lower.length) {
-      signals.push("NEUTRAL");
-      continue;
-    }
-    const price = candles[i].close;
-    const rsiVal = rsiVals[rsiIdx];
-    const lowerBand = bb.lower[bbIdx];
-    const upperBand = bb.upper[bbIdx];
-    if (price <= lowerBand && rsiVal < rsiOversold) signals.push("LONG");
-    else if (price >= upperBand && rsiVal > rsiOverbought) signals.push("SHORT");
-    else signals.push("NEUTRAL");
-  }
-  return signals;
-}
-function generateMACDCrossSignal(candles, params) {
-  const { histogram } = macd2(candles.map((c) => c.close), params?.fast ?? 12, params?.slow ?? 26, params?.signal ?? 9);
-  const signals = [];
-  const offset = 26 - 1 + 9 - 1;
-  for (let i = 0; i < candles.length; i++) {
-    const histIdx = i - offset;
-    if (histIdx < 1 || histIdx >= histogram.length) {
-      signals.push("NEUTRAL");
-      continue;
-    }
-    if (histogram[histIdx - 1] <= 0 && histogram[histIdx] > 0) signals.push("LONG");
-    else if (histogram[histIdx - 1] >= 0 && histogram[histIdx] < 0) signals.push("SHORT");
-    else signals.push("NEUTRAL");
-  }
-  return signals;
-}
-function generateStochasticCrossSignal(candles, params) {
-  const kP = params?.kPeriod ?? 14;
-  const dP = params?.dPeriod ?? 3;
-  const ob = params?.overbought ?? 80;
-  const os = params?.oversold ?? 20;
-  const { k, d } = stochastic2(candles, kP, dP);
-  const signals = [];
-  const offset = kP - 1 + dP - 1;
-  for (let i = 0; i < candles.length; i++) {
-    const dIdx = i - offset;
-    if (dIdx < 1 || dIdx >= d.length) {
-      signals.push("NEUTRAL");
-      continue;
-    }
-    const kIdx = dIdx + dP - 1;
-    if (k[kIdx] > d[dIdx] && k[kIdx] < ob && k[kIdx - 1] <= d[dIdx - 1]) signals.push("LONG");
-    else if (k[kIdx] < d[dIdx] && k[kIdx] > os && k[kIdx - 1] >= d[dIdx - 1]) signals.push("SHORT");
-    else signals.push("NEUTRAL");
-  }
-  return signals;
-}
-function generateEMACrossSignal(candles, params) {
-  const fast = params?.fast ?? 12;
-  const slow = params?.slow ?? 26;
-  const fastEma = ema3(candles.map((c) => c.close), fast);
-  const slowEma = ema3(candles.map((c) => c.close), slow);
-  const signals = [];
-  const offset = slow - 1;
-  const fastOffset = slow - fast;
-  for (let i = 0; i < candles.length; i++) {
-    const sIdx = i - offset;
-    if (sIdx < 1 || sIdx >= slowEma.length) {
-      signals.push("NEUTRAL");
-      continue;
-    }
-    const fIdx = sIdx + fastOffset;
-    if (fastEma[fIdx] > slowEma[sIdx] && fastEma[fIdx - 1] <= slowEma[sIdx - 1]) signals.push("LONG");
-    else if (fastEma[fIdx] < slowEma[sIdx] && fastEma[fIdx - 1] >= slowEma[sIdx - 1]) signals.push("SHORT");
-    else signals.push("NEUTRAL");
-  }
-  return signals;
-}
-function runBacktest(candles, strategy) {
-  const signals = generateSignals(candles, strategy.entryRules);
-  const atrVals = atr2(candles, 14);
-  const atrOffset = 14;
-  const trades = [];
-  let tradeId = 0;
-  let activeTrade = null;
-  let lastExitBar = -999;
-  const equity = 1e4;
-  const equityCurve = [equity];
-  let peak = equity;
-  const drawdownCurve = [0];
-  let maxDD = 0;
-  const isJpy = strategy.name.toLowerCase().includes("jpy");
-  const pipSize = isJpy ? 0.01 : 1e-4;
-  for (let i = 0; i < candles.length; i++) {
-    const currentAtr = i - atrOffset >= 0 && i - atrOffset < atrVals.length ? atrVals[i - atrOffset] : candles[i].high - candles[i].low;
-    if (activeTrade) {
-      const trade = activeTrade;
-      trade.holdingBars++;
-      let exitPrice = null;
-      let exitReason = null;
-      if (trade.direction === "LONG") {
-        if (candles[i].high >= trade.tpPrice) {
-          exitPrice = trade.tpPrice;
-          exitReason = "TAKE_PROFIT";
-        } else if (candles[i].low <= trade.slPrice) {
-          exitPrice = trade.slPrice;
-          exitReason = "STOP_LOSS";
-        }
-      } else {
-        if (candles[i].low <= trade.tpPrice) {
-          exitPrice = trade.tpPrice;
-          exitReason = "TAKE_PROFIT";
-        } else if (candles[i].high >= trade.slPrice) {
-          exitPrice = trade.slPrice;
-          exitReason = "STOP_LOSS";
-        }
-      }
-      if (trade.holdingBars >= strategy.exitRules.maxHoldingBars && !exitPrice) {
-        exitPrice = candles[i].close;
-        exitReason = "TIME_EXIT";
-      }
-      if (!exitPrice && signals[i] !== "NEUTRAL") {
-        if (trade.direction === "LONG" && signals[i] === "SHORT") {
-          exitPrice = candles[i].close;
-          exitReason = "SIGNAL_REVERSAL";
-        } else if (trade.direction === "SHORT" && signals[i] === "LONG") {
-          exitPrice = candles[i].close;
-          exitReason = "SIGNAL_REVERSAL";
-        }
-      }
-      if (exitPrice && exitReason) {
-        trade.exitPrice = exitPrice;
-        trade.exitTime = candles[i].timestamp;
-        trade.exitReason = exitReason;
-        const pipDiff = trade.direction === "LONG" ? exitPrice - trade.entryPrice : trade.entryPrice - exitPrice;
-        trade.pnlPips = Math.round(pipDiff / pipSize * 100) / 100;
-        trade.pnl = pipDiff * trade.quantity;
-        trades.push(trade);
-        activeTrade = null;
-        lastExitBar = i;
-      }
-    }
-    if (!activeTrade && signals[i] !== "NEUTRAL" && i - lastExitBar >= (strategy.riskManagement.minBarsBetweenTrades ?? 5)) {
-      const tpAtrMult = strategy.exitRules.tpAtrMult;
-      const slAtrMult = strategy.exitRules.slAtrMult;
-      const direction = signals[i];
-      const entryPrice = candles[i].close;
-      const tpPrice = direction === "LONG" ? entryPrice + tpAtrMult * currentAtr : entryPrice - tpAtrMult * currentAtr;
-      const slPrice = direction === "LONG" ? entryPrice - slAtrMult * currentAtr : entryPrice + slAtrMult * currentAtr;
-      tradeId++;
-      activeTrade = {
-        id: tradeId,
-        entryTime: candles[i].timestamp,
-        exitTime: null,
-        direction,
-        entryPrice,
-        exitPrice: null,
-        quantity: 1,
-        pnl: null,
-        pnlPips: null,
-        exitReason: null,
-        holdingBars: 0,
-        tpPrice,
-        slPrice
-      };
-    }
-    const currentEquity = equity + trades.reduce((sum, t2) => sum + (t2.pnl ?? 0), 0);
-    equityCurve.push(currentEquity);
-    if (currentEquity > peak) peak = currentEquity;
-    const dd = peak > 0 ? (peak - currentEquity) / peak * 100 : 0;
-    drawdownCurve.push(-dd);
-    if (dd > maxDD) maxDD = dd;
-  }
-  return computeStats(trades, equityCurve, drawdownCurve);
-}
-function generateSignals(candles, rules) {
-  for (const rule of rules) {
-    switch (rule.type) {
-      case "rsi_bb_reversal":
-        return generateRSIBBSignal(candles, rule.params);
-      case "macd_cross":
-        return generateMACDCrossSignal(candles, rule.params);
-      case "stochastic_cross":
-        return generateStochasticCrossSignal(candles, rule.params);
-      case "ema_cross":
-        return generateEMACrossSignal(candles, rule.params);
-    }
-  }
-  return candles.map(() => "NEUTRAL");
-}
-function computeStats(trades, equityCurve, drawdownCurve) {
-  const wins = trades.filter((t2) => (t2.pnl ?? 0) > 0);
-  const losses = trades.filter((t2) => (t2.pnl ?? 0) < 0);
-  const totalWin = wins.reduce((s, t2) => s + (t2.pnl ?? 0), 0);
-  const totalLoss = Math.abs(losses.reduce((s, t2) => s + (t2.pnl ?? 0), 0));
-  const longs = trades.filter((t2) => t2.direction === "LONG");
-  const shorts = trades.filter((t2) => t2.direction === "SHORT");
-  const longWins = longs.filter((t2) => (t2.pnl ?? 0) > 0);
-  const shortWins = shorts.filter((t2) => (t2.pnl ?? 0) > 0);
-  const returns = equityCurve.slice(1).map((v, i) => i === 0 ? 0 : (v - equityCurve[i]) / equityCurve[i]);
-  const avgReturn = returns.reduce((s, r) => s + r, 0) / (returns.length || 1);
-  const stdReturn = Math.sqrt(returns.reduce((s, r) => s + (r - avgReturn) ** 2, 0) / (returns.length || 1));
-  const negReturns = returns.filter((r) => r < 0);
-  const downDev = Math.sqrt(negReturns.reduce((s, r) => s + r ** 2, 0) / (negReturns.length || 1));
-  let maxConsWins = 0, maxConsLosses = 0, consWins = 0, consLosses = 0;
-  for (const t2 of trades) {
-    if ((t2.pnl ?? 0) > 0) {
-      consWins++;
-      consLosses = 0;
-      maxConsWins = Math.max(maxConsWins, consWins);
-    } else if ((t2.pnl ?? 0) < 0) {
-      consLosses++;
-      consWins = 0;
-      maxConsLosses = Math.max(maxConsLosses, consLosses);
-    } else {
-      consWins = 0;
-      consLosses = 0;
-    }
-  }
-  return {
-    trades,
-    totalTrades: trades.length,
-    winRate: trades.length > 0 ? wins.length / trades.length * 100 : 0,
-    totalPnl: Math.round(trades.reduce((s, t2) => s + (t2.pnl ?? 0), 0) * 100) / 100,
-    totalPnlPips: Math.round(trades.reduce((s, t2) => s + (t2.pnlPips ?? 0), 0) * 100) / 100,
-    avgWin: wins.length > 0 ? totalWin / wins.length : 0,
-    avgLoss: losses.length > 0 ? -totalLoss / losses.length : 0,
-    profitFactor: totalLoss === 0 ? 0 : totalWin / totalLoss,
-    maxDrawdown: Math.round(Math.max(...drawdownCurve.map(Math.abs)) * 100) / 100,
-    maxDrawdownPct: Math.round(Math.max(...drawdownCurve.map(Math.abs)) * 100) / 100,
-    sharpeRatio: stdReturn === 0 ? 0 : Math.round(avgReturn / stdReturn * 100) / 100,
-    sortinoRatio: downDev === 0 ? 0 : Math.round(avgReturn / downDev * 100) / 100,
-    avgHoldingBars: trades.length > 0 ? Math.round(trades.reduce((s, t2) => s + t2.holdingBars, 0) / trades.length * 10) / 10 : 0,
-    longTrades: longs.length,
-    shortTrades: shorts.length,
-    longWinRate: longs.length > 0 ? longWins.length / longs.length * 100 : 0,
-    shortWinRate: shorts.length > 0 ? shortWins.length / shorts.length * 100 : 0,
-    tpHits: trades.filter((t2) => t2.exitReason === "TAKE_PROFIT").length,
-    slHits: trades.filter((t2) => t2.exitReason === "STOP_LOSS").length,
-    timeExits: trades.filter((t2) => t2.exitReason === "TIME_EXIT").length,
-    consecutiveWins: maxConsWins,
-    consecutiveLosses: maxConsLosses,
-    expectancy: trades.length > 0 ? trades.reduce((s, t2) => s + (t2.pnl ?? 0), 0) / trades.length : 0,
-    equityCurve,
-    drawdownCurve
-  };
-}
-var BUILT_IN_STRATEGIES = [
-  {
-    name: "RSI + BB Reversal",
-    description: "Mean reversion combining RSI overbought/oversold with Bollinger Band extremes. Best for ranging markets on V75.",
-    timeframe: "1M",
-    marketType: "ranging",
-    entryRules: [{ type: "rsi_bb_reversal", params: { rsiPeriod: 14, rsiOversold: 35, rsiOverbought: 65, bbPeriod: 20, bbStdDev: 2 } }],
-    exitRules: { tpAtrMult: 1.5, slAtrMult: 1.2, maxHoldingBars: 30 },
-    riskManagement: { riskPerTrade: 2, maxConcurrentPositions: 3, minBarsBetweenTrades: 5 }
-  },
-  {
-    name: "MACD Crossover",
-    description: "Classic MACD histogram zero-line crossover strategy. Good for trending markets.",
-    timeframe: "5M",
-    marketType: "trending",
-    entryRules: [{ type: "macd_cross", params: { fast: 12, slow: 26, signal: 9 } }],
-    exitRules: { tpAtrMult: 2, slAtrMult: 1, trailingStop: true, trailingAtrMult: 1, maxHoldingBars: 60 },
-    riskManagement: { riskPerTrade: 2, maxConcurrentPositions: 2, minBarsBetweenTrades: 10 }
-  },
-  {
-    name: "Stochastic Cross",
-    description: "Stochastic %K/%D crossover in overbought/oversold zones. Ranging market scalping.",
-    timeframe: "1M",
-    marketType: "ranging",
-    entryRules: [{ type: "stochastic_cross", params: { kPeriod: 14, dPeriod: 3, overbought: 80, oversold: 20 } }],
-    exitRules: { tpAtrMult: 1.5, slAtrMult: 1, maxHoldingBars: 20 },
-    riskManagement: { riskPerTrade: 1.5, maxConcurrentPositions: 3, minBarsBetweenTrades: 3 }
-  },
-  {
-    name: "EMA Cross Trend",
-    description: "Fast/slow EMA crossover for trend following. Works well on higher timeframes.",
-    timeframe: "15M",
-    marketType: "trending",
-    entryRules: [{ type: "ema_cross", params: { fast: 12, slow: 26 } }],
-    exitRules: { tpAtrMult: 3, slAtrMult: 1.5, trailingStop: true, trailingAtrMult: 1.5, maxHoldingBars: 100 },
-    riskManagement: { riskPerTrade: 2, maxConcurrentPositions: 2, minBarsBetweenTrades: 15 }
-  }
-];
-function detectCandlePatterns(candles) {
-  return candles.map((c, i) => {
-    const patterns = [];
-    if (i < 1) return patterns;
-    const prev = candles[i - 1];
-    const body = Math.abs(c.close - c.open);
-    const range = c.high - c.low;
-    const upperWick = c.high - Math.max(c.open, c.close);
-    const lowerWick = Math.min(c.open, c.close) - c.low;
-    const isBullish = c.close > c.open;
-    const prevBody = Math.abs(prev.close - prev.open);
-    const prevRange = prev.high - prev.low;
-    const prevIsBullish = prev.close > prev.open;
-    if (body < range * 0.1 && range > 0) patterns.push({ name: "Doji", type: "neutral", reliability: "medium", description: "Indecision candle - potential reversal" });
-    if (lowerWick > body * 2 && upperWick < body * 0.5 && !isBullish && lowerWick > range * 0.6) patterns.push({ name: "Hammer", type: "bullish", reliability: "high", description: "Bullish reversal after downtrend" });
-    if (upperWick > body * 2 && lowerWick < body * 0.5 && isBullish && upperWick > range * 0.6) patterns.push({ name: "Shooting Star", type: "bearish", reliability: "high", description: "Bearish reversal after uptrend" });
-    if (isBullish && !prevIsBullish && c.open <= prev.close && c.close >= prev.open && body > prevBody) patterns.push({ name: "Bullish Engulfing", type: "bullish", reliability: "high", description: "Strong bullish reversal pattern" });
-    if (!isBullish && prevIsBullish && c.open >= prev.close && c.close <= prev.open && body > prevBody) patterns.push({ name: "Bearish Engulfing", type: "bearish", reliability: "high", description: "Strong bearish reversal pattern" });
-    if (i >= 2) {
-      const twoBefore = candles[i - 2];
-      const twoBeforeBody = Math.abs(twoBefore.close - twoBefore.open);
-      if (!prevIsBullish && prevBody < twoBeforeBody * 0.3 && isBullish && body > twoBeforeBody * 0.5 && c.close > (twoBefore.open + twoBefore.close) / 2) patterns.push({ name: "Morning Star", type: "bullish", reliability: "high", description: "Three-candle bullish reversal" });
-      if (prevIsBullish && prevBody < twoBeforeBody * 0.3 && !isBullish && body > twoBeforeBody * 0.5 && c.close < (twoBefore.open + twoBefore.close) / 2) patterns.push({ name: "Evening Star", type: "bearish", reliability: "high", description: "Three-candle bearish reversal" });
-    }
-    if (!isBullish && prevIsBullish && c.open < prev.low && c.close > (prev.open + prev.close) / 2 && c.close < prev.open) patterns.push({ name: "Piercing Line", type: "bullish", reliability: "medium", description: "Bullish reversal - price pierces midpoint" });
-    if (isBullish && !prevIsBullish && c.open > prev.high && c.close < (prev.open + prev.close) / 2 && c.close > prev.open) patterns.push({ name: "Dark Cloud Cover", type: "bearish", reliability: "medium", description: "Bearish reversal - dark cloud pattern" });
-    if (body < range * 0.25 && upperWick > body * 0.5 && lowerWick > body * 0.5) patterns.push({ name: "Spinning Top", type: "neutral", reliability: "low", description: "Indecision with significant wicks" });
-    if (upperWick < range * 0.05 && lowerWick < range * 0.05 && body > range * 0.8) {
-      patterns.push({ name: isBullish ? "Bullish Marubozu" : "Bearish Marubozu", type: isBullish ? "bullish" : "bearish", reliability: "medium", description: `Strong ${isBullish ? "buying" : "selling"} pressure` });
-    }
-    return patterns;
-  });
-}
-function buildDerivWebSocketURL(appId = "1089") {
-  return `wss://ws.derivws.com/websockets/v3?app_id=${appId}`;
-}
-var DERIV_SYMBOLS = [
-  { symbol: "R_10", name: "Volatility 10 Index", pipSize: 1e-3 },
-  { symbol: "R_25", name: "Volatility 25 Index", pipSize: 1e-3 },
-  { symbol: "R_50", name: "Volatility 50 Index", pipSize: 1e-3 },
-  { symbol: "R_75", name: "Volatility 75 Index", pipSize: 1e-3 },
-  { symbol: "R_100", name: "Volatility 100 Index", pipSize: 1e-3 },
-  { symbol: "1HZ10V", name: "Volatility 10 (1s) Index", pipSize: 1e-5 },
-  { symbol: "1HZ25V", name: "Volatility 25 (1s) Index", pipSize: 1e-5 },
-  { symbol: "1HZ50V", name: "Volatility 50 (1s) Index", pipSize: 1e-5 },
-  { symbol: "1HZ75V", name: "Volatility 75 (1s) Index", pipSize: 1e-5 },
-  { symbol: "1HZ100V", name: "Volatility 100 (1s) Index", pipSize: 1e-5 }
-];
-
 // server/_core/swarmConsensus.ts
 var SWARM_AGENTS = [
   // Trend agents
@@ -5914,9 +6109,9 @@ var familyCatalog = [
   { key: "ad_line", label: "Accumulation Distribution Line", category: "volume" }
 ];
 var INDICATOR_CATALOG = familyCatalog.flatMap((family) => PERIODS.map((period) => ({ id: `${family.key}_${period}`, label: `${family.label} (${period})`, category: family.category, period })));
-var mean2 = (values) => values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
+var mean3 = (values) => values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
 var rolling = (values, period, fn) => values.map((_, index2) => index2 < period - 1 ? NaN : fn(values.slice(index2 - period + 1, index2 + 1), index2));
-var sma5 = (values, period) => rolling(values, period, (window) => mean2(window));
+var sma5 = (values, period) => rolling(values, period, (window) => mean3(window));
 var ema4 = (values, period) => {
   const result = [];
   const alpha = 2 / (period + 1);
@@ -5935,8 +6130,8 @@ var diff = (values, lag) => values.map((value, index2) => index2 < lag ? NaN : v
 var trueRanges = (data) => data.map((bar, index2) => index2 === 0 ? bar.high - bar.low : Math.max(bar.high - bar.low, Math.abs(bar.high - data[index2 - 1].close), Math.abs(bar.low - data[index2 - 1].close)));
 var typical = (data) => data.map((bar) => (bar.high + bar.low + bar.close) / 3);
 var rollingStd = (values, period) => rolling(values, period, (window) => {
-  const average = mean2(window);
-  return Math.sqrt(mean2(window.map((value) => (value - average) ** 2)));
+  const average = mean3(window);
+  return Math.sqrt(mean3(window.map((value) => (value - average) ** 2)));
 });
 var rsi3 = (values, period) => values.map((_, index2) => {
   if (index2 < period) return NaN;
@@ -5956,8 +6151,8 @@ var stochastic3 = (data, period) => data.map((bar, index2) => {
   return high === low ? 50 : (bar.close - low) / (high - low) * 100;
 });
 var cci3 = (data, period) => rolling(typical(data), period, (window, index2) => {
-  const average = mean2(window);
-  const deviation = mean2(window.map((value) => Math.abs(value - average)));
+  const average = mean3(window);
+  const deviation = mean3(window.map((value) => Math.abs(value - average)));
   return deviation === 0 ? 0 : (typical(data)[index2] - average) / (0.015 * deviation);
 });
 var obv3 = (data) => data.map((_, index2) => index2 === 0 ? 0 : data.slice(1, index2 + 1).reduce((sum, bar, offset) => sum + (bar.close > data[offset].close ? bar.volume : bar.close < data[offset].close ? -bar.volume : 0), 0));
@@ -5996,17 +6191,17 @@ function calculate(family, period, data) {
   });
   if (family === "cci") return cci3(data, period);
   if (family === "trix") return ema4(ema4(ema4(closes2, period), period), period).map((value, index2, values) => index2 === 0 ? NaN : (value - values[index2 - 1]) / values[index2 - 1] * 100);
-  if (family === "atr") return rolling(tr, period, (window) => mean2(window));
+  if (family === "atr") return rolling(tr, period, (window) => mean3(window));
   if (family === "true_range") return tr;
   if (family === "stdev") return rollingStd(closes2, period);
   if (family === "variance") return rollingStd(closes2, period).map((value) => value ** 2);
   if (family === "zscore") return rolling(closes2, period, (window, index2) => {
-    const average = mean2(window);
-    const sd = Math.sqrt(mean2(window.map((value) => (value - average) ** 2)));
+    const average = mean3(window);
+    const sd = Math.sqrt(mean3(window.map((value) => (value - average) ** 2)));
     return sd === 0 ? 0 : (closes2[index2] - average) / sd;
   });
   if (family === "bb_position") return rolling(closes2, period, (window, index2) => {
-    const average = mean2(window), sd = Math.sqrt(mean2(window.map((value) => (value - average) ** 2)));
+    const average = mean3(window), sd = Math.sqrt(mean3(window.map((value) => (value - average) ** 2)));
     return sd === 0 ? 0.5 : (closes2[index2] - (average - 2 * sd)) / (4 * sd);
   });
   if (family === "range_percent") return data.map((bar) => bar.close === 0 ? 0 : (bar.high - bar.low) / bar.close * 100);
@@ -6023,7 +6218,7 @@ function calculate(family, period, data) {
       plus.push(up > down && up > 0 ? up : 0);
       minus.push(down > up && down > 0 ? down : 0);
     }
-    const atrValues = rolling(ranges, period, (window) => mean2(window));
+    const atrValues = rolling(ranges, period, (window) => mean3(window));
     const plusDI = plus.map((value, index2) => atrValues[index2 + 1] ? 100 * value / atrValues[index2 + 1] : NaN);
     const minusDI = minus.map((value, index2) => atrValues[index2 + 1] ? 100 * value / atrValues[index2 + 1] : NaN);
     return family === "di_plus" ? [NaN, ...plusDI] : family === "di_minus" ? [NaN, ...minusDI] : [NaN, ...plusDI.map((value, index2) => {
@@ -6057,7 +6252,7 @@ function calculate(family, period, data) {
     return high === low ? 0.5 : (bar.close - low) / (high - low);
   });
   if (family === "keltner_position") return data.map((bar, index2) => {
-    const center = ema4(closes2, period)[index2], width = (rolling(tr, period, (window) => mean2(window))[index2] ?? 0) * 2;
+    const center = ema4(closes2, period)[index2], width = (rolling(tr, period, (window) => mean3(window))[index2] ?? 0) * 2;
     return width ? (bar.close - (center - width)) / (2 * width) : 0.5;
   });
   if (family === "candle_body_pct") return data.map((bar) => bar.high === bar.low ? 0 : Math.abs(bar.close - bar.open) / (bar.high - bar.low));
@@ -6066,8 +6261,8 @@ function calculate(family, period, data) {
   if (family === "gap_pct") return data.map((bar, index2) => index2 === 0 || data[index2 - 1].close === 0 ? 0 : (bar.open - data[index2 - 1].close) / data[index2 - 1].close * 100);
   if (family === "hl2") return data.map((bar) => (bar.high + bar.low) / 2);
   if (family === "ohlc4") return data.map((bar) => (bar.open + bar.high + bar.low + bar.close) / 4);
-  if (family === "realized_vol") return rolling(closes2.map((value, index2) => index2 === 0 ? 0 : Math.log(value / closes2[index2 - 1])), period, (window) => Math.sqrt(mean2(window.map((value) => value ** 2))) * Math.sqrt(252));
-  if (family === "upside_vol" || family === "downside_vol") return rolling(closes2.map((value, index2) => index2 === 0 ? 0 : Math.log(value / closes2[index2 - 1])), period, (window) => Math.sqrt(mean2(window.filter((value) => family === "upside_vol" ? value > 0 : value < 0).map((value) => value ** 2))) * Math.sqrt(252));
+  if (family === "realized_vol") return rolling(closes2.map((value, index2) => index2 === 0 ? 0 : Math.log(value / closes2[index2 - 1])), period, (window) => Math.sqrt(mean3(window.map((value) => value ** 2))) * Math.sqrt(252));
+  if (family === "upside_vol" || family === "downside_vol") return rolling(closes2.map((value, index2) => index2 === 0 ? 0 : Math.log(value / closes2[index2 - 1])), period, (window) => Math.sqrt(mean3(window.filter((value) => family === "upside_vol" ? value > 0 : value < 0).map((value) => value ** 2))) * Math.sqrt(252));
   if (family === "efficiency_ratio") return closes2.map((value, index2) => {
     if (index2 < period) return NaN;
     const direction = Math.abs(value - closes2[index2 - period]), noise = closes2.slice(index2 - period + 1, index2 + 1).reduce((sum, close, offset) => sum + Math.abs(close - closes2[index2 - period + offset]), 0);
@@ -6079,7 +6274,7 @@ function calculate(family, period, data) {
     return high === low ? 0 : 100 * Math.log10(atrSum / (high - low)) / Math.log10(period);
   });
   if (family === "volume_zscore") return rolling(data.map((bar) => bar.volume), period, (window, index2) => {
-    const average = mean2(window), sd = Math.sqrt(mean2(window.map((value) => (value - average) ** 2)));
+    const average = mean3(window), sd = Math.sqrt(mean3(window.map((value) => (value - average) ** 2)));
     return sd ? (data[index2].volume - average) / sd : 0;
   });
   if (family === "pvt") return data.map((_, index2) => index2 === 0 ? 0 : index2 === 1 ? 0 : data.slice(1, index2 + 1).reduce((sum, bar, offset) => sum + (bar.close - data[offset].close) / Math.max(1e-9, data[offset].close) * bar.volume, 0));
@@ -6100,79 +6295,6 @@ function listIndicators(category) {
 }
 function indicatorSnapshot(data, ids = ["sma_20", "ema_20", "rsi_14", "atr_14", "bb_position_20", "zscore_20"]) {
   return computeIndicators(ids, data).map((indicator) => ({ id: indicator.id, category: indicator.category, latest: indicator.values.at(-1) ?? null, values: indicator.values }));
-}
-
-// server/_core/researchEngine.ts
-var defaults = { fastPeriod: 20, slowPeriod: 50, rsiPeriod: 14, longRsi: 55, shortRsi: 45, initialCapital: 1e5, riskPerTrade: 0.01, feeBps: 1, slippageBps: 2, maxHoldingBars: 40 };
-var resolveConfig = (config = {}) => ({ ...defaults, ...config });
-var mean3 = (values) => values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
-var std = (values) => {
-  const average = mean3(values);
-  return Math.sqrt(mean3(values.map((value) => (value - average) ** 2)));
-};
-function signalAt(index2, data, config) {
-  const closes2 = data.map((bar) => bar.close), fast = ema(closes2, config.fastPeriod), slow = ema(closes2, config.slowPeriod), momentum = rsi(closes2, config.rsiPeriod);
-  const fastValue = fast[index2] ?? closes2[index2], slowValue = slow[index2] ?? closes2[index2], rsiValue2 = momentum[index2] ?? 50;
-  if (fastValue > slowValue && rsiValue2 >= config.longRsi) return "long";
-  if (fastValue < slowValue && rsiValue2 <= config.shortRsi) return "short";
-  return "flat";
-}
-function runBacktest2(data, inputConfig = {}) {
-  if (data.length < 60) throw new Error("Backtest requires at least 60 OHLCV candles.");
-  const config = resolveConfig(inputConfig), atrValues = atr(data, Math.min(config.rsiPeriod, 20));
-  let equity = config.initialCapital, peak = equity, maxDrawdown = 0;
-  const trades = [];
-  let open = null;
-  for (let index2 = Math.max(config.slowPeriod, config.rsiPeriod) + 1; index2 < data.length; index2 += 1) {
-    const current = data[index2], signal = signalAt(index2, data, config);
-    if (!open && signal !== "flat") {
-      const price = current.close * (1 + (signal === "long" ? config.slippageBps : -config.slippageBps) / 1e4);
-      const riskAmount = equity * config.riskPerTrade;
-      const stopDistance = Math.max(atrValues[index2] ?? price * 5e-3, price * 1e-3);
-      open = { index: index2, side: signal, price, quantity: riskAmount / stopDistance };
-      continue;
-    }
-    if (!open) continue;
-    const holding = index2 - open.index;
-    const reverse = open.side === "long" && signal === "short" || open.side === "short" && signal === "long";
-    if (reverse || holding >= config.maxHoldingBars || signal === "flat") {
-      const exit = current.close * (1 + (open.side === "long" ? -config.slippageBps : config.slippageBps) / 1e4);
-      const grossPnl = (open.side === "long" ? exit - open.price : open.price - exit) * open.quantity;
-      const notional = (open.price + exit) * open.quantity;
-      const costs = notional * (config.feeBps / 1e4);
-      const netPnl = grossPnl - costs;
-      equity += netPnl;
-      trades.push({ entryIndex: open.index, exitIndex: index2, side: open.side, entry: open.price, exit, quantity: open.quantity, grossPnl, costs, netPnl, returnPct: open.price ? netPnl / (open.price * open.quantity) * 100 : 0, reason: reverse ? "signal-reversal" : holding >= config.maxHoldingBars ? "time-stop" : "flat-signal" });
-      open = null;
-      peak = Math.max(peak, equity);
-      maxDrawdown = Math.max(maxDrawdown, peak ? (peak - equity) / peak : 0);
-    }
-  }
-  const winners = trades.filter((trade) => trade.netPnl > 0), losers = trades.filter((trade) => trade.netPnl <= 0), returns = trades.map((trade) => trade.returnPct);
-  const grossProfit = winners.reduce((sum, trade) => sum + trade.netPnl, 0), grossLoss = Math.abs(losers.reduce((sum, trade) => sum + trade.netPnl, 0));
-  return { mode: "backtest", config, initialCapital: config.initialCapital, finalEquity: equity, netPnl: equity - config.initialCapital, returnPct: (equity / config.initialCapital - 1) * 100, tradeCount: trades.length, winRate: trades.length ? winners.length / trades.length : 0, profitFactor: grossLoss ? grossProfit / grossLoss : grossProfit ? Infinity : 0, expectancy: mean3(trades.map((trade) => trade.netPnl)), volatility: std(returns), maxDrawdownPct: maxDrawdown * 100, trades, disclaimer: "Historical simulation is not a guarantee of future performance. Results depend on data quality, costs, and execution assumptions." };
-}
-function runForwardTest(data, inputConfig = {}) {
-  const trainPercent = Math.min(90, Math.max(50, inputConfig.trainPercent ?? 70));
-  const split = Math.max(60, Math.floor(data.length * trainPercent / 100));
-  if (data.length - split < Math.max(60, (inputConfig.slowPeriod ?? defaults.slowPeriod) + 10)) throw new Error("Forward test requires a sufficiently large holdout segment for out-of-sample simulation.");
-  const config = resolveConfig(inputConfig);
-  const train = runBacktest2(data.slice(0, split), config);
-  const holdout = data.slice(Math.max(0, split - config.slowPeriod), data.length).map((bar, index2, values) => ({ ...bar, timestamp: bar.timestamp || index2 + split - config.slowPeriod }));
-  const test = runBacktest2(holdout, config);
-  return { mode: "forward-test", splitIndex: split, trainPercent, train: { finalEquity: train.finalEquity, returnPct: train.returnPct, tradeCount: train.tradeCount, maxDrawdownPct: train.maxDrawdownPct }, holdout: { finalEquity: test.finalEquity, returnPct: test.returnPct, tradeCount: test.tradeCount, maxDrawdownPct: test.maxDrawdownPct, trades: test.trades }, generalizationGapPct: train.returnPct - test.returnPct, disclaimer: "Forward testing is an out-of-sample research report, not a live execution result or financial recommendation." };
-}
-function walkForwardAnalysis(data, config = {}) {
-  const folds = Math.max(2, Math.min(8, config.folds ?? 4));
-  const results = [];
-  const foldSize = Math.floor(data.length / (folds + 1));
-  for (let fold = 0; fold < folds; fold += 1) {
-    const trainEnd = foldSize * (fold + 2), testEnd = Math.min(data.length, trainEnd + foldSize);
-    if (testEnd - trainEnd < 10) continue;
-    const report = runForwardTest(data.slice(0, testEnd), { ...config, trainPercent: trainEnd / testEnd * 100 });
-    results.push({ fold: fold + 1, trainEnd, testEnd, holdoutReturnPct: report.holdout.returnPct, maxDrawdownPct: report.holdout.maxDrawdownPct, tradeCount: report.holdout.tradeCount });
-  }
-  return { folds: results, averageHoldoutReturnPct: mean3(results.map((result) => result.holdoutReturnPct)), averageDrawdownPct: mean3(results.map((result) => result.maxDrawdownPct)), disclaimer: "Walk-forward results are research diagnostics and require independent validation." };
 }
 
 // server/_core/brainSystem.ts
@@ -7535,6 +7657,9 @@ ${input.context ?? "No additional context."}`
     forwardTest: protectedProcedure.input(z2.object({ candles: z2.array(z2.object({ timestamp: z2.number(), open: z2.number(), high: z2.number(), low: z2.number(), close: z2.number(), volume: z2.number() })).min(70), config: z2.record(z2.string(), z2.number()).optional() })).mutation(({ input }) => runForwardTest(input.candles, input.config)),
     walkForward: protectedProcedure.input(z2.object({ candles: z2.array(z2.object({ timestamp: z2.number(), open: z2.number(), high: z2.number(), low: z2.number(), close: z2.number(), volume: z2.number() })).min(100), config: z2.record(z2.string(), z2.number()).optional() })).mutation(({ input }) => walkForwardAnalysis(input.candles, input.config)),
     strategies: protectedProcedure.query(() => BUILT_IN_STRATEGIES),
+    streamCatalog: protectedProcedure.query(() => listMarketStreams()),
+    coinbaseSubscription: protectedProcedure.input(z2.object({ productIds: z2.array(z2.string()).min(1).max(50), channel: z2.enum(["ticker", "market_trades", "level2", "candles"]).default("ticker") })).query(({ input }) => ({ url: "wss://advanced-trade-ws.coinbase.com", payload: buildCoinbaseSubscription(input.productIds, input.channel), authRequired: false })),
+    massiveSubscription: protectedProcedure.input(z2.object({ symbols: z2.array(z2.string()).min(1).max(100), channel: z2.enum(["trades", "quotes", "bars"]).default("trades") })).query(({ input }) => ({ url: process.env.MASSIVE_WS_URL ?? null, payload: buildMassiveSubscription(input.symbols, input.channel), configured: Boolean(process.env.MASSIVE_WS_URL && process.env.MASSIVE_API_KEY), authRequired: true })),
     backtest: protectedProcedure.input(z2.object({
       candles: z2.array(z2.object({ timestamp: z2.number(), open: z2.number(), high: z2.number(), low: z2.number(), close: z2.number(), volume: z2.number() })).min(50),
       strategyName: z2.string().optional(),
@@ -7552,9 +7677,19 @@ ${input.context ?? "No additional context."}`
       const { trades, equityCurve, drawdownCurve, ...stats } = runBacktest(input.candles, strategy);
       return { ...stats, tradeCount: trades.length, sampleTrades: trades.slice(-10) };
     }),
+    automatedBacktest: protectedProcedure.input(z2.object({
+      candles: z2.array(z2.object({ timestamp: z2.number(), open: z2.number(), high: z2.number(), low: z2.number(), close: z2.number(), volume: z2.number() })).min(60).max(1e4),
+      strategyName: z2.string().optional(),
+      commissionBps: z2.number().min(0).max(500).default(0),
+      slippageBps: z2.number().min(0).max(500).default(0),
+      walkForwardFolds: z2.number().int().min(0).max(8).optional()
+    })).mutation(({ input }) => {
+      const strategy = BUILT_IN_STRATEGIES.find((s) => s.name === input.strategyName) ?? BUILT_IN_STRATEGIES[0];
+      return runAutomatedBacktest(input.candles, strategy, { commissionBps: input.commissionBps, slippageBps: input.slippageBps, walkForwardFolds: input.walkForwardFolds });
+    }),
     signals: protectedProcedure.input(z2.object({
       candles: z2.array(z2.object({ timestamp: z2.number(), open: z2.number(), high: z2.number(), low: z2.number(), close: z2.number(), volume: z2.number() })).min(30),
-      strategyType: z2.enum(["rsi_bb_reversal", "macd_cross", "stochastic_cross", "ema_cross"]),
+      strategyType: z2.enum(["rsi_bb_reversal", "macd_cross", "stochastic_cross", "ema_cross", "ichimoku_supertrend", "fibonacci_breakout", "multi_indicator_confluence"]),
       params: z2.record(z2.string(), z2.number()).optional()
     })).mutation(({ input }) => {
       switch (input.strategyType) {
@@ -7566,6 +7701,12 @@ ${input.context ?? "No additional context."}`
           return { signals: generateStochasticCrossSignal(input.candles, input.params) };
         case "ema_cross":
           return { signals: generateEMACrossSignal(input.candles, input.params) };
+        case "ichimoku_supertrend":
+          return { signals: generateIchimokuSuperTrendSignal(input.candles, input.params) };
+        case "fibonacci_breakout":
+          return { signals: generateFibonacciBreakoutSignal(input.candles, input.params) };
+        case "multi_indicator_confluence":
+          return { signals: generateConfluenceSignal(input.candles) };
       }
     }),
     patterns: protectedProcedure.input(z2.object({

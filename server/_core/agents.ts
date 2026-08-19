@@ -10,6 +10,9 @@ import { arpeggiate, chordProgression, humanizeNotes, swingQuantize, velocityCur
 import { screenMarketAssets, marketScreenSummary, type ScreeningAsset } from "./marketScreening";
 import { analyzeSynthPatch, createModulationMatrix, createSerumStylePatch } from "./synthTools";
 import { canInvokeTool, recordToolFailure, recordToolSuccess } from "./toolRegistry";
+import { runAutomatedBacktest } from "./automatedBacktest";
+import { buildCoinbaseSubscription, buildMassiveSubscription } from "./marketStreams";
+import { BUILT_IN_STRATEGIES } from "./tradingStrategy";
 
 export type AgentRole =
   | "forex_analyst"
@@ -116,6 +119,8 @@ const technicalIndicatorSuiteTool: Tool = {
   type: "function",
   function: { name: "technical_indicator_suite", description: "Compute a bounded deterministic suite of technical-analysis indicators from OHLCV candles.", parameters: { type: "object", properties: { data: { type: "array" }, indicators: { type: "array" } }, required: ["data"] } },
 };
+const advancedStrategyBacktestTool: Tool = { type: "function", function: { name: "advanced_strategy_backtest", description: "Run a bounded, cost-aware historical simulation with slippage, commissions, and optional walk-forward diagnostics; never places orders.", parameters: { type: "object", properties: { data: { type: "array" }, strategy: { type: "string" }, commissionBps: { type: "number" }, slippageBps: { type: "number" }, walkForwardFolds: { type: "number" } }, required: ["data"] } } };
+const marketStreamSubscriptionTool: Tool = { type: "function", function: { name: "market_stream_subscription", description: "Build a safe server-side subscription payload for public Coinbase or configured Massive market data; never exposes credentials or executes trades.", parameters: { type: "object", properties: { provider: { type: "string", enum: ["coinbase", "massive"] }, symbols: { type: "array" }, channel: { type: "string" } }, required: ["provider", "symbols"] } } };
 const agenticWorkflowPlanTool: Tool = {
   type: "function",
   function: { name: "agentic_workflow_plan", description: "Create a safe role-aware workflow plan with verification and rollback gates.", parameters: { type: "object", properties: { goal: { type: "string" }, constraints: { type: "array" }, riskLevel: { type: "string", enum: ["low", "medium", "high"] } }, required: ["goal"] } },
@@ -506,9 +511,9 @@ Adapt length and format to the user's needs.`,
         tools: [textAnalysisTool, codeExecTool, agenticWorkflowPlanTool],
     maxTokens: 4000,
   },
-  crypto_screening_analyst: { id: "crypto_screening_analyst", name: "Crypto Screening Analyst", description: "Screens supplied crypto OHLCV data with regime, liquidity, volatility, and technical-factor caveats.", systemPrompt: "You are a crypto market research analyst. Use only supplied or freshly retrieved data, label timestamps and uncertainty, separate descriptive screening from forecasts, and never execute trades.", tools: [technicalIndicatorSuiteTool, marketScreeningTool, agenticWorkflowPlanTool], maxTokens: 4000 },
-  equity_screening_analyst: { id: "equity_screening_analyst", name: "Equity Screening Analyst", description: "Screens supplied equity OHLCV data with session, trend, momentum, and data-quality caveats.", systemPrompt: "You are an equity technical-screening analyst. Use only supplied or freshly retrieved data, respect exchange-session context, document assumptions, and never execute trades.", tools: [technicalIndicatorSuiteTool, marketScreeningTool, agenticWorkflowPlanTool], maxTokens: 4000 },
-  market_data_steward: { id: "market_data_steward", name: "Market Data Steward", description: "Validates timestamp, symbol, timeframe, completeness, and provenance of market data.", systemPrompt: "You are a market-data steward. Check symbol identity, asset class, timestamp freshness, candle continuity, duplicates, missing values, and source provenance before analysis.", tools: [dataProcessingTool, agenticWorkflowPlanTool], maxTokens: 3500 },
+  crypto_screening_analyst: { id: "crypto_screening_analyst", name: "Crypto Screening Analyst", description: "Screens supplied crypto OHLCV data with regime, liquidity, volatility, and technical-factor caveats.", systemPrompt: "You are a crypto market research analyst. Use only supplied or freshly retrieved data, label timestamps and uncertainty, separate descriptive screening from forecasts, and never execute trades.", tools: [technicalIndicatorSuiteTool, marketScreeningTool, advancedStrategyBacktestTool, agenticWorkflowPlanTool], maxTokens: 4000 },
+  equity_screening_analyst: { id: "equity_screening_analyst", name: "Equity Screening Analyst", description: "Screens supplied equity OHLCV data with session, trend, momentum, and data-quality caveats.", systemPrompt: "You are an equity technical-screening analyst. Use only supplied or freshly retrieved data, respect exchange-session context, document assumptions, and never execute trades.", tools: [technicalIndicatorSuiteTool, marketScreeningTool, advancedStrategyBacktestTool, agenticWorkflowPlanTool], maxTokens: 4000 },
+  market_data_steward: { id: "market_data_steward", name: "Market Data Steward", description: "Validates timestamp, symbol, timeframe, completeness, and provenance of market data.", systemPrompt: "You are a market-data steward. Check symbol identity, asset class, timestamp freshness, candle continuity, duplicates, missing values, and source provenance before analysis.", tools: [dataProcessingTool, marketStreamSubscriptionTool, agenticWorkflowPlanTool], maxTokens: 3500 },
   screening_synthesizer: { id: "screening_synthesizer", name: "Screening Synthesizer", description: "Combines independent crypto and equity screens into a cautious comparative research brief.", systemPrompt: "You synthesize independent market screens. Preserve disagreement, rank evidence quality, state as-of times, avoid certainty, and include the finance disclaimer that screening is not investment advice.", tools: [textAnalysisTool, dataProcessingTool, agenticWorkflowPlanTool], maxTokens: 4500 },
   brainstormer: {
     id: "brainstormer",
@@ -563,6 +568,21 @@ async function executeToolCall(
   if (!permission.allowed) return `Permission denied: ${permission.reason}`;
   try {
     switch (toolName) {
+    case "advanced_strategy_backtest": {
+      const data = Array.isArray(args.data) ? args.data : [];
+      if (data.length < 60 || data.length > 10000) return "Error: data must contain between 60 and 10000 candles";
+      const strategyName = args.strategy ? String(args.strategy) : undefined;
+      const strategy = BUILT_IN_STRATEGIES.find(item => item.name === strategyName) ?? BUILT_IN_STRATEGIES[0];
+      return JSON.stringify(runAutomatedBacktest(data as Parameters<typeof runAutomatedBacktest>[0], strategy, { commissionBps: Math.max(0, Math.min(500, Number(args.commissionBps ?? 0))), slippageBps: Math.max(0, Math.min(500, Number(args.slippageBps ?? 0))), walkForwardFolds: Math.max(0, Math.min(8, Number(args.walkForwardFolds ?? 0))) }));
+    }
+    case "market_stream_subscription": {
+      const provider = String(args.provider ?? "coinbase");
+      const symbols = Array.isArray(args.symbols) ? args.symbols.map(String).slice(0, 100) : [];
+      if (!symbols.length) return "Error: symbols must contain at least one item";
+      if (provider === "coinbase") return JSON.stringify({ url: "wss://advanced-trade-ws.coinbase.com", authRequired: false, payload: buildCoinbaseSubscription(symbols, (String(args.channel ?? "ticker") as "ticker" | "market_trades" | "level2" | "candles")) });
+      if (provider === "massive") return JSON.stringify({ url: process.env.MASSIVE_WS_URL ?? null, authRequired: true, configured: Boolean(process.env.MASSIVE_WS_URL && process.env.MASSIVE_API_KEY), payload: buildMassiveSubscription(symbols, (String(args.channel ?? "trades") as "trades" | "quotes" | "bars")) });
+      return "Error: provider must be coinbase or massive";
+    }
     case "market_screening_snapshot": {
       const assets = Array.isArray(args.assets) ? args.assets as ScreeningAsset[] : [];
       if (!assets.length || assets.length > 100) return "Error: assets must contain between 1 and 100 items";

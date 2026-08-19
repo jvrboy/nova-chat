@@ -79,15 +79,16 @@ import {
   generateTestStubs,
   regexHelper,
 } from "./_core/codeTools";
-import {
-  runBacktest, BUILT_IN_STRATEGIES, generateRSIBBSignal, generateMACDCrossSignal,
+import { runBacktest, BUILT_IN_STRATEGIES, generateRSIBBSignal, generateMACDCrossSignal,
   type StrategyDefinition,
-  generateStochasticCrossSignal, generateEMACrossSignal, detectCandlePatterns,
+  generateStochasticCrossSignal, generateEMACrossSignal, generateIchimokuSuperTrendSignal, generateFibonacciBreakoutSignal, generateConfluenceSignal, detectCandlePatterns,
   DERIV_SYMBOLS, parseDerivCandles, buildDerivWebSocketURL, buildDerivCandleRequest,
   sma as tsSma, ema as tsEma, rsi as tsRsi, atr as tsAtr, bollingerBands as tsBB,
   macd as tsMacd, stochastic as tsStochastic, adx as tsAdx, williamsR as tsWilliamsR,
   cci as tsCci, obv as tsObv, vwap as tsVwap,
 } from "./_core/tradingStrategy";
+import { runAutomatedBacktest } from "./_core/automatedBacktest";
+import { buildCoinbaseSubscription, buildMassiveSubscription, listMarketStreams } from "./_core/marketStreams";
 import { runSwarmConsensus, listSwarmAgents, SWARM_AGENTS } from "./_core/swarmConsensus";
 import { executeSandboxedCode } from "./_core/performanceTools";
 import { listBackendConnections, probeBackendConnections } from "./_core/backendConnections";
@@ -1341,6 +1342,9 @@ export const appRouter = router({
     forwardTest: protectedProcedure.input(z.object({ candles: z.array(z.object({ timestamp: z.number(), open: z.number(), high: z.number(), low: z.number(), close: z.number(), volume: z.number() })).min(70), config: z.record(z.string(), z.number()).optional() })).mutation(({ input }) => runForwardTest(input.candles, input.config as ResearchConfig | undefined)),
     walkForward: protectedProcedure.input(z.object({ candles: z.array(z.object({ timestamp: z.number(), open: z.number(), high: z.number(), low: z.number(), close: z.number(), volume: z.number() })).min(100), config: z.record(z.string(), z.number()).optional() })).mutation(({ input }) => walkForwardAnalysis(input.candles, input.config as ResearchConfig | undefined)),
     strategies: protectedProcedure.query(() => BUILT_IN_STRATEGIES),
+    streamCatalog: protectedProcedure.query(() => listMarketStreams()),
+    coinbaseSubscription: protectedProcedure.input(z.object({ productIds: z.array(z.string()).min(1).max(50), channel: z.enum(["ticker", "market_trades", "level2", "candles"]).default("ticker") })).query(({ input }) => ({ url: "wss://advanced-trade-ws.coinbase.com", payload: buildCoinbaseSubscription(input.productIds, input.channel), authRequired: false })),
+    massiveSubscription: protectedProcedure.input(z.object({ symbols: z.array(z.string()).min(1).max(100), channel: z.enum(["trades", "quotes", "bars"]).default("trades") })).query(({ input }) => ({ url: process.env.MASSIVE_WS_URL ?? null, payload: buildMassiveSubscription(input.symbols, input.channel), configured: Boolean(process.env.MASSIVE_WS_URL && process.env.MASSIVE_API_KEY), authRequired: true })),
     backtest: protectedProcedure.input(z.object({
       candles: z.array(z.object({ timestamp: z.number(), open: z.number(), high: z.number(), low: z.number(), close: z.number(), volume: z.number() })).min(50),
       strategyName: z.string().optional(),
@@ -1355,9 +1359,16 @@ export const appRouter = router({
       const { trades, equityCurve, drawdownCurve, ...stats } = runBacktest(input.candles, strategy as StrategyDefinition);
       return { ...stats, tradeCount: trades.length, sampleTrades: trades.slice(-10) };
     }),
+    automatedBacktest: protectedProcedure.input(z.object({
+      candles: z.array(z.object({ timestamp: z.number(), open: z.number(), high: z.number(), low: z.number(), close: z.number(), volume: z.number() })).min(60).max(10000),
+      strategyName: z.string().optional(),
+      commissionBps: z.number().min(0).max(500).default(0),
+      slippageBps: z.number().min(0).max(500).default(0),
+      walkForwardFolds: z.number().int().min(0).max(8).optional(),
+    })).mutation(({ input }) => { const strategy = BUILT_IN_STRATEGIES.find(s => s.name === input.strategyName) ?? BUILT_IN_STRATEGIES[0]; return runAutomatedBacktest(input.candles, strategy, { commissionBps: input.commissionBps, slippageBps: input.slippageBps, walkForwardFolds: input.walkForwardFolds }); }),
     signals: protectedProcedure.input(z.object({
       candles: z.array(z.object({ timestamp: z.number(), open: z.number(), high: z.number(), low: z.number(), close: z.number(), volume: z.number() })).min(30),
-      strategyType: z.enum(['rsi_bb_reversal', 'macd_cross', 'stochastic_cross', 'ema_cross']),
+      strategyType: z.enum(['rsi_bb_reversal', 'macd_cross', 'stochastic_cross', 'ema_cross', 'ichimoku_supertrend', 'fibonacci_breakout', 'multi_indicator_confluence']),
       params: z.record(z.string(), z.number()).optional(),
     })).mutation(({ input }) => {
       switch (input.strategyType) {
@@ -1365,6 +1376,9 @@ export const appRouter = router({
         case 'macd_cross': return { signals: generateMACDCrossSignal(input.candles, input.params as any) };
         case 'stochastic_cross': return { signals: generateStochasticCrossSignal(input.candles, input.params as any) };
         case 'ema_cross': return { signals: generateEMACrossSignal(input.candles, input.params as any) };
+        case 'ichimoku_supertrend': return { signals: generateIchimokuSuperTrendSignal(input.candles, input.params as any) };
+        case 'fibonacci_breakout': return { signals: generateFibonacciBreakoutSignal(input.candles, input.params as any) };
+        case 'multi_indicator_confluence': return { signals: generateConfluenceSignal(input.candles) };
       }
     }),
     patterns: protectedProcedure.input(z.object({

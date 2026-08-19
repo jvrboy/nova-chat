@@ -2,8 +2,8 @@
  * Trading Strategy Backtesting Engine for Nova Chat
  * Extracted and generalized from RSI + Bollinger Band Reversal strategy
  * Supports custom strategy definitions, backtesting, and Deriv API integration
- */
-
+  */
+import { ichimokuCloudIndicator, fibonacciRetracementIndicator, superTrendIndicator } from "./technicalIndicators";
 // --- Types ---
 
 export type OHLCV = { timestamp: number; open: number; high: number; low: number; close: number; volume: number };
@@ -55,7 +55,7 @@ export type BacktestResult = {
 };
 
 export type StrategyRule = {
-  type: 'rsi_bb_reversal' | 'macd_cross' | 'stochastic_cross' | 'ema_cross' | 'breakout' | 'mean_reversion' | 'custom';
+  type: 'rsi_bb_reversal' | 'macd_cross' | 'stochastic_cross' | 'ema_cross' | 'ichimoku_supertrend' | 'fibonacci_breakout' | 'multi_indicator_confluence' | 'breakout' | 'mean_reversion' | 'custom';
   params: Record<string, number | string | boolean>;
 };
 
@@ -320,6 +320,9 @@ export function generateStochasticCrossSignal(candles: OHLCV[], params?: { kPeri
   return signals;
 }
 
+export function generateIchimokuSuperTrendSignal(candles: OHLCV[], params?: { conversionPeriod?: number; basePeriod?: number; spanPeriod?: number; displacement?: number; superTrendPeriod?: number; multiplier?: number }): TradeSignal[] { return candles.map((_, i) => { const slice = candles.slice(0, i + 1); if (slice.length < Math.max(params?.spanPeriod ?? 52, params?.superTrendPeriod ?? 10)) return 'NEUTRAL'; const cloud = ichimokuCloudIndicator(slice, params?.conversionPeriod ?? 9, params?.basePeriod ?? 26, params?.spanPeriod ?? 52, params?.displacement ?? 26); const trend = superTrendIndicator(slice, params?.superTrendPeriod ?? 10, params?.multiplier ?? 3); return cloud.bias === "above-cloud" && trend.direction === "up" ? "LONG" : cloud.bias === "below-cloud" && trend.direction === "down" ? "SHORT" : "NEUTRAL"; }); }
+export function generateFibonacciBreakoutSignal(candles: OHLCV[], params?: { lookback?: number; thresholdBps?: number }): TradeSignal[] { const lookback = params?.lookback ?? 100; const threshold = (params?.thresholdBps ?? 5) / 10000; return candles.map((_, i) => { const slice = candles.slice(0, i + 1); if (slice.length < Math.min(lookback, 20)) return 'NEUTRAL'; const fib = fibonacciRetracementIndicator(slice, lookback); const close = slice.at(-1)?.close ?? 0; const levels = Object.values(fib.levels).map(Number); const upper = Math.max(...levels); const lower = Math.min(...levels); return close > upper * (1 + threshold) ? "LONG" : close < lower * (1 - threshold) ? "SHORT" : "NEUTRAL"; }); }
+export function generateConfluenceSignal(candles: OHLCV[]): TradeSignal[] { return candles.map((_, i) => { const slice = candles.slice(0, i + 1); if (slice.length < 30) return 'NEUTRAL'; const cloud = ichimokuCloudIndicator(slice); const trend = superTrendIndicator(slice); const emaSignal = generateEMACrossSignal(slice).at(-1); const votes = [cloud.bias === "above-cloud" ? 1 : cloud.bias === "below-cloud" ? -1 : 0, trend.direction === "up" ? 1 : -1, emaSignal === "LONG" ? 1 : emaSignal === "SHORT" ? -1 : 0]; return votes.reduce((sum, vote) => sum + vote, 0) >= 2 ? "LONG" : votes.reduce((sum, vote) => sum + vote, 0) <= -2 ? "SHORT" : "NEUTRAL"; }); }
 export function generateEMACrossSignal(candles: OHLCV[], params?: { fast?: number; slow?: number }): TradeSignal[] {
   const fast = params?.fast ?? 12;
   const slow = params?.slow ?? 26;
@@ -434,6 +437,9 @@ function generateSignals(candles: OHLCV[], rules: StrategyRule[]): TradeSignal[]
       case 'macd_cross': return generateMACDCrossSignal(candles, rule.params as any);
       case 'stochastic_cross': return generateStochasticCrossSignal(candles, rule.params as any);
       case 'ema_cross': return generateEMACrossSignal(candles, rule.params as any);
+      case 'ichimoku_supertrend': return generateIchimokuSuperTrendSignal(candles, rule.params as any);
+      case 'fibonacci_breakout': return generateFibonacciBreakoutSignal(candles, rule.params as any);
+      case 'multi_indicator_confluence': return generateConfluenceSignal(candles);
     }
   }
   return candles.map(() => 'NEUTRAL');
@@ -521,6 +527,33 @@ export const BUILT_IN_STRATEGIES: StrategyDefinition[] = [
     entryRules: [{ type: 'ema_cross', params: { fast: 12, slow: 26 } }],
     exitRules: { tpAtrMult: 3.0, slAtrMult: 1.5, trailingStop: true, trailingAtrMult: 1.5, maxHoldingBars: 100 },
     riskManagement: { riskPerTrade: 2, maxConcurrentPositions: 2, minBarsBetweenTrades: 15 },
+  },
+  {
+    name: 'Ichimoku + SuperTrend Regime',
+    description: 'Trend-regime strategy requiring price above/below the Ichimoku cloud and matching SuperTrend direction.',
+    timeframe: '1H',
+    marketType: 'trending',
+    entryRules: [{ type: 'ichimoku_supertrend', params: { conversionPeriod: 9, basePeriod: 26, spanPeriod: 52, superTrendPeriod: 10, multiplier: 3 } }],
+    exitRules: { tpAtrMult: 3.0, slAtrMult: 1.5, trailingStop: true, trailingAtrMult: 1.5, maxHoldingBars: 120 },
+    riskManagement: { riskPerTrade: 1, maxConcurrentPositions: 1, minBarsBetweenTrades: 20 },
+  },
+  {
+    name: 'Fibonacci Range Breakout',
+    description: 'Breakout screen using recent Fibonacci range extremes with ATR-based exits and bounded lookback.',
+    timeframe: '15M',
+    marketType: 'breakout',
+    entryRules: [{ type: 'fibonacci_breakout', params: { lookback: 100, thresholdBps: 5 } }],
+    exitRules: { tpAtrMult: 2.5, slAtrMult: 1.25, trailingStop: true, trailingAtrMult: 1.25, maxHoldingBars: 80 },
+    riskManagement: { riskPerTrade: 1, maxConcurrentPositions: 1, minBarsBetweenTrades: 25 },
+  },
+  {
+    name: 'Multi-Indicator Confluence',
+    description: 'Requires agreement from Ichimoku location, SuperTrend direction, and EMA crossover before entering.',
+    timeframe: '4H',
+    marketType: 'trending',
+    entryRules: [{ type: 'multi_indicator_confluence', params: {} }],
+    exitRules: { tpAtrMult: 3.5, slAtrMult: 1.75, trailingStop: true, trailingAtrMult: 1.5, maxHoldingBars: 160 },
+    riskManagement: { riskPerTrade: .75, maxConcurrentPositions: 1, minBarsBetweenTrades: 30 },
   },
 ];
 
