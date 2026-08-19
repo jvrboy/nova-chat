@@ -1946,6 +1946,32 @@ function midiNoteName(note) {
   return `${names[(safe % 12 + 12) % 12]}${Math.floor(safe / 12) - 1}`;
 }
 
+// server/_core/marketScreening.ts
+function screenMarketAssets(assets, requestedIndicators) {
+  return assets.slice(0, 100).map((asset) => {
+    if (!asset.candles.length) return { symbol: asset.symbol, assetClass: asset.assetClass, asOf: asset.asOf ?? (/* @__PURE__ */ new Date()).toISOString(), score: 0, bias: "neutral", factors: {}, caveats: ["No OHLCV candles were supplied"] };
+    const indicators = indicatorSuite(asset.candles, requestedIndicators ?? ["sma", "ema", "rsi", "adx", "vwap", "volatility", "zscore"]);
+    const close = asset.candles.at(-1)?.close ?? 0;
+    const sma6 = Number(indicators.sma?.value ?? close);
+    const ema5 = Number(indicators.ema?.value ?? close);
+    const rsi4 = Number(indicators.rsi?.value ?? 50);
+    const adx3 = Number(indicators.adx?.adx ?? 0);
+    const vwap2 = Number(indicators.vwap?.value ?? close);
+    const zscore = Number(indicators.zscore?.value ?? 0);
+    const trend = close >= sma6 && close >= ema5 ? 1 : close <= sma6 && close <= ema5 ? -1 : 0;
+    const momentum = rsi4 >= 55 ? 1 : rsi4 <= 45 ? -1 : 0;
+    const participation = close >= vwap2 ? 1 : -1;
+    const score = Math.max(-1, Math.min(1, (trend * 0.35 + momentum * 0.3 + participation * 0.2 + Math.sign(zscore) * 0.15) * Math.min(1, 0.35 + adx3 / 100)));
+    const bias = score > 0.2 ? "bullish" : score < -0.2 ? "bearish" : "neutral";
+    return { symbol: asset.symbol, assetClass: asset.assetClass, asOf: asset.asOf ?? (/* @__PURE__ */ new Date()).toISOString(), score, bias, factors: { trend, momentum, participation, adx: adx3, rsi: rsi4, zscore }, caveats: ["Screening is descriptive, not a forecast", "Results depend on candle quality, timeframe, fees, liquidity, and regime", asset.assetClass === "crypto" ? "Crypto markets can trade continuously and exhibit elevated gap/liquidity risk" : "Equity data may be exchange-session dependent"] };
+  }).sort((a, b) => b.score - a.score);
+}
+function marketScreenSummary(results) {
+  const bullish = results.filter((r) => r.bias === "bullish").length;
+  const bearish = results.filter((r) => r.bias === "bearish").length;
+  return { count: results.length, bullish, bearish, neutral: results.length - bullish - bearish, leaders: results.slice(0, 5).map((r) => ({ symbol: r.symbol, score: r.score, bias: r.bias })), generatedAt: (/* @__PURE__ */ new Date()).toISOString(), disclaimer: "This is a research screen, not investment advice or an execution signal." };
+}
+
 // server/_core/synthTools.ts
 var clamp2 = (value, min, max) => Math.max(min, Math.min(max, value));
 function normalizeSynthPatch(patch) {
@@ -2032,7 +2058,8 @@ var TOOL_POLICIES = {
   persistent_recall: { name: "persistent_recall", description: "Recall durable memories using scoped cosine similarity.", risk: "external", allowedAgents: ["memory_architect", "ml_engineer", "automation_orchestrator"], maxCallsPerMinute: 60, failureThreshold: 0.5, minimumSamples: 5, cooldownMs: 2e4 },
   technical_indicator_suite: { name: "technical_indicator_suite", description: "Compute a bounded suite of deterministic technical-analysis indicators.", risk: "compute", allowedAgents: ["forex_analyst", "quant_researcher", "risk_manager", "market_microstructure", "data_analyst", "ui_architect", "multimodal_curator"], maxCallsPerMinute: 30, failureThreshold: 0.5, minimumSamples: 5, cooldownMs: 2e4 },
   agentic_workflow_plan: { name: "agentic_workflow_plan", description: "Create a safe role-aware workflow plan with verification and rollback gates.", risk: "compute", allowedAgents: ["brainstormer", "research_agent", "automation_orchestrator", "qa_engineer", "ui_architect", "multimodal_curator", "observability_engineer", "security_reviewer"], maxCallsPerMinute: 30, failureThreshold: 0.5, minimumSamples: 5, cooldownMs: 15e3 },
-  advanced_music_arrangement: { name: "advanced_music_arrangement", description: "Generate bounded chord, arpeggio, swing, humanization, velocity, and MIDI-note outputs.", risk: "compute", allowedAgents: ["music_composer", "music_producer", "audio_engineer", "sound_designer", "brainstormer"], maxCallsPerMinute: 60, failureThreshold: 0.5, minimumSamples: 5, cooldownMs: 15e3 }
+  advanced_music_arrangement: { name: "advanced_music_arrangement", description: "Generate bounded chord, arpeggio, swing, humanization, velocity, and MIDI-note outputs.", risk: "compute", allowedAgents: ["music_composer", "music_producer", "audio_engineer", "sound_designer", "brainstormer"], maxCallsPerMinute: 60, failureThreshold: 0.5, minimumSamples: 5, cooldownMs: 15e3 },
+  market_screening_snapshot: { name: "market_screening_snapshot", description: "Screen supplied crypto or stock OHLCV assets with deterministic indicators; never executes trades.", risk: "compute", allowedAgents: ["crypto_screening_analyst", "equity_screening_analyst", "market_data_steward", "screening_synthesizer", "quant_researcher", "risk_manager"], maxCallsPerMinute: 20, failureThreshold: 0.45, minimumSamples: 5, cooldownMs: 2e4 }
 };
 var runtime = /* @__PURE__ */ new Map();
 var callWindow = /* @__PURE__ */ new Map();
@@ -2144,6 +2171,7 @@ var codeExecTool = {
     }
   }
 };
+var marketScreeningTool = { type: "function", function: { name: "market_screening_snapshot", description: "Screen supplied fresh crypto or stock OHLCV assets with deterministic indicators; never executes trades.", parameters: { type: "object", properties: { assets: { type: "array" }, indicators: { type: "array" } }, required: ["assets"] } } };
 var advancedMusicArrangementTool = { type: "function", function: { name: "advanced_music_arrangement", description: "Generate bounded chord, arpeggio, swing, humanization, velocity, and MIDI-note outputs.", parameters: { type: "object", properties: { operation: { type: "string", enum: ["progression", "arpeggio", "swing", "humanize", "velocity", "note_name"] }, notes: { type: "array" }, events: { type: "array" }, root: { type: "number" }, quality: { type: "string" }, pattern: { type: "string" }, seed: { type: "number" } }, required: ["operation"] } } };
 var technicalIndicatorSuiteTool = {
   type: "function",
@@ -2499,7 +2527,7 @@ Adapt length and format to the user's needs.`,
     name: "UI Architect",
     description: "Designs responsive, accessible, stateful interfaces and theme systems.",
     systemPrompt: "You are a senior UI architect. Produce implementation-ready interaction contracts, responsive layouts, accessible states, design tokens, and performance-conscious animation plans. Prefer progressive enhancement and reduced-motion fallbacks.",
-    tools: [textAnalysisTool, dataProcessingTool, technicalIndicatorSuiteTool, advancedMusicArrangementTool, agenticWorkflowPlanTool],
+    tools: [textAnalysisTool, dataProcessingTool, technicalIndicatorSuiteTool, marketScreeningTool, advancedMusicArrangementTool, agenticWorkflowPlanTool],
     maxTokens: 3500
   },
   multimodal_curator: {
@@ -2507,7 +2535,7 @@ Adapt length and format to the user's needs.`,
     name: "Multimodal Curator",
     description: "Organizes attachment, transcript, image, and artifact context with provenance and privacy safeguards.",
     systemPrompt: "You are a multimodal information curator. Extract structured context from supplied material, preserve provenance, flag uncertainty, redact secrets, and propose artifact-ready summaries without inventing missing content.",
-    tools: [textAnalysisTool, dataProcessingTool, technicalIndicatorSuiteTool, advancedMusicArrangementTool, agenticWorkflowPlanTool],
+    tools: [textAnalysisTool, dataProcessingTool, technicalIndicatorSuiteTool, marketScreeningTool, advancedMusicArrangementTool, agenticWorkflowPlanTool],
     maxTokens: 4e3
   },
   observability_engineer: {
@@ -2526,6 +2554,10 @@ Adapt length and format to the user's needs.`,
     tools: [textAnalysisTool, codeExecTool, agenticWorkflowPlanTool],
     maxTokens: 4e3
   },
+  crypto_screening_analyst: { id: "crypto_screening_analyst", name: "Crypto Screening Analyst", description: "Screens supplied crypto OHLCV data with regime, liquidity, volatility, and technical-factor caveats.", systemPrompt: "You are a crypto market research analyst. Use only supplied or freshly retrieved data, label timestamps and uncertainty, separate descriptive screening from forecasts, and never execute trades.", tools: [technicalIndicatorSuiteTool, marketScreeningTool, agenticWorkflowPlanTool], maxTokens: 4e3 },
+  equity_screening_analyst: { id: "equity_screening_analyst", name: "Equity Screening Analyst", description: "Screens supplied equity OHLCV data with session, trend, momentum, and data-quality caveats.", systemPrompt: "You are an equity technical-screening analyst. Use only supplied or freshly retrieved data, respect exchange-session context, document assumptions, and never execute trades.", tools: [technicalIndicatorSuiteTool, marketScreeningTool, agenticWorkflowPlanTool], maxTokens: 4e3 },
+  market_data_steward: { id: "market_data_steward", name: "Market Data Steward", description: "Validates timestamp, symbol, timeframe, completeness, and provenance of market data.", systemPrompt: "You are a market-data steward. Check symbol identity, asset class, timestamp freshness, candle continuity, duplicates, missing values, and source provenance before analysis.", tools: [dataProcessingTool, agenticWorkflowPlanTool], maxTokens: 3500 },
+  screening_synthesizer: { id: "screening_synthesizer", name: "Screening Synthesizer", description: "Combines independent crypto and equity screens into a cautious comparative research brief.", systemPrompt: "You synthesize independent market screens. Preserve disagreement, rank evidence quality, state as-of times, avoid certainty, and include the finance disclaimer that screening is not investment advice.", tools: [textAnalysisTool, dataProcessingTool, agenticWorkflowPlanTool], maxTokens: 4500 },
   brainstormer: {
     id: "brainstormer",
     name: "Brainstormer",
@@ -2564,6 +2596,12 @@ async function executeToolCall(toolName, args, agentRole) {
   if (!permission.allowed) return `Permission denied: ${permission.reason}`;
   try {
     switch (toolName) {
+      case "market_screening_snapshot": {
+        const assets = Array.isArray(args.assets) ? args.assets : [];
+        if (!assets.length || assets.length > 100) return "Error: assets must contain between 1 and 100 items";
+        const results = screenMarketAssets(assets, Array.isArray(args.indicators) ? args.indicators.map(String).slice(0, 20) : void 0);
+        return JSON.stringify({ results, summary: marketScreenSummary(results) });
+      }
       case "advanced_music_arrangement": {
         const operation = String(args.operation ?? "");
         const events = Array.isArray(args.events) ? args.events : [];
@@ -2959,6 +2997,30 @@ var BUILTIN_PIPELINES = [
       { id: "evaluate", name: "Evaluate Response", type: "agent", agentRole: "data_analyst", prompt: "Evaluate the supplied model response against the requested criteria and identify evidence:\n{input}", outputKey: "evaluation" },
       { id: "challenge", name: "Challenge Findings", type: "agent", agentRole: "research_agent", prompt: "Independently challenge the evaluation for bias, missing counterexamples, and reproducibility:\n{evaluation}", outputKey: "challenge" },
       { id: "report", name: "Quality Report", type: "agent", agentRole: "qa_engineer", prompt: "Produce a concise quality report with scores, limitations, and next tests:\n{evaluation}\n\nChallenge:\n{challenge}", outputKey: "report" }
+    ],
+    variables: {}
+  },
+  {
+    id: "crypto-real-time-screen-pipeline",
+    name: "Crypto Real-Time Collaborative Screen",
+    description: "Fresh crypto OHLCV intake \u2192 data validation \u2192 independent technical screen \u2192 volatility and liquidity challenge \u2192 consensus brief.",
+    steps: [
+      { id: "data", name: "Validate Market Data", type: "agent", agentRole: "market_data_steward", prompt: "Validate the supplied crypto market data for symbol identity, timestamp freshness, timeframe, gaps, duplicates, and provenance. Do not fill missing prices.\n{input}", outputKey: "data_review" },
+      { id: "technical", name: "Crypto Technical Screen", type: "agent", agentRole: "crypto_screening_analyst", prompt: "Run a descriptive technical screen on the supplied crypto OHLCV data. Report factors, uncertainty, and as-of timestamps. Do not make execution recommendations.\n{input}\n\nData review:\n{data_review}", outputKey: "technical_screen" },
+      { id: "risk", name: "Crypto Regime and Risk Challenge", type: "agent", agentRole: "risk_manager", prompt: "Challenge this crypto screen for volatility, liquidity, regime shifts, stale data, and overfitting. Preserve disagreements and avoid forecasts.\n{technical_screen}", outputKey: "risk_review" },
+      { id: "synthesis", name: "Crypto Consensus Brief", type: "agent", agentRole: "screening_synthesizer", prompt: "Synthesize the crypto screen and risk review into a cautious research brief with evidence, caveats, timestamp, and no-trade disclaimer.\nScreen:\n{technical_screen}\nRisk:\n{risk_review}", outputKey: "final" }
+    ],
+    variables: {}
+  },
+  {
+    id: "equity-real-time-screen-pipeline",
+    name: "Equity Real-Time Collaborative Screen",
+    description: "Fresh equity OHLCV intake \u2192 exchange-session validation \u2192 independent technical screen \u2192 data-quality challenge \u2192 consensus brief.",
+    steps: [
+      { id: "data", name: "Validate Equity Data", type: "agent", agentRole: "market_data_steward", prompt: "Validate the supplied equity market data for ticker/exchange identity, session context, timestamp freshness, corporate-action caveats, gaps, duplicates, and provenance.\n{input}", outputKey: "data_review" },
+      { id: "technical", name: "Equity Technical Screen", type: "agent", agentRole: "equity_screening_analyst", prompt: "Run a descriptive technical screen on the supplied equity OHLCV data. Report factors, uncertainty, session assumptions, and as-of timestamps. Do not make execution recommendations.\n{input}\n\nData review:\n{data_review}", outputKey: "technical_screen" },
+      { id: "risk", name: "Equity Risk Challenge", type: "agent", agentRole: "risk_manager", prompt: "Challenge this equity screen for data quality, liquidity, corporate actions, regime changes, and false precision. Preserve disagreements and avoid forecasts.\n{technical_screen}", outputKey: "risk_review" },
+      { id: "synthesis", name: "Equity Consensus Brief", type: "agent", agentRole: "screening_synthesizer", prompt: "Synthesize the equity screen and risk review into a cautious research brief with evidence, caveats, timestamp, and no-trade disclaimer.\nScreen:\n{technical_screen}\nRisk:\n{risk_review}", outputKey: "final" }
     ],
     variables: {}
   },
@@ -6398,7 +6460,9 @@ var BACKEND_SKILLS = [
   { id: "frontend-prototyping", name: "Interactive UI Prototyping", category: "engineering", description: "Design responsive interaction states, accessibility checks, theme tokens, and component behavior.", tools: ["ui_audit", "accessibility_check", "theme_preview"], risk: "low", requiresAuth: true },
   { id: "reliability-observability", name: "Reliability Observability", category: "engineering", description: "Inspect health, latency, failure modes, circuit breakers, and safe operational summaries.", tools: ["health_snapshot", "latency_summary", "tool_registry_status"], risk: "medium", requiresAuth: true },
   { id: "model-evaluation", name: "Model Evaluation", category: "research", description: "Run bounded prompt evaluations, regression comparisons, and structured quality reports.", tools: ["evaluation_run", "regression_compare", "quality_report"], risk: "medium", requiresAuth: true },
-  { id: "knowledge-graph", name: "Knowledge Graph Builder", category: "memory", description: "Extract entities, relations, provenance, and scoped graph links from durable memory inputs.", tools: ["entity_extract", "relation_link", "provenance_trace"], risk: "medium", requiresAuth: true }
+  { id: "knowledge-graph", name: "Knowledge Graph Builder", category: "memory", description: "Extract entities, relations, provenance, and scoped graph links from durable memory inputs.", tools: ["entity_extract", "relation_link", "provenance_trace"], risk: "medium", requiresAuth: true },
+  { id: "crypto-collaborative-screening", name: "Crypto Collaborative Screening", category: "trading", description: "Coordinate fresh crypto OHLCV validation, technical screening, regime challenge, and cautious synthesis without execution.", tools: ["market_screening_snapshot", "technical_indicator_suite", "pipeline_execute"], risk: "high", requiresAuth: true },
+  { id: "equity-collaborative-screening", name: "Equity Collaborative Screening", category: "trading", description: "Coordinate equity session validation, technical screening, data-quality challenge, and cautious synthesis without execution.", tools: ["market_screening_snapshot", "technical_indicator_suite", "pipeline_execute"], risk: "high", requiresAuth: true }
 ];
 function listSkills(category) {
   return category ? BACKEND_SKILLS.filter((skill) => skill.category === category) : BACKEND_SKILLS;

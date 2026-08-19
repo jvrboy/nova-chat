@@ -7,6 +7,7 @@ import { invokeLLM, type Message, type Tool } from "./llm";
 import { forexSignalSnapshot, multiTimeframeConfluence } from "./forexAdvanced";
 import { indicatorSuite } from "./technicalIndicators";
 import { arpeggiate, chordProgression, humanizeNotes, swingQuantize, velocityCurve, midiNoteName, type NoteEvent } from "./musicPro";
+import { screenMarketAssets, marketScreenSummary, type ScreeningAsset } from "./marketScreening";
 import { analyzeSynthPatch, createModulationMatrix, createSerumStylePatch } from "./synthTools";
 import { canInvokeTool, recordToolFailure, recordToolSuccess } from "./toolRegistry";
 
@@ -35,7 +36,11 @@ export type AgentRole =
   | "ui_architect"
   | "multimodal_curator"
   | "observability_engineer"
-  | "security_reviewer";
+  | "security_reviewer"
+  | "crypto_screening_analyst"
+  | "equity_screening_analyst"
+  | "market_data_steward"
+  | "screening_synthesizer";
 
 export type AgentConfig = {
   id: AgentRole;
@@ -105,6 +110,7 @@ const codeExecTool: Tool = {
   },
 };
 
+const marketScreeningTool: Tool = { type: "function", function: { name: "market_screening_snapshot", description: "Screen supplied fresh crypto or stock OHLCV assets with deterministic indicators; never executes trades.", parameters: { type: "object", properties: { assets: { type: "array" }, indicators: { type: "array" } }, required: ["assets"] } } };
 const advancedMusicArrangementTool: Tool = { type: "function", function: { name: "advanced_music_arrangement", description: "Generate bounded chord, arpeggio, swing, humanization, velocity, and MIDI-note outputs.", parameters: { type: "object", properties: { operation: { type: "string", enum: ["progression", "arpeggio", "swing", "humanize", "velocity", "note_name"] }, notes: { type: "array" }, events: { type: "array" }, root: { type: "number" }, quality: { type: "string" }, pattern: { type: "string" }, seed: { type: "number" } }, required: ["operation"] } } };
 const technicalIndicatorSuiteTool: Tool = {
   type: "function",
@@ -473,7 +479,7 @@ Adapt length and format to the user's needs.`,
     name: "UI Architect",
     description: "Designs responsive, accessible, stateful interfaces and theme systems.",
     systemPrompt: "You are a senior UI architect. Produce implementation-ready interaction contracts, responsive layouts, accessible states, design tokens, and performance-conscious animation plans. Prefer progressive enhancement and reduced-motion fallbacks.",
-    tools: [textAnalysisTool, dataProcessingTool, technicalIndicatorSuiteTool, advancedMusicArrangementTool, agenticWorkflowPlanTool],
+    tools: [textAnalysisTool, dataProcessingTool, technicalIndicatorSuiteTool, marketScreeningTool, advancedMusicArrangementTool, agenticWorkflowPlanTool],
     maxTokens: 3500,
   },
   multimodal_curator: {
@@ -481,7 +487,7 @@ Adapt length and format to the user's needs.`,
     name: "Multimodal Curator",
     description: "Organizes attachment, transcript, image, and artifact context with provenance and privacy safeguards.",
     systemPrompt: "You are a multimodal information curator. Extract structured context from supplied material, preserve provenance, flag uncertainty, redact secrets, and propose artifact-ready summaries without inventing missing content.",
-    tools: [textAnalysisTool, dataProcessingTool, technicalIndicatorSuiteTool, advancedMusicArrangementTool, agenticWorkflowPlanTool],
+    tools: [textAnalysisTool, dataProcessingTool, technicalIndicatorSuiteTool, marketScreeningTool, advancedMusicArrangementTool, agenticWorkflowPlanTool],
     maxTokens: 4000,
   },
   observability_engineer: {
@@ -500,6 +506,10 @@ Adapt length and format to the user's needs.`,
         tools: [textAnalysisTool, codeExecTool, agenticWorkflowPlanTool],
     maxTokens: 4000,
   },
+  crypto_screening_analyst: { id: "crypto_screening_analyst", name: "Crypto Screening Analyst", description: "Screens supplied crypto OHLCV data with regime, liquidity, volatility, and technical-factor caveats.", systemPrompt: "You are a crypto market research analyst. Use only supplied or freshly retrieved data, label timestamps and uncertainty, separate descriptive screening from forecasts, and never execute trades.", tools: [technicalIndicatorSuiteTool, marketScreeningTool, agenticWorkflowPlanTool], maxTokens: 4000 },
+  equity_screening_analyst: { id: "equity_screening_analyst", name: "Equity Screening Analyst", description: "Screens supplied equity OHLCV data with session, trend, momentum, and data-quality caveats.", systemPrompt: "You are an equity technical-screening analyst. Use only supplied or freshly retrieved data, respect exchange-session context, document assumptions, and never execute trades.", tools: [technicalIndicatorSuiteTool, marketScreeningTool, agenticWorkflowPlanTool], maxTokens: 4000 },
+  market_data_steward: { id: "market_data_steward", name: "Market Data Steward", description: "Validates timestamp, symbol, timeframe, completeness, and provenance of market data.", systemPrompt: "You are a market-data steward. Check symbol identity, asset class, timestamp freshness, candle continuity, duplicates, missing values, and source provenance before analysis.", tools: [dataProcessingTool, agenticWorkflowPlanTool], maxTokens: 3500 },
+  screening_synthesizer: { id: "screening_synthesizer", name: "Screening Synthesizer", description: "Combines independent crypto and equity screens into a cautious comparative research brief.", systemPrompt: "You synthesize independent market screens. Preserve disagreement, rank evidence quality, state as-of times, avoid certainty, and include the finance disclaimer that screening is not investment advice.", tools: [textAnalysisTool, dataProcessingTool, agenticWorkflowPlanTool], maxTokens: 4500 },
   brainstormer: {
     id: "brainstormer",
     name: "Brainstormer",
@@ -553,6 +563,12 @@ async function executeToolCall(
   if (!permission.allowed) return `Permission denied: ${permission.reason}`;
   try {
     switch (toolName) {
+    case "market_screening_snapshot": {
+      const assets = Array.isArray(args.assets) ? args.assets as ScreeningAsset[] : [];
+      if (!assets.length || assets.length > 100) return "Error: assets must contain between 1 and 100 items";
+      const results = screenMarketAssets(assets, Array.isArray(args.indicators) ? args.indicators.map(String).slice(0, 20) : undefined);
+      return JSON.stringify({ results, summary: marketScreenSummary(results) });
+    }
     case "advanced_music_arrangement": {
       const operation = String(args.operation ?? "");
       const events = Array.isArray(args.events) ? args.events as NoteEvent[] : [];

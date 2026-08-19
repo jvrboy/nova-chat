@@ -213,6 +213,30 @@ export const BUILTIN_PIPELINES: Pipeline[] = [
     variables: {},
   },
   {
+    id: 'crypto-real-time-screen-pipeline',
+    name: 'Crypto Real-Time Collaborative Screen',
+    description: 'Fresh crypto OHLCV intake → data validation → independent technical screen → volatility and liquidity challenge → consensus brief.',
+    steps: [
+      { id: 'data', name: 'Validate Market Data', type: 'agent', agentRole: 'market_data_steward', prompt: 'Validate the supplied crypto market data for symbol identity, timestamp freshness, timeframe, gaps, duplicates, and provenance. Do not fill missing prices.\n{input}', outputKey: 'data_review' },
+      { id: 'technical', name: 'Crypto Technical Screen', type: 'agent', agentRole: 'crypto_screening_analyst', prompt: 'Run a descriptive technical screen on the supplied crypto OHLCV data. Report factors, uncertainty, and as-of timestamps. Do not make execution recommendations.\n{input}\n\nData review:\n{data_review}', outputKey: 'technical_screen' },
+      { id: 'risk', name: 'Crypto Regime and Risk Challenge', type: 'agent', agentRole: 'risk_manager', prompt: 'Challenge this crypto screen for volatility, liquidity, regime shifts, stale data, and overfitting. Preserve disagreements and avoid forecasts.\n{technical_screen}', outputKey: 'risk_review' },
+      { id: 'synthesis', name: 'Crypto Consensus Brief', type: 'agent', agentRole: 'screening_synthesizer', prompt: 'Synthesize the crypto screen and risk review into a cautious research brief with evidence, caveats, timestamp, and no-trade disclaimer.\nScreen:\n{technical_screen}\nRisk:\n{risk_review}', outputKey: 'final' },
+    ],
+    variables: {},
+  },
+  {
+    id: 'equity-real-time-screen-pipeline',
+    name: 'Equity Real-Time Collaborative Screen',
+    description: 'Fresh equity OHLCV intake → exchange-session validation → independent technical screen → data-quality challenge → consensus brief.',
+    steps: [
+      { id: 'data', name: 'Validate Equity Data', type: 'agent', agentRole: 'market_data_steward', prompt: 'Validate the supplied equity market data for ticker/exchange identity, session context, timestamp freshness, corporate-action caveats, gaps, duplicates, and provenance.\n{input}', outputKey: 'data_review' },
+      { id: 'technical', name: 'Equity Technical Screen', type: 'agent', agentRole: 'equity_screening_analyst', prompt: 'Run a descriptive technical screen on the supplied equity OHLCV data. Report factors, uncertainty, session assumptions, and as-of timestamps. Do not make execution recommendations.\n{input}\n\nData review:\n{data_review}', outputKey: 'technical_screen' },
+      { id: 'risk', name: 'Equity Risk Challenge', type: 'agent', agentRole: 'risk_manager', prompt: 'Challenge this equity screen for data quality, liquidity, corporate actions, regime changes, and false precision. Preserve disagreements and avoid forecasts.\n{technical_screen}', outputKey: 'risk_review' },
+      { id: 'synthesis', name: 'Equity Consensus Brief', type: 'agent', agentRole: 'screening_synthesizer', prompt: 'Synthesize the equity screen and risk review into a cautious research brief with evidence, caveats, timestamp, and no-trade disclaimer.\nScreen:\n{technical_screen}\nRisk:\n{risk_review}', outputKey: 'final' },
+    ],
+    variables: {},
+  },
+  {
     id: 'reliability-incident-pipeline',
     name: 'Reliability Incident Pipeline',
     description: 'Incident signal → failure analysis → mitigations → runbook',
