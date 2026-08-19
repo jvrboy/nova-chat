@@ -32,7 +32,7 @@ export function runtimeConfigurationStatus() {
     data: {
       database: present(ENV.databaseUrl),
       supabase: present(ENV.supabaseUrl) && present(ENV.supabaseAnonKey),
-      cloudflareWorker: present(ENV.cloudflareWorkerUrl),
+      cloudflareWorker: present(ENV.cloudflareWorkerUrl) && present(ENV.cloudflareWorkerToken),
       massiveMarketData: present(ENV.massiveWsUrl) && present(ENV.massiveApiKey),
     },
     auth: { passwordOnly: present(ENV.passwordHash), sessionSecret: present(ENV.cookieSecret) },

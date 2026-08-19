@@ -58,6 +58,7 @@ var ENV = {
   firecrawlApiKeys: process.env.FIRECRAWL_API_KEYS ?? process.env.FIRECRAWL_API_KEY ?? "",
   e2bApiKeys: process.env.E2B_API_KEYS ?? process.env.E2B_API_KEY ?? "",
   cloudflareWorkerUrl: process.env.CLOUDFLARE_WORKER_URL ?? "",
+  cloudflareWorkerToken: process.env.CLOUDFLARE_WORKER_TOKEN ?? "",
   supabaseUrl: process.env.SUPABASE_URL ?? "",
   supabaseAnonKey: process.env.SUPABASE_ANON_KEY ?? "",
   supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY ?? "",
@@ -4688,7 +4689,7 @@ function runtimeConfigurationStatus() {
     data: {
       database: present(ENV.databaseUrl),
       supabase: present(ENV.supabaseUrl) && present(ENV.supabaseAnonKey),
-      cloudflareWorker: present(ENV.cloudflareWorkerUrl),
+      cloudflareWorker: present(ENV.cloudflareWorkerUrl) && present(ENV.cloudflareWorkerToken),
       massiveMarketData: present(ENV.massiveWsUrl) && present(ENV.massiveApiKey)
     },
     auth: { passwordOnly: present(ENV.passwordHash), sessionSecret: present(ENV.cookieSecret) },
@@ -5973,10 +5974,29 @@ var globalEventBus = new EventBus();
 var globalCache = new MultiLevelCache(200, 2e3);
 var llmResponseCache = new LRUCache(500);
 
+// server/_core/cloudflareWorker.ts
+var workerRequest = async (path, init = {}) => {
+  if (!ENV.cloudflareWorkerUrl) throw new Error("CLOUDFLARE_WORKER_URL is not configured");
+  if (!ENV.cloudflareWorkerToken) throw new Error("CLOUDFLARE_WORKER_TOKEN is not configured");
+  const response = await fetch(new URL(path, ENV.cloudflareWorkerUrl), {
+    ...init,
+    headers: { authorization: `Bearer ${ENV.cloudflareWorkerToken}`, "content-type": "application/json", ...init.headers ?? {} },
+    signal: AbortSignal.timeout(1e4)
+  });
+  if (!response.ok) throw new Error(`Cloudflare Worker returned HTTP ${response.status}`);
+  return response.json();
+};
+var cloudflareWorker = {
+  health: () => fetch(new URL("/health", ENV.cloudflareWorkerUrl), { signal: AbortSignal.timeout(4e3) }).then((response) => ({ healthy: response.ok, status: response.status })),
+  createJob: (type, payload) => workerRequest("/jobs", { method: "POST", body: JSON.stringify({ type, payload }) }),
+  getJob: (id) => workerRequest(`/jobs/${encodeURIComponent(id)}`),
+  deleteJob: (id) => workerRequest(`/jobs/${encodeURIComponent(id)}`, { method: "DELETE" })
+};
+
 // server/_core/backendConnections.ts
 function listBackendConnections() {
   return [
-    { id: "cloudflare-workers", label: "Cloudflare Workers", configured: Boolean(ENV.cloudflareWorkerUrl), endpoint: ENV.cloudflareWorkerUrl || null, capabilities: ["edge backend", "scheduled jobs", "KV/R2/D1 adapters"] },
+    { id: "cloudflare-workers", label: "Cloudflare Workers", configured: Boolean(ENV.cloudflareWorkerUrl && ENV.cloudflareWorkerToken), endpoint: ENV.cloudflareWorkerUrl || null, capabilities: ["edge backend", "scheduled jobs", "KV/R2/D1 adapters"] },
     { id: "supabase", label: "Supabase", configured: Boolean(ENV.supabaseUrl && ENV.supabaseAnonKey), endpoint: ENV.supabaseUrl || null, capabilities: ["Postgres", "auth", "storage", "realtime"] }
   ];
 }
@@ -6826,6 +6846,12 @@ var conversationInput = z2.object({
 });
 var appRouter = router({
   system: systemRouter,
+  worker: router({
+    health: protectedProcedure.query(() => cloudflareWorker.health()),
+    createJob: protectedProcedure.input(z2.object({ type: z2.string().min(1).max(128), payload: z2.unknown().optional() })).mutation(({ input }) => cloudflareWorker.createJob(input.type, input.payload ?? null)),
+    getJob: protectedProcedure.input(z2.object({ id: z2.string().uuid() })).query(({ input }) => cloudflareWorker.getJob(input.id)),
+    cancelJob: protectedProcedure.input(z2.object({ id: z2.string().uuid() })).mutation(({ input }) => cloudflareWorker.deleteJob(input.id))
+  }),
   realtime: router({
     start: protectedProcedure.input(z2.object({ transport: z2.enum(["websocket", "sse"]), channel: z2.string().min(1).max(128) })).mutation(async ({ ctx, input }) => {
       const token = readSessionToken(ctx.req);

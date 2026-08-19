@@ -93,6 +93,7 @@ import { buildCoinbaseSubscription, buildMassiveSubscription, listMarketStreams 
 import { runtimeConfigurationStatus } from "./_core/runtimeConfig";
 import { runSwarmConsensus, listSwarmAgents, SWARM_AGENTS } from "./_core/swarmConsensus";
 import { executeSandboxedCode } from "./_core/performanceTools";
+import { cloudflareWorker } from "./_core/cloudflareWorker";
 import { listBackendConnections, probeBackendConnections } from "./_core/backendConnections";
 import { e2bRunCode, firecrawlScrape, invokeWithProviderFailover, kaggleListDatasets, listConnectionStatus, listProviderStatus, type ProviderId } from "./_core/providerGateway";
 import { computeIndicator, computeIndicators, indicatorSnapshot, listIndicators, type IndicatorCategory } from "./_core/indicatorEngine";
@@ -143,6 +144,12 @@ const conversationInput = z.object({
 
 export const appRouter = router({
   system: systemRouter,
+  worker: router({
+    health: protectedProcedure.query(() => cloudflareWorker.health()),
+    createJob: protectedProcedure.input(z.object({ type: z.string().min(1).max(128), payload: z.unknown().optional() })).mutation(({ input }) => cloudflareWorker.createJob(input.type, input.payload ?? null)),
+    getJob: protectedProcedure.input(z.object({ id: z.string().uuid() })).query(({ input }) => cloudflareWorker.getJob(input.id)),
+    cancelJob: protectedProcedure.input(z.object({ id: z.string().uuid() })).mutation(({ input }) => cloudflareWorker.deleteJob(input.id)),
+  }),
   realtime: router({
     start: protectedProcedure.input(z.object({ transport: z.enum(["websocket", "sse"]), channel: z.string().min(1).max(128) })).mutation(async ({ ctx, input }) => {
       const token = readSessionToken(ctx.req);

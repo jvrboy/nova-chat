@@ -23,6 +23,7 @@ export const ENV = {
   firecrawlApiKeys: process.env.FIRECRAWL_API_KEYS ?? process.env.FIRECRAWL_API_KEY ?? "",
   e2bApiKeys: process.env.E2B_API_KEYS ?? process.env.E2B_API_KEY ?? "",
   cloudflareWorkerUrl: process.env.CLOUDFLARE_WORKER_URL ?? "",
+  cloudflareWorkerToken: process.env.CLOUDFLARE_WORKER_TOKEN ?? "",
   supabaseUrl: process.env.SUPABASE_URL ?? "",
   supabaseAnonKey: process.env.SUPABASE_ANON_KEY ?? "",
   supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY ?? "",

@@ -10,7 +10,7 @@ export type BackendConnectionStatus = {
 
 export function listBackendConnections(): BackendConnectionStatus[] {
   return [
-    { id: "cloudflare-workers", label: "Cloudflare Workers", configured: Boolean(ENV.cloudflareWorkerUrl), endpoint: ENV.cloudflareWorkerUrl || null, capabilities: ["edge backend", "scheduled jobs", "KV/R2/D1 adapters"] },
+    { id: "cloudflare-workers", label: "Cloudflare Workers", configured: Boolean(ENV.cloudflareWorkerUrl && ENV.cloudflareWorkerToken), endpoint: ENV.cloudflareWorkerUrl || null, capabilities: ["edge backend", "scheduled jobs", "KV/R2/D1 adapters"] },
     { id: "supabase", label: "Supabase", configured: Boolean(ENV.supabaseUrl && ENV.supabaseAnonKey), endpoint: ENV.supabaseUrl || null, capabilities: ["Postgres", "auth", "storage", "realtime"] },
   ];
 }
