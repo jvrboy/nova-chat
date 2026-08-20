@@ -19,25 +19,37 @@ export async function processWorkerQueue(workspaceId: string, actorId = 'local-w
 
 
 import { acquireLeaderLease, appendReplicationEntry, executeFailover, heartbeatRegion, loadReplicationState, planFailover, replicatePending } from './regions';
+import { endSpan, recordMetric, startSpan } from './observability';
 export type RegionalWorkerResult = WorkerResult & { regionId: string; role: 'leader' | 'standby'; failedOver: boolean; replicationApplied: number; leaseEpoch?: number };
 export async function processWorkerQueueRegional(workspaceId: string, regionId: string, options: { autoFailover?: boolean; leaseTtlMs?: number } = {}): Promise<RegionalWorkerResult> {
   const state = await loadReplicationState();
   const region = state.regions.find((item) => item.id === regionId);
   if (!region) throw new Error(`Unknown worker region: ${regionId}`);
+  const rootSpan = await startSpan('worker.regional.process', { workspaceId }, undefined, regionId);
+  const startedAt = Date.now();
   await heartbeatRegion(regionId, 0, true);
+  const replicationStartedAt = Date.now();
   const replication = await replicatePending(regionId);
+  await recordMetric({ name: 'replication.latency', value: Date.now() - replicationStartedAt, unit: 'ms', regionId, workspaceId, traceId: rootSpan.traceId });
+  await recordMetric({ name: 'replication.lag', value: Math.max(0, state.lastSequence - (region.lastAppliedSequence + replication.applied.length)), unit: 'entries', regionId, workspaceId, traceId: rootSpan.traceId });
   let activeRegion = regionId;
   let failedOver = false;
   const isLeader = state.primaryRegion === regionId || region.status === 'promoted';
-  if (!isLeader) return { completed: [], retried: [], deadLettered: [], regionId, role: 'standby', failedOver: false, replicationApplied: replication.applied.length };
+  if (!isLeader) { await endSpan(rootSpan, 'ok', { role: 'standby', replicationApplied: replication.applied.length }); return { completed: [], retried: [], deadLettered: [], regionId, role: 'standby', failedOver: false, replicationApplied: replication.applied.length }; }
   try {
     const lease = await acquireLeaderLease(workspaceId, activeRegion, options.leaseTtlMs ?? 30_000);
     const result = await processWorkerQueue(workspaceId, `worker-${activeRegion}`);
     for (const jobId of [...result.completed, ...result.retried, ...result.deadLettered]) await appendReplicationEntry(activeRegion, { id: jobId, kind: 'job', payload: { workspaceId, jobId, result }, attempts: 0, nextAttemptAt: new Date().toISOString(), createdAt: new Date().toISOString() });
+    await recordMetric({ name: 'worker.duration', value: Date.now() - startedAt, unit: 'ms', regionId: activeRegion, workspaceId, traceId: rootSpan.traceId });
+    await recordMetric({ name: 'worker.completed', value: result.completed.length, unit: 'count', regionId: activeRegion, workspaceId, traceId: rootSpan.traceId });
+    await recordMetric({ name: 'worker.failed', value: result.deadLettered.length, unit: 'count', regionId: activeRegion, workspaceId, traceId: rootSpan.traceId });
+    await endSpan(rootSpan, 'ok', { role: 'leader', failedOver, completed: result.completed.length });
     return { ...result, regionId: activeRegion, role: 'leader', failedOver, replicationApplied: replication.applied.length, leaseEpoch: lease.epoch };
   } catch (error) {
     await heartbeatRegion(activeRegion, 0, false);
-    if (!options.autoFailover) throw error;
+    if (!options.autoFailover) { await endSpan(rootSpan, 'error', { failoverRequested: false }); throw error; }
+    await endSpan(rootSpan, 'error', { failoverRequested: true });
+    const failoverStartedAt = Date.now();
     const plan = await planFailover(workspaceId, error instanceof Error ? error.message : 'leader-unavailable');
     const promoted = await executeFailover(plan);
     activeRegion = promoted.plan.toRegion;
@@ -45,6 +57,10 @@ export async function processWorkerQueueRegional(workspaceId: string, regionId: 
     const lease = await acquireLeaderLease(workspaceId, activeRegion, options.leaseTtlMs ?? 30_000);
     const result = await processWorkerQueue(workspaceId, `worker-${activeRegion}`);
     for (const jobId of [...result.completed, ...result.retried, ...result.deadLettered]) await appendReplicationEntry(activeRegion, { id: jobId, kind: 'job', payload: { workspaceId, jobId, result, failover: true }, attempts: 0, nextAttemptAt: new Date().toISOString(), createdAt: new Date().toISOString() });
+    await recordMetric({ name: 'failover.duration', value: Date.now() - failoverStartedAt, unit: 'ms', regionId: activeRegion, workspaceId, traceId: rootSpan.traceId });
+    await recordMetric({ name: 'worker.duration', value: Date.now() - startedAt, unit: 'ms', regionId: activeRegion, workspaceId, traceId: rootSpan.traceId });
+    await recordMetric({ name: 'worker.completed', value: result.completed.length, unit: 'count', regionId: activeRegion, workspaceId, traceId: rootSpan.traceId });
+    await recordMetric({ name: 'worker.failed', value: result.deadLettered.length, unit: 'count', regionId: activeRegion, workspaceId, traceId: rootSpan.traceId });
     return { ...result, regionId: activeRegion, role: 'leader', failedOver, replicationApplied: replication.applied.length, leaseEpoch: lease.epoch };
   }
 }

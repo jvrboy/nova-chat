@@ -113,3 +113,29 @@ describe('Nova multi-region replication and failover', () => {
     expect(promoted.state.failoverCount).toBe(1);
   });
 });
+
+
+describe('Nova observability and queue recovery', () => {
+  it('records distributed spans and aggregates performance metrics', async () => {
+    const { endSpan, recordMetric, startSpan, summarizeMetrics } = await import('../../src/backend/observability');
+    const span = await startSpan('replication.test', { operation: 'apply' }, undefined, 'eu-west-1');
+    await recordMetric({ name: 'replication.latency', value: 14, unit: 'ms', regionId: 'eu-west-1', workspaceId: 'workspace-e2e', traceId: span.traceId });
+    await recordMetric({ name: 'replication.latency', value: 22, unit: 'ms', regionId: 'eu-west-1', workspaceId: 'workspace-e2e', traceId: span.traceId });
+    const ended = await endSpan(span);
+    expect(ended.traceId).toBe(span.traceId);
+    const summary = await summarizeMetrics('eu-west-1', 'workspace-e2e');
+    expect(summary.find((item) => item.name === 'replication.latency')?.average).toBe(18);
+  });
+  it('backs up and restores the worker queue at a point in time', async () => {
+    const { createQueueBackup, recoverQueuePointInTime } = await import('../../src/backend/queueBackup');
+    const { enqueueWorkerJob, loadWorkerQueue } = await import('../../src/backend/worker');
+    await enqueueWorkerJob({ toolId: 'workspace-health', input: { workspaceId: 'workspace-e2e' } });
+    const backup = await createQueueBackup('us-east-1', ['eu-west-1']);
+    expect(backup.queue).toHaveLength(1);
+    await enqueueWorkerJob({ toolId: 'analytics-rollup', input: {} });
+    expect(await loadWorkerQueue()).toHaveLength(2);
+    const recovered = await recoverQueuePointInTime(backup.createdAt, backup.replicationSequence);
+    expect(recovered.restoredQueue).toBe(1);
+    expect(await loadWorkerQueue()).toHaveLength(1);
+  });
+});
