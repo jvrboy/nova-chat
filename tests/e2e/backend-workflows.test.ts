@@ -139,3 +139,20 @@ describe('Nova observability and queue recovery', () => {
     expect(await loadWorkerQueue()).toHaveLength(1);
   });
 });
+
+
+describe('Nova chaos engineering', () => {
+  it('promotes a healthy region after a primary outage', async () => {
+    const { runChaosScenario } = await import('../../src/backend/chaos');
+    const report = await runChaosScenario('primary-outage', 'workspace-chaos');
+    expect(report.passed).toBe(true);
+    expect(report.promotedRegion).toBe('eu-west-1');
+    expect(report.steps.every((step) => step.status === 'passed')).toBe(true);
+  });
+  it('verifies queue backup recovery through the chaos harness', async () => {
+    const { runChaosScenario } = await import('../../src/backend/chaos');
+    const report = await runChaosScenario('backup-recovery', 'workspace-chaos');
+    expect(report.passed).toBe(true);
+    expect(report.recoveredQueue).toBe(1);
+  });
+});
