@@ -35,7 +35,33 @@
   // BYOK-only (not supported by gsk-hosted-deploy): if you deploy to your own
   // Cloudflare account and want to use Supabase for vector RAG instead of the
   // D1 fallback store, set these as secrets (never commit real values):
-  //   SUPABASE_URL, SUPABASE_SERVICE_KEY
+  //   SUPABASE_URL, SUPABASE_SERVICE_KEY            (single project)
+  //   SUPABASE_ACCOUNTS_JSON                        (pool of many projects, see below)
   // and Expo push notifications:
   //   EXPO_ACCESS_TOKEN (optional, only needed for very high volume)
+  //
+  // Provider integrations added for Kaggle / E2B / multi-account Supabase
+  // (server/src/lib/kaggle.ts, e2b.ts, supabase.ts, credentialPool.ts).
+  // ALL of these are optional Worker secrets — set with:
+  //   npx wrangler pages secret put <NAME>   (production)
+  //   or add to server/.dev.vars             (local dev, gitignored)
+  //
+  // Kaggle (https://www.kaggle.com/settings -> API -> "Create New Token"):
+  //   KAGGLE_USERNAME + KAGGLE_KEY        single account, OR
+  //   KAGGLE_ACCOUNTS_JSON                 pool of many accounts, e.g.:
+  //     [{"username":"acct1","key":"xxxx"},{"username":"acct2","key":"yyyy"}, ...]
+  //
+  // E2B (https://e2b.dev/dashboard -> API Keys):
+  //   E2B_API_KEY                          single account, OR
+  //   E2B_ACCOUNTS_JSON                     pool of many accounts, e.g.:
+  //     [{"apiKey":"e2b_xxx","label":"acct1"},{"apiKey":"e2b_yyy","label":"acct2"}, ...]
+  //
+  // Supabase pool (https://app.supabase.com -> Project Settings -> API,
+  // use the SERVICE ROLE key, not anon):
+  //   SUPABASE_ACCOUNTS_JSON                 pool of many projects, e.g.:
+  //     [{"url":"https://xxx.supabase.co","serviceKey":"eyJ...","label":"acct1"}, ...]
+  //   Workspaces are pinned to one project by a hash of workspaceId (sticky
+  //   sharding) so a workspace's rows/embeddings always land in — and are
+  //   read back from — the same project. Kaggle/E2B pools use plain
+  //   round-robin instead since those calls are stateless.
 }

@@ -1,5 +1,6 @@
 import type { Bindings } from './types'
 import { newId, nowIso } from './ids'
+import { pickSupabaseProject, supabasePoolFromEnv } from './supabase'
 
 const EMBEDDING_MODEL = '@cf/baai/bge-base-en-v1.5' // 768-dim, fast, good general-purpose embedding on Workers AI
 
@@ -41,9 +42,12 @@ function cosineSimilarity(a: number[], b: number[]): number {
   return denom === 0 ? 0 : dot / denom
 }
 
-/** Uses Supabase (pgvector, via REST) when configured, otherwise the local D1 `embeddings` table. */
+/** Uses Supabase (pgvector, via REST) when configured, otherwise the local D1 `embeddings` table.
+ * With multiple Supabase projects pooled (SUPABASE_ACCOUNTS_JSON), a given
+ * workspace is deterministically pinned to one project (sharding) so its
+ * vectors always land in — and are read back from — the same place. */
 function usingSupabase(env: Bindings): boolean {
-  return Boolean(env.SUPABASE_URL && env.SUPABASE_SERVICE_KEY)
+  return supabasePoolFromEnv(env).length > 0
 }
 
 export async function upsertEmbedding(
@@ -54,12 +58,13 @@ export async function upsertEmbedding(
   const [vector] = await embedTexts(env, [params.content])
 
   if (usingSupabase(env)) {
-    await fetch(`${env.SUPABASE_URL}/rest/v1/nova_embeddings`, {
+    const account = await pickSupabaseProject(env, db, { sticky: params.workspaceId })
+    await fetch(`${account.url}/rest/v1/nova_embeddings`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        apikey: env.SUPABASE_SERVICE_KEY!,
-        Authorization: `Bearer ${env.SUPABASE_SERVICE_KEY}`,
+        apikey: account.serviceKey,
+        Authorization: `Bearer ${account.serviceKey}`,
         Prefer: 'resolution=merge-duplicates',
       },
       body: JSON.stringify([{
@@ -92,12 +97,13 @@ export async function semanticSearch(
   const [queryVector] = await embedTexts(env, [query])
 
   if (usingSupabase(env)) {
-    const response = await fetch(`${env.SUPABASE_URL}/rest/v1/rpc/match_nova_embeddings`, {
+    const account = await pickSupabaseProject(env, db, { sticky: workspaceId })
+    const response = await fetch(`${account.url}/rest/v1/rpc/match_nova_embeddings`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        apikey: env.SUPABASE_SERVICE_KEY!,
-        Authorization: `Bearer ${env.SUPABASE_SERVICE_KEY}`,
+        apikey: account.serviceKey,
+        Authorization: `Bearer ${account.serviceKey}`,
       },
       body: JSON.stringify({ query_embedding: queryVector, match_workspace_id: workspaceId, match_count: limit }),
     }).catch(() => null)

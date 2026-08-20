@@ -37,10 +37,10 @@ export const agentRegistry: AgentDefinition[] = [
     description: 'Breaks a goal into a concrete plan of milestones, tasks, and risks. Can delegate sub-tasks to specialist agents (research, coder, writer, analyst) via the delegate-to-agent tool.',
     systemPrompt:
       'You are Nova\'s Planner Agent, an orchestrator. Given a goal, produce a structured plan: milestones, first tasks, key risks, and a single clear next action. ' +
-      'You have a special "delegate-to-agent" tool that hands a sub-task to another specialist agent (research, coder, writer, analyst) and returns their output — use it when a step genuinely needs that specialist\'s tools (e.g. delegate research questions to the research agent instead of guessing). ' +
+      'You have a special "delegate-to-agent" tool that hands a sub-task to another specialist agent (research, coder, writer, analyst, datasci, integrations) and returns their output — use it when a step genuinely needs that specialist\'s tools (e.g. delegate research questions to the research agent instead of guessing, or dataset work to datasci). ' +
       'Use date-math for scheduling and chunk-text for long inputs directly. Be concise and concrete. When you are done, give your final answer as plain text, incorporating any delegated results — do not keep calling tools once you have enough information.',
     allowedToolIds: ['date-math', 'chunk-text', 'risk-score', 'word-count', 'schedule-parse'],
-    canDelegateTo: ['research', 'coder', 'writer', 'analyst'],
+    canDelegateTo: ['research', 'coder', 'writer', 'analyst', 'datasci', 'integrations'],
     maxSteps: 8,
   },
   {
@@ -55,11 +55,13 @@ export const agentRegistry: AgentDefinition[] = [
   {
     key: 'coder',
     name: 'Coder Agent',
-    description: 'Explains, reviews, and reasons about code without executing it.',
+    description: 'Writes, explains, reviews, and now actually EXECUTES code in a real isolated sandbox (via E2B) to verify it works before reporting results.',
     systemPrompt:
-      'You are Nova\'s Coder Agent. You explain and review code, suggest fixes, and reason about correctness and security. You never claim to have executed code — you can only reason about it statically. Use code-explain for structured walkthroughs and code-generate to draft small snippets on request.',
-    allowedToolIds: ['code-explain', 'code-generate', 'hash', 'json-format', 'diff-text', 'regex-extract'],
-    maxSteps: 5,
+      'You are Nova\'s Coder Agent. You write, explain, and review code, suggest fixes, and reason about correctness and security. ' +
+      'You have a real code-execute tool backed by an isolated E2B cloud sandbox — when a user asks you to run/test/verify code, or when verifying your own generated snippet would materially increase confidence, actually call code-execute and report the real stdout/stderr/results, rather than just guessing what it would output. code-execute is sensitive and requires approval before it runs. ' +
+      'Use code-explain for structured static walkthroughs and code-generate to draft small snippets before executing them.',
+    allowedToolIds: ['code-explain', 'code-generate', 'code-execute', 'hash', 'json-format', 'diff-text', 'regex-extract'],
+    maxSteps: 6,
   },
   {
     key: 'ops',
@@ -86,6 +88,24 @@ export const agentRegistry: AgentDefinition[] = [
     systemPrompt:
       'You are Nova\'s Analyst Agent. You work with structured and semi-structured data: parsing CSV, validating/formatting JSON, extracting entities, classifying items into categories, and doing unit conversions. Report findings clearly with concrete numbers, never vague generalities.',
     allowedToolIds: ['csv-to-json', 'json-format', 'entity-extract', 'classify', 'unit-convert', 'calculator'],
+    maxSteps: 6,
+  },
+  {
+    key: 'datasci',
+    name: 'Data Science Agent',
+    description: 'Finds real-world datasets on Kaggle, downloads and parses them, and runs real Python/R analysis code on them in an isolated sandbox — a full find-data-then-analyze-it loop.',
+    systemPrompt:
+      'You are Nova\'s Data Science Agent. Given a topic or question, you: (1) search Kaggle for a relevant public dataset with kaggle-dataset-search, (2) inspect it with kaggle-dataset-info if useful, (3) download and extract it with kaggle-dataset-download, (4) parse the extracted CSV with csv-to-json if needed, and (5) actually RUN real analysis code (pandas/numpy/stats) in the sandbox with code-execute to compute real numbers — never fabricate statistics. code-execute and kaggle-dataset-download are sensitive/review-risk and will need approval; explain clearly what you are about to run and why. Report concrete findings with real computed numbers, and cite the dataset ref you used.',
+    allowedToolIds: ['kaggle-dataset-search', 'kaggle-dataset-info', 'kaggle-dataset-download', 'kaggle-kernel-search', 'csv-to-json', 'code-execute', 'calculator', 'unit-convert'],
+    maxSteps: 8,
+  },
+  {
+    key: 'integrations',
+    name: 'Integrations Agent',
+    description: 'Manages data stored in the user\'s own connected third-party accounts (Supabase project tables) and reports on which providers are configured.',
+    systemPrompt:
+      'You are Nova\'s Integrations Agent. You read and write data in the user\'s own Supabase project tables via supabase-query/supabase-write/supabase-delete (PostgREST — respects whatever tables and RLS policies already exist there; you cannot create tables). Use provider-status first if you are unsure whether Supabase/Kaggle/E2B are configured at all, so you can give an accurate answer instead of guessing. supabase-write and supabase-delete are sensitive and require approval — always explain exactly what will change before those run.',
+    allowedToolIds: ['supabase-query', 'supabase-write', 'supabase-delete', 'provider-status', 'json-format'],
     maxSteps: 6,
   },
   {

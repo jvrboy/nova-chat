@@ -4,6 +4,10 @@ import { chatComplete, generateText } from './llm'
 import { newId, nowIso } from './ids'
 import { sha256Hex } from './crypto'
 import { semanticSearch } from './embeddings'
+import { kaggleSearchDatasets, kaggleGetDatasetInfo, kaggleDownloadDataset, kaggleSearchKernels, kaggleStatus } from './kaggle'
+import { e2bRunCode, e2bStatus } from './e2b'
+import { supabaseSelect, supabaseUpsert, supabaseDelete, supabaseStatus } from './supabase'
+import { extractFirstMatchingFile } from './zip'
 
 export type ToolRisk = 'safe' | 'review' | 'sensitive'
 export type ToolContext = { env: Bindings; workspaceId: string; actorId: string; db?: D1Database }
@@ -610,6 +614,228 @@ const webSearchSummaryTool: ToolDefinition = {
   },
 }
 
+// ---- Kaggle tools (real-world dataset access) -----------------------------
+
+const kaggleSearchTool: ToolDefinition = {
+  id: 'kaggle-dataset-search',
+  name: 'Kaggle Dataset Search',
+  description: 'Search Kaggle for public datasets by keyword. Returns titles, owners, sizes, and popularity so the analyst agent can choose a real dataset to work with.',
+  category: 'Data',
+  risk: 'safe',
+  parameters: {
+    type: 'object',
+    properties: {
+      query: { type: 'string' },
+      sortBy: { type: 'string', enum: ['hottest', 'votes', 'updated', 'active'] },
+      maxResults: { type: 'number' },
+    },
+    required: ['query'],
+  },
+  run: async (input, ctx) => {
+    const query = requireString(input, 'query')
+    const datasets = await kaggleSearchDatasets(ctx.env, ctx.db, query, {
+      sortBy: (input.sortBy as string) || 'hottest',
+      maxResults: Number(input.maxResults ?? 10),
+    })
+    return { query, count: datasets.length, datasets }
+  },
+}
+
+const kaggleInfoTool: ToolDefinition = {
+  id: 'kaggle-dataset-info',
+  name: 'Kaggle Dataset Info',
+  description: 'Get full metadata (description, license, size, last updated) for a specific Kaggle dataset given its "owner/dataset" reference (e.g. from kaggle-dataset-search results).',
+  category: 'Data',
+  risk: 'safe',
+  parameters: { type: 'object', properties: { ref: { type: 'string', description: 'e.g. "heptapod/titanic"' } }, required: ['ref'] },
+  run: async (input, ctx) => {
+    const ref = requireString(input, 'ref')
+    const [ownerSlug, datasetSlug] = ref.split('/')
+    if (!ownerSlug || !datasetSlug) throw new Error('ref must be in "owner/dataset" form.')
+    return await kaggleGetDatasetInfo(ctx.env, ctx.db, ownerSlug, datasetSlug)
+  },
+}
+
+const kaggleDownloadTool: ToolDefinition = {
+  id: 'kaggle-dataset-download',
+  name: 'Kaggle Dataset Download',
+  description: 'Download a Kaggle dataset (given its "owner/dataset" ref), extract the first CSV/JSON file inside it, and return that file as text (truncated to ~50k chars). Also caches the raw zip in R2 (if bound) for reuse. Follow up with csv-to-json or entity-extract to work with the data.',
+  category: 'Data',
+  risk: 'review',
+  parameters: { type: 'object', properties: { ref: { type: 'string' }, datasetVersionNumber: { type: 'number' } }, required: ['ref'] },
+  run: async (input, ctx) => {
+    const ref = requireString(input, 'ref')
+    const [ownerSlug, datasetSlug] = ref.split('/')
+    if (!ownerSlug || !datasetSlug) throw new Error('ref must be in "owner/dataset" form.')
+    const { bytes, sizeBytes } = await kaggleDownloadDataset(ctx.env, ctx.db, ownerSlug, datasetSlug, {
+      datasetVersionNumber: input.datasetVersionNumber ? Number(input.datasetVersionNumber) : undefined,
+    })
+
+    if (ctx.env.BUCKET && ctx.db) {
+      const r2Key = `kaggle-cache/${ctx.workspaceId}/${ownerSlug}__${datasetSlug}.zip`
+      await ctx.env.BUCKET.put(r2Key, bytes).catch(() => {})
+      await ctx.db.prepare(
+        'INSERT INTO kaggle_dataset_cache (id, workspace_id, owner_slug, dataset_slug, r2_key, size_bytes, downloaded_at) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(workspace_id, owner_slug, dataset_slug) DO UPDATE SET r2_key = excluded.r2_key, size_bytes = excluded.size_bytes, downloaded_at = excluded.downloaded_at'
+      ).bind(newId('kgl'), ctx.workspaceId, ownerSlug, datasetSlug, r2Key, sizeBytes, nowIso()).run().catch(() => {})
+    }
+
+    const extracted = await extractFirstMatchingFile(bytes, ['.csv', '.json', '.txt', '.tsv']).catch(() => undefined)
+    return {
+      ref,
+      sizeBytes,
+      cachedInR2: Boolean(ctx.env.BUCKET),
+      extractedFile: extracted ? { name: extracted.name, text: extracted.text.slice(0, 50_000), truncated: extracted.text.length > 50_000 } : null,
+    }
+  },
+}
+
+const kaggleKernelSearchTool: ToolDefinition = {
+  id: 'kaggle-kernel-search',
+  name: 'Kaggle Notebook (Kernel) Search',
+  description: 'Search Kaggle for public notebooks (kernels) related to a topic or dataset — useful for finding reference analysis approaches.',
+  category: 'Data',
+  risk: 'safe',
+  parameters: { type: 'object', properties: { query: { type: 'string' }, maxResults: { type: 'number' } }, required: ['query'] },
+  run: async (input, ctx) => {
+    const query = requireString(input, 'query')
+    const kernels = await kaggleSearchKernels(ctx.env, ctx.db, query, { maxResults: Number(input.maxResults ?? 10) })
+    return { query, count: kernels.length, kernels }
+  },
+}
+
+// ---- E2B tool (real code execution) ---------------------------------------
+
+const codeExecuteTool: ToolDefinition = {
+  id: 'code-execute',
+  name: 'Code Executor (E2B Sandbox)',
+  description: 'Actually RUNS a code snippet inside an isolated, ephemeral E2B cloud sandbox and returns real stdout/stderr/results/errors. Unlike code-generate (which only writes code) or code-explain (which only reasons about it), this executes it for real. Use for data analysis, calculations, or verifying generated code actually works. Supports python, javascript, typescript, r, and bash.',
+  category: 'Ops',
+  risk: 'sensitive',
+  parameters: {
+    type: 'object',
+    properties: {
+      code: { type: 'string' },
+      language: { type: 'string', enum: ['python', 'javascript', 'typescript', 'r', 'bash'] },
+    },
+    required: ['code'],
+  },
+  run: async (input, ctx) => {
+    const code = requireString(input, 'code')
+    const language = (input.language as string) || 'python'
+    const startedAt = Date.now()
+    let outcome: Awaited<ReturnType<typeof e2bRunCode>> | undefined
+    let ok = true
+    try {
+      outcome = await e2bRunCode(ctx.env, ctx.db, code, { language: language as any })
+      ok = !outcome.error
+    } catch (error) {
+      ok = false
+      throw error
+    } finally {
+      if (ctx.db) {
+        await ctx.db.prepare(
+          'INSERT INTO code_executions (id, workspace_id, actor_id, language, code_hash, ok, stdout_chars, stderr_chars, error_name, duration_ms, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+        ).bind(
+          newId('exec'), ctx.workspaceId, ctx.actorId, language, await sha256Hex(code), ok ? 1 : 0,
+          outcome?.stdout.length ?? 0, outcome?.stderr.length ?? 0, outcome?.error?.name ?? null,
+          Date.now() - startedAt, nowIso()
+        ).run().catch(() => {})
+      }
+    }
+    return outcome
+  },
+}
+
+// ---- Supabase generic data tools -------------------------------------------
+
+const supabaseQueryTool: ToolDefinition = {
+  id: 'supabase-query',
+  name: 'Supabase Table Query',
+  description: 'Read rows from a table in the user\'s own Supabase project via PostgREST (e.g. a custom app table). Filters use PostgREST syntax, e.g. {"status":"eq.active"}.',
+  category: 'Data',
+  risk: 'safe',
+  parameters: {
+    type: 'object',
+    properties: {
+      table: { type: 'string' },
+      filters: { type: 'object' },
+      select: { type: 'string' },
+      limit: { type: 'number' },
+      order: { type: 'string' },
+    },
+    required: ['table'],
+  },
+  run: async (input, ctx) => {
+    const table = requireString(input, 'table')
+    const filters = (input.filters && typeof input.filters === 'object' ? input.filters : {}) as Record<string, string>
+    const rows = await supabaseSelect(ctx.env, ctx.db, table, {
+      filters,
+      select: input.select as string | undefined,
+      limit: input.limit ? Number(input.limit) : undefined,
+      order: input.order as string | undefined,
+      sticky: ctx.workspaceId,
+    })
+    return { table, count: rows.length, rows }
+  },
+}
+
+const supabaseWriteTool: ToolDefinition = {
+  id: 'supabase-write',
+  name: 'Supabase Table Write',
+  description: 'Insert or upsert rows into a table in the user\'s own Supabase project via PostgREST. Sensitive: requires confirmation before running.',
+  category: 'Data',
+  risk: 'sensitive',
+  parameters: {
+    type: 'object',
+    properties: {
+      table: { type: 'string' },
+      rows: { type: 'array', items: { type: 'object' } },
+      onConflict: { type: 'string', description: 'Column name to upsert on, e.g. "id"' },
+    },
+    required: ['table', 'rows'],
+  },
+  run: async (input, ctx) => {
+    const table = requireString(input, 'table')
+    const rows = Array.isArray(input.rows) ? (input.rows as Record<string, unknown>[]) : []
+    if (!rows.length) throw new Error('Provide at least one row.')
+    const written = await supabaseUpsert(ctx.env, ctx.db, table, rows, { onConflict: input.onConflict as string | undefined, sticky: ctx.workspaceId })
+    return { table, written: written.length, rows: written }
+  },
+}
+
+const supabaseDeleteTool: ToolDefinition = {
+  id: 'supabase-delete',
+  name: 'Supabase Table Delete',
+  description: 'Delete rows from a table in the user\'s own Supabase project via PostgREST, scoped by required filters (never allows an unfiltered delete). Sensitive: requires confirmation before running.',
+  category: 'Data',
+  risk: 'sensitive',
+  parameters: { type: 'object', properties: { table: { type: 'string' }, filters: { type: 'object' } }, required: ['table', 'filters'] },
+  run: async (input, ctx) => {
+    const table = requireString(input, 'table')
+    const filters = (input.filters && typeof input.filters === 'object' ? input.filters : {}) as Record<string, string>
+    await supabaseDelete(ctx.env, ctx.db, table, filters, { sticky: ctx.workspaceId })
+    return { table, deleted: true, filters }
+  },
+}
+
+// ---- Provider/ops introspection ---------------------------------------
+
+const providerStatusTool: ToolDefinition = {
+  id: 'provider-status',
+  name: 'Third-Party Provider Status',
+  description: 'Reports which external providers (Supabase, Kaggle, E2B) are configured and how many pooled accounts each has, without ever exposing key material. Useful for diagnosing "why did tool X fail" before assuming it is a bug.',
+  category: 'Ops',
+  risk: 'safe',
+  parameters: { type: 'object', properties: {} },
+  run: async (_input, ctx) => {
+    return {
+      supabase: supabaseStatus(ctx.env),
+      kaggle: kaggleStatus(ctx.env),
+      e2b: e2bStatus(ctx.env),
+    }
+  },
+}
+
 // ---- Registry ---------------------------------------------------------
 
 export const toolRegistry: ToolDefinition[] = [
@@ -640,6 +866,15 @@ export const toolRegistry: ToolDefinition[] = [
   scheduleParseTool,
   codeGenerateTool,
   webSearchSummaryTool,
+  kaggleSearchTool,
+  kaggleInfoTool,
+  kaggleDownloadTool,
+  kaggleKernelSearchTool,
+  codeExecuteTool,
+  supabaseQueryTool,
+  supabaseWriteTool,
+  supabaseDeleteTool,
+  providerStatusTool,
 ]
 
 export function getTool(id: string): ToolDefinition | undefined {

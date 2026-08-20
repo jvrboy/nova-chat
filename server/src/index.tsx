@@ -86,15 +86,19 @@ app.get('/', (c) => {
       </a>
       <a href="/api/tools" class="block rounded-lg border border-slate-800 bg-slate-900 p-4 hover:border-sky-500 transition">
         <div class="font-semibold">GET /api/tools</div>
-        <div class="text-sm text-slate-400">List available backend tools (26)</div>
+        <div class="text-sm text-slate-400">List available backend tools (36)</div>
       </a>
       <a href="/api/agents" class="block rounded-lg border border-slate-800 bg-slate-900 p-4 hover:border-sky-500 transition">
         <div class="font-semibold">GET /api/agents</div>
-        <div class="text-sm text-slate-400">List available agents (8)</div>
+        <div class="text-sm text-slate-400">List available agents (10)</div>
       </a>
       <a href="/api/pipelines" class="block rounded-lg border border-slate-800 bg-slate-900 p-4 hover:border-sky-500 transition">
         <div class="font-semibold">GET /api/pipelines</div>
         <div class="text-sm text-slate-400">List built-in pipelines</div>
+      </a>
+      <a href="/api/observability/providers" class="block rounded-lg border border-slate-800 bg-slate-900 p-4 hover:border-sky-500 transition">
+        <div class="font-semibold">GET /api/observability/providers</div>
+        <div class="text-sm text-slate-400">Supabase / Kaggle / E2B configuration status</div>
       </a>
     </div>
     <p class="mt-10 text-xs text-slate-500">See README.md in this repo for the full API reference.</p>

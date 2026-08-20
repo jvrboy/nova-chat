@@ -1,5 +1,8 @@
 import { Hono } from 'hono'
 import type { AppEnv } from '../lib/types'
+import { supabaseStatus } from '../lib/supabase'
+import { kaggleStatus } from '../lib/kaggle'
+import { e2bStatus } from '../lib/e2b'
 
 const observability = new Hono<AppEnv>()
 
@@ -78,10 +81,31 @@ observability.get('/health', async (c) => {
   try {
     await c.env.DB.prepare('SELECT 1').first()
     const llmOk = Boolean(c.env.OPENAI_API_KEY)
-    return c.json({ status: 'ok', db: 'ok', llmConfigured: llmOk, workspaceId, checkedAt: new Date().toISOString() })
+    return c.json({
+      status: 'ok',
+      db: 'ok',
+      llmConfigured: llmOk,
+      workspaceId,
+      checkedAt: new Date().toISOString(),
+      providers: {
+        supabase: supabaseStatus(c.env),
+        kaggle: kaggleStatus(c.env),
+        e2b: e2bStatus(c.env),
+      },
+    })
   } catch (error) {
     return c.json({ status: 'error', message: error instanceof Error ? error.message : 'health check failed' }, 500)
   }
+})
+
+// GET /api/observability/providers - dedicated, lightweight endpoint for just
+// the third-party provider configuration state (no key material returned).
+observability.get('/providers', (c) => {
+  return c.json({
+    supabase: supabaseStatus(c.env),
+    kaggle: kaggleStatus(c.env),
+    e2b: e2bStatus(c.env),
+  })
 })
 
 export default observability
