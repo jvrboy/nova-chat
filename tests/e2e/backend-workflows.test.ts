@@ -33,12 +33,42 @@ describe('Nova backend workflows', () => {
     expect(store.notifications.some((notification) => notification.title === 'Workflow completed')).toBe(true);
   });
 
+  it('returns not found for cross-workspace workflow runs', async () => {
+    const workflow = await createDefaultWorkflow('workspace-a');
+    const response = await handleLocalApi({ method: 'POST', path: `/v1/workflows/${workflow.id}/run`, workspaceId: 'workspace-b', actorId: 'owner-e2e' });
+    expect(response.status).toBe(404);
+    expect((response.data as { message: string }).message).toContain('Workflow not found in workspace');
+  });
+
   it('triages a task through the local API contract', async () => {
     const plan = await createProjectPlan('workspace-e2e', 'owner-e2e', 'Triage project', 'Prioritize the next action.');
     const response = await handleLocalApi({ method: 'PATCH', path: `/v1/tasks/${plan.tasks[0].id}`, workspaceId: 'workspace-e2e', actorId: 'owner-e2e', body: { status: 'in_progress' } });
     expect(response.status).toBe(200);
     expect((response.data as { status: string }).status).toBe('in_progress');
     expect((await triageTask(plan.tasks[1].id, 'blocked', 'owner-e2e', 'workspace-e2e'))?.status).toBe('blocked');
+  });
+
+  it('rejects cross-workspace task triage and invalid statuses', async () => {
+    const plan = await createProjectPlan('workspace-a', 'owner-e2e', 'Private plan', 'Keep tasks isolated.');
+    const invalid = await handleLocalApi({ method: 'PATCH', path: `/v1/tasks/${plan.tasks[0].id}`, workspaceId: 'workspace-a', actorId: 'owner-e2e', body: { status: 'finished' } });
+    expect(invalid.status).toBe(400);
+    const crossWorkspace = await handleLocalApi({ method: 'PATCH', path: `/v1/tasks/${plan.tasks[0].id}`, workspaceId: 'workspace-b', actorId: 'owner-e2e', body: { status: 'done' } });
+    expect(crossWorkspace.status).toBe(404);
+    expect((crossWorkspace.data as { message: string }).message).toContain('Task not found in workspace');
+  });
+});
+
+describe('Nova sandbox backend', () => {
+  it('runs deterministic safe commands and rejects dangerous input', async () => {
+    const safe = await handleLocalApi({ method: 'POST', path: '/v1/sandbox/run', workspaceId: 'workspace-e2e', body: { op: 'uppercase', input: 'ship nova' } });
+    expect(safe.status).toBe(200);
+    expect((safe.data as { output: string }).output).toBe('SHIP NOVA');
+    const rejected = await handleLocalApi({ method: 'POST', path: '/v1/sandbox/run', workspaceId: 'workspace-e2e', body: { op: 'echo', input: 'delete everything; now' } });
+    expect((rejected.data as { status: string }).status).toBe('rejected');
+    const https = await handleLocalApi({ method: 'POST', path: '/v1/sandbox/run', workspaceId: 'workspace-e2e', body: { op: 'summarize', input: 'review https://example.com' } });
+    expect((https.data as { status: string }).status).toBe('rejected');
+    const redacted = await handleLocalApi({ method: 'POST', path: '/v1/sandbox/run', workspaceId: 'workspace-e2e', body: { op: 'redact', input: 'Contact owner@example.com about token risk' } });
+    expect((redacted.data as { output: string }).output).toContain('[redacted-email]');
   });
 });
 
