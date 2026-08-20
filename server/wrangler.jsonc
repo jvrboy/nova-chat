@@ -1,0 +1,41 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "webapp",
+  "compatibility_date": "2026-08-15",
+  "pages_build_output_dir": "./dist",
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "webapp-production",
+      "database_id": "REPLACE_WITH_D1_DATABASE_ID"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "BUCKET",
+      "bucket_name": "webapp-files"
+    }
+  ],
+  // NOTE: Workers AI binding is intentionally commented out for LOCAL DEV.
+  // `wrangler pages dev` has no offline emulation for the AI binding — it always
+  // tries to proxy to real Cloudflare infra and requires CLOUDFLARE_API_TOKEN in
+  // this non-interactive sandbox, which breaks local startup entirely.
+  // embeddings.ts already falls back to pseudoEmbed() when env.AI is undefined,
+  // so local dev works correctly with this removed. RE-ADD before real deployment:
+  // "ai": { "binding": "AI" },
+  "triggers": {
+    "crons": ["*/5 * * * *"]
+  }
+  // "vars": {
+  //   "LLM_MODEL": "gpt-5-mini"
+  // }
+  // BYOK-only (not supported by gsk-hosted-deploy): if you deploy to your own
+  // Cloudflare account and want to use Supabase for vector RAG instead of the
+  // D1 fallback store, set these as secrets (never commit real values):
+  //   SUPABASE_URL, SUPABASE_SERVICE_KEY
+  // and Expo push notifications:
+  //   EXPO_ACCESS_TOKEN (optional, only needed for very high volume)
+}

@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { addMemory, agentTools, AgentEvent, AgentJob, AgentRun, Approval, createJob, createRun, loadRuntime, Memory, pipelines, Pipeline, requestApproval, RuntimeData, saveRuntime } from '../agent/runtime';
 import { appendEvent } from '../agent/runtime';
 import { CapabilityStatus, getCapabilityStatus, requestCapability } from '../platform/capabilities';
@@ -7,9 +7,11 @@ import type { Tool } from './types';
 import { advancedTools } from '../agent/advancedTools';
 import { operationsTools } from '../agent/operationsTools';
 import { productionTools } from '../agent/productionTools';
+import { useBackend } from '../backend/BackendProvider';
+import { backendCreateChat, backendSendMessage, streamNovaMessage } from '../backend/novaApi';
 
-export type Message = { id: string; role: 'user' | 'assistant'; text: string; tool?: string };
-export type Chat = { id: string; title: string; messages: Message[]; updatedAt: string };
+export type Message = { id: string; role: 'user' | 'assistant'; text: string; tool?: string; pending?: boolean; error?: boolean };
+export type Chat = { id: string; title: string; messages: Message[]; updatedAt: string; backendChatId?: string };
 export type Project = { id: string; name: string; description: string; color: string; files: number };
 const tools: Tool[] = [
   { id: 'memory', name: 'Memory Vault', description: 'Recall, store, and organize durable knowledge.', icon: 'brain', category: 'Cognition' },
@@ -23,21 +25,89 @@ const tools: Tool[] = [
   ...operationsTools.map((tool) => ({ id: tool.id, name: tool.name, description: tool.description, icon: 'pulse', category: 'Operations' })),
   ...productionTools.map((tool) => ({ id: tool.id, name: tool.name, description: tool.description, icon: 'shield-checkmark', category: 'Production' })),
 ];
-const initialChats: Chat[] = [{ id: 'nova', title: 'New conversation', updatedAt: new Date().toISOString(), messages: [{ id: 'welcome', role: 'assistant', text: 'I’m Nova. I can help you think, build, plan, and remember — entirely on this device.' }] }];
+const initialChats: Chat[] = [{ id: 'nova', title: 'New conversation', updatedAt: new Date().toISOString(), messages: [{ id: 'welcome', role: 'assistant', text: 'I’m Nova. I can help you think, build, plan, and remember. Connect a backend in Settings → Backend for real LLM replies with tools, memory, and agents — otherwise I run useful local heuristics only.' }] }];
 const initialProjects: Project[] = [{ id: 'mobile', name: 'Mobile workspace', description: 'Your converted Expo command center.', color: '#55d6ff', files: 12 }, { id: 'ideas', name: 'Ideas lab', description: 'Capture and develop new directions.', color: '#a78bfa', files: 7 }];
 
-type NovaContextValue = { chats: Chat[]; projects: Project[]; tools: Tool[]; runs: AgentRun[]; approvals: Approval[]; memories: Memory[]; jobs: AgentJob[]; events: AgentEvent[]; files: NovaFile[]; settings: StorageSettings; capabilities: CapabilityStatus; pipelines: Pipeline[]; activeChat: Chat; ready: boolean; createChat: () => void; sendMessage: (text: string) => void; startRun: (input: string, toolId?: string) => void; startPipeline: (pipeline: Pipeline, input: string) => void; approve: (id: string, approved: boolean) => void; saveMemory: (content: string, tags?: string[]) => void; importFiles: () => Promise<void>; createNote: () => Promise<void>; deleteFile: (id: string) => Promise<void>; exportFiles: () => Promise<void>; updateSettings: (settings: StorageSettings) => Promise<void>; recoverStorage: () => Promise<void>; requestPermission: (name: keyof CapabilityStatus) => Promise<void> };
+type NovaContextValue = { chats: Chat[]; projects: Project[]; tools: Tool[]; runs: AgentRun[]; approvals: Approval[]; memories: Memory[]; jobs: AgentJob[]; events: AgentEvent[]; files: NovaFile[]; settings: StorageSettings; capabilities: CapabilityStatus; pipelines: Pipeline[]; activeChat: Chat; ready: boolean; backendConnected: boolean; streamingReply: boolean; createChat: () => void; sendMessage: (text: string) => void; startRun: (input: string, toolId?: string) => void; startPipeline: (pipeline: Pipeline, input: string) => void; approve: (id: string, approved: boolean) => void; saveMemory: (content: string, tags?: string[]) => void; importFiles: () => Promise<void>; createNote: () => Promise<void>; deleteFile: (id: string) => Promise<void>; exportFiles: () => Promise<void>; updateSettings: (settings: StorageSettings) => Promise<void>; recoverStorage: () => Promise<void>; requestPermission: (name: keyof CapabilityStatus) => Promise<CapabilityStatus[keyof CapabilityStatus]> };
 const NovaContext = createContext<NovaContextValue | null>(null);
 
 export function NovaProvider({ children }: { children: React.ReactNode }) {
-  const [chats, setChats] = useState<Chat[]>(initialChats); const [runs, setRuns] = useState<AgentRun[]>([]); const [approvals, setApprovals] = useState<Approval[]>([]); const [memories, setMemories] = useState<Memory[]>([]); const [jobs, setJobs] = useState<AgentJob[]>([]); const [events, setEvents] = useState<AgentEvent[]>([]); const [files, setFiles] = useState<NovaFile[]>([]); const [settings, setSettings] = useState<StorageSettings>(defaultStorageSettings); const [capabilities, setCapabilities] = useState<CapabilityStatus>({ camera: 'undetermined', microphone: 'undetermined', notifications: 'undetermined', mediaLibrary: 'undetermined' }); const [ready, setReady] = useState(false);
+  const { config: backendConfig, health: backendHealth } = useBackend();
+  const [chats, setChats] = useState<Chat[]>(initialChats); const [runs, setRuns] = useState<AgentRun[]>([]); const [approvals, setApprovals] = useState<Approval[]>([]); const [memories, setMemories] = useState<Memory[]>([]); const [jobs, setJobs] = useState<AgentJob[]>([]); const [events, setEvents] = useState<AgentEvent[]>([]); const [files, setFiles] = useState<NovaFile[]>([]); const [settings, setSettings] = useState<StorageSettings>(defaultStorageSettings); const [capabilities, setCapabilities] = useState<CapabilityStatus>({ camera: 'undetermined', microphone: 'undetermined', notifications: 'undetermined', mediaLibrary: 'undetermined' }); const [ready, setReady] = useState(false); const [streamingReply, setStreamingReply] = useState(false);
+  const backendConnected = backendConfig.mode === 'remote' && Boolean(backendConfig.baseUrl) && backendHealth.status === 'healthy';
+  const chatsRef = useRef(chats);
+  useEffect(() => { chatsRef.current = chats; }, [chats]);
+
   useEffect(() => { Promise.all([loadRuntime(), loadWorkspace(), getCapabilityStatus()]).then(([runtime, workspace, capability]) => { setRuns(runtime.runs); setApprovals(runtime.approvals); setMemories(runtime.memories); setJobs(runtime.jobs); setEvents(runtime.events); setFiles(workspace.files); setSettings(workspace.settings); setCapabilities(capability); setReady(true); }).catch(() => setReady(true)); }, []);
   useEffect(() => { if (ready) void saveRuntime({ runs, approvals, memories, jobs, events }); }, [runs, approvals, memories, jobs, events, ready]);
   useEffect(() => { if (ready) void saveWorkspace(files, settings); }, [files, settings, ready]);
   const activeChat = chats[0] ?? initialChats[0];
   const log = async (event: Omit<AgentEvent, 'id' | 'createdAt'>) => { const next = await appendEvent(event); setEvents((value) => [next, ...value].slice(0, 500)); };
   const createChat = () => setChats((value) => [{ id: `${Date.now()}`, title: 'New conversation', updatedAt: new Date().toISOString(), messages: [] }, ...value]);
-  const sendMessage = (text: string) => { const trimmed = text.trim(); if (!trimmed) return; setChats((value) => value.map((chat, index) => index ? chat : ({ ...chat, title: chat.messages.length ? chat.title : trimmed.slice(0, 28), updatedAt: new Date().toISOString(), messages: [...chat.messages, { id: `${Date.now()}`, role: 'user', text: trimmed }, { id: `a${Date.now()}`, role: 'assistant', text: reply(trimmed), tool: toolFor(trimmed) }] }))); };
+
+  const patchChat = (chatId: string, updater: (chat: Chat) => Chat) => setChats((value) => value.map((chat) => (chat.id === chatId ? updater(chat) : chat)));
+  const appendMessage = (chatId: string, message: Message) => patchChat(chatId, (chat) => ({ ...chat, updatedAt: new Date().toISOString(), title: chat.messages.length ? chat.title : message.role === 'user' ? message.text.slice(0, 28) : chat.title, messages: [...chat.messages, message] }));
+  const replaceMessage = (chatId: string, messageId: string, patch: Partial<Message>) => patchChat(chatId, (chat) => ({ ...chat, messages: chat.messages.map((m) => (m.id === messageId ? { ...m, ...patch } : m)) }));
+
+  /**
+   * Ensures the given local chat has a corresponding backend chat id,
+   * creating one lazily on first send. Cached on the Chat object itself.
+   */
+  const ensureBackendChatId = async (chat: Chat): Promise<string> => {
+    if (chat.backendChatId) return chat.backendChatId;
+    const created = await backendCreateChat(backendConfig, chat.title === 'New conversation' ? 'New conversation' : chat.title);
+    patchChat(chat.id, (c) => ({ ...c, backendChatId: created.id }));
+    return created.id;
+  };
+
+  const localReplyFallback = (text: string, reason?: string) => {
+    const base = reply(text);
+    return reason ? `${base}\n\n(Offline mode — ${reason})` : base;
+  };
+
+  const sendMessage = (text: string) => {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    const chat = chatsRef.current[0] ?? initialChats[0];
+    const userMessage: Message = { id: `${Date.now()}`, role: 'user', text: trimmed };
+    appendMessage(chat.id, userMessage);
+
+    if (!backendConnected) {
+      // No live backend: keep the app fully usable with the original local heuristic reply.
+      const assistantMessage: Message = { id: `a${Date.now()}`, role: 'assistant', text: localReplyFallback(trimmed, backendConfig.mode === 'remote' ? backendHealth.message : 'connect a backend in Settings to get real AI replies'), tool: toolFor(trimmed) };
+      appendMessage(chat.id, assistantMessage);
+      return;
+    }
+
+    void (async () => {
+      try {
+        const backendChatId = await ensureBackendChatId(chat);
+        const pendingId = `a${Date.now()}`;
+        appendMessage(chat.id, { id: pendingId, role: 'assistant', text: '', pending: true });
+        setStreamingReply(true);
+
+        let streamed = false;
+        await streamNovaMessage(backendConfig, backendChatId, trimmed, {
+          onDelta: (delta) => { streamed = true; replaceMessage(chat.id, pendingId, { text: (chatsRef.current.find((c) => c.id === chat.id)?.messages.find((m) => m.id === pendingId)?.text ?? '') + delta, pending: true }); },
+          onToolCall: (tool) => { replaceMessage(chat.id, pendingId, { tool }); },
+          onDone: (assistantMessage) => { replaceMessage(chat.id, pendingId, { text: assistantMessage.text, tool: assistantMessage.tool, pending: false }); },
+          onError: (error) => { replaceMessage(chat.id, pendingId, { text: `Backend error: ${error.message}`, pending: false, error: true }); },
+        });
+
+        // Runtime without a usable streaming body (e.g. some Hermes fetch builds)
+        // never called onDelta/onDone — fall back to the single-shot JSON endpoint.
+        if (!streamed) {
+          const result = await backendSendMessage(backendConfig, backendChatId, trimmed);
+          replaceMessage(chat.id, pendingId, { text: result.assistantMessage.text, tool: result.assistantMessage.tool, pending: false });
+        }
+      } catch (error) {
+        appendMessage(chat.id, { id: `err${Date.now()}`, role: 'assistant', text: `Backend error: ${error instanceof Error ? error.message : 'unknown error'}. ${localReplyFallback(trimmed)}`, error: true });
+      } finally {
+        setStreamingReply(false);
+      }
+    })();
+  };
+
   const startRun = (input: string, toolId = 'extract') => { const run = createRun(input); const job = createJob(run.id, toolId, input); run.jobIds = [job.id]; run.status = 'running'; setRuns((value) => [run, ...value]); setJobs((value) => [job, ...value]); void log({ type: 'run.created', runId: run.id, message: `Started ${run.title}` }); const selectedTool = [...agentTools, ...advancedTools, ...operationsTools, ...productionTools].find((tool) => tool.id === toolId); if (selectedTool?.risk !== 'safe') { setApprovals((value) => [requestApproval(run, job, selectedTool?.risk ?? 'review'), ...value]); void log({ type: 'approval.requested', runId: run.id, message: `Approval required for ${toolId}` }); } };
   const startPipeline = (pipeline: Pipeline, input: string) => startRun(`${pipeline.name}: ${input}`, pipeline.id === 'media' ? 'media-summary' : 'extract');
   const approve = (id: string, approved: boolean) => { setApprovals((value) => value.map((item) => item.id === id ? { ...item, status: approved ? 'approved' : 'rejected', resolvedAt: new Date().toISOString() } : item)); void log({ type: 'approval.resolved', message: `${approved ? 'Approved' : 'Rejected'} approval ${id}` }); };
@@ -48,8 +118,8 @@ export function NovaProvider({ children }: { children: React.ReactNode }) {
   const exportFiles = async () => { await exportWorkspace(files, settings); void log({ type: 'file.exported', message: `Exported ${files.length} file(s)` }); };
   const updateSettings = async (next: StorageSettings) => { setSettings(next); await updateStorageSettings(next); };
   const recoverStorage = async () => setFiles(await recoverWorkspace());
-  const requestPermission = async (name: keyof CapabilityStatus) => { const next = await requestCapability(name); setCapabilities((value) => ({ ...value, [name]: next })); };
-  const value = useMemo(() => ({ chats, projects: initialProjects, tools, runs, approvals, memories, jobs, events, files, settings, capabilities, pipelines, activeChat, ready, createChat, sendMessage, startRun, startPipeline, approve, saveMemory, importFiles, createNote, deleteFile, exportFiles, updateSettings, recoverStorage, requestPermission }), [chats, runs, approvals, memories, jobs, events, files, settings, capabilities, activeChat, ready]);
+  const requestPermission = async (name: keyof CapabilityStatus) => { const next = await requestCapability(name); setCapabilities((value) => ({ ...value, [name]: next })); return next; };
+  const value = useMemo(() => ({ chats, projects: initialProjects, tools, runs, approvals, memories, jobs, events, files, settings, capabilities, pipelines, activeChat, ready, backendConnected, streamingReply, createChat, sendMessage, startRun, startPipeline, approve, saveMemory, importFiles, createNote, deleteFile, exportFiles, updateSettings, recoverStorage, requestPermission }), [chats, runs, approvals, memories, jobs, events, files, settings, capabilities, activeChat, ready, backendConnected, streamingReply]);
   return <NovaContext.Provider value={value}>{children}</NovaContext.Provider>;
 }
 export function useNova() { const value = useContext(NovaContext); if (!value) throw new Error('useNova must be used inside NovaProvider'); return value; }

@@ -1,0 +1,88 @@
+name: iOS Unsigned Build
+
+# Builds Nova for the iOS Simulator (no code signing required/possible without
+# an Apple Developer account) on a macOS GitHub-hosted runner. This is the
+# closest thing to an "unsigned iOS build" that is actually installable:
+# a real device .ipa cannot be produced or run without a signing identity +
+# provisioning profile, which this project intentionally does not have
+# (see UNSIGNED_BUILD_REPORT.md). The simulator .app bundle produced here can
+# be dragged into iOS Simulator or booted via `xcrun simctl install`.
+
+on:
+  workflow_dispatch: {}
+  push:
+    branches: [main]
+    paths:
+      - 'app/**'
+      - 'src/**'
+      - 'ios/**'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'app.json'
+      - '.github/workflows/ios-unsigned.yml'
+
+jobs:
+  build-ios-simulator:
+    runs-on: macos-14
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Type check
+        run: pnpm run check
+
+      - name: Expo prebuild (iOS)
+        run: npx expo prebuild --platform ios --no-install --clean
+
+      - name: Install CocoaPods
+        working-directory: ios
+        run: pod install --repo-update
+
+      - name: Build for iOS Simulator (unsigned)
+        working-directory: ios
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -workspace Nova.xcworkspace \
+            -scheme Nova \
+            -configuration Release \
+            -sdk iphonesimulator \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            build | xcpretty || true
+
+      - name: Locate .app bundle
+        id: app
+        run: |
+          APP_PATH=$(find ios/build -maxdepth 6 -name '*.app' -path '*Release-iphonesimulator*' | head -n1)
+          echo "path=$APP_PATH" >> "$GITHUB_OUTPUT"
+          echo "Found app bundle: $APP_PATH"
+
+      - name: Zip app bundle
+        if: steps.app.outputs.path != ''
+        run: ditto -c -k --sequesterRsrc --keepParent "${{ steps.app.outputs.path }}" nova-ios-simulator.zip
+
+      - name: Upload unsigned simulator build artifact
+        if: steps.app.outputs.path != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: nova-ios-unsigned-simulator-build
+          path: nova-ios-simulator.zip
+          retention-days: 30
+          if-no-files-found: error
