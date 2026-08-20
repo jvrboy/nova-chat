@@ -21,14 +21,34 @@ below for exactly what to configure.
 
 - **Local dev**: fully working (build ✅, `tsc --noEmit` ✅, migrations
   applied ✅, server verified with curl ✅).
-- **Not yet deployed to Cloudflare** (per explicit instruction — this repo
-  ships the code, deployment is a separate, deliberate next step).
-- The LLM API key available in this sandbox during development
-  (`OPENAI_API_KEY` / `.dev.vars`) was returning `401 Invalid or expired
-  token` for the whole session, so LLM-backed code paths (chat replies,
-  streaming, agents, delegation, most tools) are implemented and type-checked
-  but **not live-verified** end-to-end. Replace the key before relying on
-  those flows.
+- **Deployed to Cloudflare Pages** ✅ — production URL:
+  `https://webapp-9ek.pages.dev`. D1 (`webapp-production`) and R2
+  (`webapp-files`) created and migrated on the live Cloudflare account; all
+  provider secrets (`KAGGLE_ACCOUNTS_JSON`, `E2B_ACCOUNTS_JSON`,
+  `FIRECRAWL_ACCOUNTS_JSON`, `HUGGINGFACE_ACCOUNTS_JSON`, LLM keys) are set
+  and live-verified end-to-end against the deployed URL (`kaggle-dataset-search`,
+  `hf-generate-text`, `code-execute` all confirmed working in production, not
+  just local dev).
+- **Cloudflare Zero Trust note**: this Cloudflare account has an account-wide
+  Access policy ("All Workers") that by default gates every `*.pages.dev`/
+  `*.workers.dev` app behind login. A public-bypass Access Application
+  (matching the pattern already used by the account's other project,
+  "flyer-arcade") was created for `webapp-9ek.pages.dev` so the deployed API
+  is reachable without Cloudflare Access login. If you rename/redeploy under
+  a different `*.pages.dev` subdomain, you'll need an equivalent bypass rule
+  for the new domain or requests will get redirected to a Cloudflare Access
+  login page.
+- **Pages cron limitation**: Cloudflare Pages projects do not support the
+  `triggers.crons` field in `wrangler.jsonc` (rejected at deploy time), so the
+  `*/5 * * * *` scheduled-workflow cron from local dev is **not** automatically
+  running in production. `runDueScheduledWorkflows()` is implemented and
+  callable, but needs one of: migrate to a plain Worker, an external cron
+  service hitting the deployed URL, or a dashboard-configured Pages Cron
+  Trigger. See `wrangler.jsonc` comments for details.
+- LLM-backed code paths (chat replies, streaming, agents, delegation) use the
+  sandbox's own `OPENAI_API_KEY`/`OPENAI_BASE_URL` (Genspark's LLM proxy) —
+  swap in your own OpenAI-compatible key/base URL if you want a different
+  model/provider in production.
 
 ## Feature Overview
 
@@ -432,29 +452,46 @@ only, **secret values are never echoed back by any endpoint.**
 - ⬜ No CI/CD pipeline for the backend itself.
 - ⬜ No Slack/email alert channel configured (webhook delivery + push exist,
   but no real chat-ops integration).
-- ⬜ `wrangler.jsonc` still has placeholder `database_id`
-  (`REPLACE_WITH_D1_DATABASE_ID`) — real IDs are created at deploy time.
-- ⬜ Not deployed to Cloudflare yet.
+- ⬜ Workers AI (`ai` binding) is still commented out in `wrangler.jsonc` —
+  production embeddings currently fall back to Hugging Face (configured) or
+  the local pseudo-embed, not real Workers AI neural embeddings. Re-enable
+  the binding and redeploy if you want Workers AI embeddings specifically.
+- ⬜ Supabase not yet configured in production (0 accounts) — provided
+  keys for Kaggle/E2B/Firecrawl/Hugging Face only so far.
+- ⬜ Pages Cron Trigger for scheduled workflows not configured (see Status
+  section above) — `runDueScheduledWorkflows()` works when called but isn't
+  auto-invoked every 5 minutes in production yet.
 
-## Deployment (when ready)
+## Deployment
 
-This project is *not* deployed yet by design. When ready:
+**Deployed** to Cloudflare Pages (BYOK, user's own Cloudflare account):
+`https://webapp-9ek.pages.dev`. Steps taken (repeat for a redeploy or a
+fresh account):
 
 1. `npx wrangler d1 create webapp-production` → copy the real `database_id`
-   into `wrangler.jsonc`.
-2. `npx wrangler r2 bucket create webapp-files`.
-3. Re-enable the `ai` binding in `wrangler.jsonc`.
+   into `wrangler.jsonc` (already done — see the `d1_databases` block).
+2. `npx wrangler r2 bucket create webapp-files` (already done).
+3. Re-enable the `ai` binding in `wrangler.jsonc` if you want real Workers AI
+   embeddings in production (currently left commented out — HF/pseudo-embed
+   fallback is in effect).
 4. Set production secrets (`OPENAI_API_KEY`, `OPENAI_BASE_URL`, `LLM_MODEL`,
-   `LLM_AGENT_MODEL`, and optionally `SUPABASE_URL`/`SUPABASE_SERVICE_KEY`
-   or `SUPABASE_ACCOUNTS_JSON`, `KAGGLE_TOKEN` or `KAGGLE_USERNAME`/`KAGGLE_KEY`
-   or `KAGGLE_ACCOUNTS_JSON`, `E2B_API_KEY` or `E2B_ACCOUNTS_JSON`,
-   `FIRECRAWL_API_KEY` or `FIRECRAWL_ACCOUNTS_JSON`, `HUGGINGFACE_API_KEY` or
-   `HUGGINGFACE_ACCOUNTS_JSON`, `EXPO_ACCESS_TOKEN`) via
+   `LLM_AGENT_MODEL` — done; and optionally `SUPABASE_URL`/`SUPABASE_SERVICE_KEY`
+   or `SUPABASE_ACCOUNTS_JSON` — not yet set, `KAGGLE_TOKEN` or `KAGGLE_USERNAME`/`KAGGLE_KEY`
+   or `KAGGLE_ACCOUNTS_JSON` — done, `E2B_API_KEY` or `E2B_ACCOUNTS_JSON` — done,
+   `FIRECRAWL_API_KEY` or `FIRECRAWL_ACCOUNTS_JSON` — done, `HUGGINGFACE_API_KEY` or
+   `HUGGINGFACE_ACCOUNTS_JSON` — done, `EXPO_ACCESS_TOKEN` — not yet set) via
    `wrangler pages secret put <NAME>` — see
    [Provider Integrations & Credential Setup](#provider-integrations--credential-setup)
-   above for exactly what each one should contain.
-5. `npx wrangler d1 migrations apply webapp-production`.
-6. `npm run build && npx wrangler pages deploy dist --project-name <name>`.
+   above for exactly what each one should contain. **Secrets only take effect
+   on the next deploy** — redeploy after setting new/changed secrets.
+5. `npx wrangler d1 migrations apply webapp-production --remote` (done — all
+   3 migrations applied to the live production D1 database).
+6. `npm run build && npx wrangler pages deploy dist --project-name webapp`.
+7. **Cloudflare Zero Trust bypass** (only needed if your account has an
+   account-wide Access policy like this one did): create a `self_hosted`
+   Access Application for your `*.pages.dev` domain with a single `bypass`
+   policy for `everyone`, or your API will redirect to a Cloudflare Access
+   login page instead of serving responses. See the Status section above.
 
 ## Tech Stack
 

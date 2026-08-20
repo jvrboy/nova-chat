@@ -10,7 +10,7 @@
     {
       "binding": "DB",
       "database_name": "webapp-production",
-      "database_id": "REPLACE_WITH_D1_DATABASE_ID"
+      "database_id": "fe653993-7939-4d6b-8816-e5e8093998e0"
     }
   ],
   "r2_buckets": [
@@ -26,9 +26,22 @@
   // embeddings.ts already falls back to pseudoEmbed() when env.AI is undefined,
   // so local dev works correctly with this removed. RE-ADD before real deployment:
   // "ai": { "binding": "AI" },
-  "triggers": {
-    "crons": ["*/5 * * * *"]
-  }
+  //
+  // NOTE: Cloudflare Pages projects do NOT support the top-level "triggers"/
+  // cron field in wrangler.jsonc (Pages config validation rejects it with
+  // 'Configuration file for Pages projects does not support "triggers"').
+  // The in-app `runDueScheduledWorkflows()` cron-driven scheduler
+  // (src/lib/workflowEngine.ts) is implemented and works when INVOKED, but
+  // is NOT automatically triggered every 5 minutes on Cloudflare Pages the
+  // way it would be on a plain Worker. To restore real cron-driven
+  // scheduling in production, either:
+  //   (a) migrate this project from Pages to a plain Worker (supports
+  //       [triggers] crons natively), or
+  //   (b) call POST /api/workflows/:id/run yourself on a schedule (e.g. an
+  //       external cron service hitting the deployed URL), or
+  //   (c) use Cloudflare's dashboard-configured Cron Triggers for Pages
+  //       (Pages project settings -> Functions -> Cron Triggers, currently
+  //       only settable via the dashboard/API, not wrangler.jsonc).
   // "vars": {
   //   "LLM_MODEL": "gpt-5-mini"
   // }
