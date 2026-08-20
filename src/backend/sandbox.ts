@@ -4,11 +4,16 @@ export type SandboxRun = { id: string; status: 'completed' | 'rejected'; output:
 
 const operations: SandboxOperation[] = ['echo', 'uppercase', 'summarize', 'redact', 'word-count', 'risk-score'];
 const limits = { maxInputLength: 4_000, blockedPatterns: [/\b(delete|drop|truncate|shutdown|curl|fetch)\b/i, /https?:\/\//i, /[;&|`$<>]/] };
+export type SandboxCommand = { op: 'echo' | 'uppercase' | 'summarize'; input: string };
+export type SandboxRun = { id: string; status: 'completed' | 'rejected'; output: string; violations: string[]; executedAt: string };
+
+const limits = { maxInputLength: 4_000, blockedPatterns: [/\b(delete|drop|truncate|shutdown|curl|fetch|http):?\b/i, /[;&|`$<>]/] };
 const id = () => `sandbox-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
 export function inspectSandboxCommand(command: SandboxCommand) {
   const violations: string[] = [];
   if (!operations.includes(command.op)) violations.push('Unsupported sandbox operation.');
+  if (!['echo', 'uppercase', 'summarize'].includes(command.op)) violations.push('Unsupported sandbox operation.');
   if (command.input.length > limits.maxInputLength) violations.push(`Input exceeds ${limits.maxInputLength} characters.`);
   if (limits.blockedPatterns.some((pattern) => pattern.test(command.input))) violations.push('Input contains blocked command or shell metacharacter patterns.');
   return violations;
@@ -30,5 +35,6 @@ export async function runSandboxCommand(command: SandboxCommand): Promise<Sandbo
           : command.op === 'risk-score'
             ? JSON.stringify({ score: Math.min(100, words.filter((word) => /secret|token|password|credential|urgent|blocked/i.test(word)).length * 20), signals: words.filter((word) => /secret|token|password|credential|urgent|blocked/i.test(word)).slice(0, 10) }, null, 2)
             : normalized;
+  const output = command.op === 'uppercase' ? normalized.toUpperCase() : command.op === 'summarize' ? normalized.split(/\s+/).slice(0, 40).join(' ') : normalized;
   return { id: id(), status: 'completed', output, violations, executedAt: new Date().toISOString() };
 }
