@@ -8,6 +8,8 @@ import { kaggleSearchDatasets, kaggleGetDatasetInfo, kaggleDownloadDataset, kagg
 import { e2bRunCode, e2bStatus } from './e2b'
 import { supabaseSelect, supabaseUpsert, supabaseDelete, supabaseStatus } from './supabase'
 import { extractFirstMatchingFile } from './zip'
+import { firecrawlScrape, firecrawlSearch, firecrawlMap, firecrawlStatus } from './firecrawl'
+import { huggingfaceChat, huggingfaceEmbed, huggingfaceStatus } from './huggingface'
 
 export type ToolRisk = 'safe' | 'review' | 'sensitive'
 export type ToolContext = { env: Bindings; workspaceId: string; actorId: string; db?: D1Database }
@@ -818,12 +820,100 @@ const supabaseDeleteTool: ToolDefinition = {
   },
 }
 
+// ---- Firecrawl tools (real web scraping/search/mapping) --------------------
+
+const webScrapeTool: ToolDefinition = {
+  id: 'web-scrape',
+  name: 'Web Page Scrape (Firecrawl)',
+  description: 'Fetches a single URL and returns clean, readable markdown of its real rendered content (handles JS-rendered pages and anti-bot-protected sites far better than a raw web-fetch). Use this instead of web-fetch when you need the actual article/page content, not just raw HTML.',
+  category: 'Data',
+  risk: 'safe',
+  parameters: { type: 'object', properties: { url: { type: 'string' }, onlyMainContent: { type: 'boolean' } }, required: ['url'] },
+  run: async (input, ctx) => {
+    const url = requireString(input, 'url')
+    return await firecrawlScrape(ctx.env, ctx.db, url, { onlyMainContent: input.onlyMainContent !== false })
+  },
+}
+
+const webSearchProTool: ToolDefinition = {
+  id: 'web-search-pro',
+  name: 'Web Search (Firecrawl, full content)',
+  description: 'Full-text web search that can optionally return full scraped markdown content per result (not just a snippet), unlike web-search-summary. Use scrapeContent:true when you need the actual page text to reason over, not just titles/links.',
+  category: 'Data',
+  risk: 'safe',
+  parameters: {
+    type: 'object',
+    properties: { query: { type: 'string' }, limit: { type: 'number' }, scrapeContent: { type: 'boolean' } },
+    required: ['query'],
+  },
+  run: async (input, ctx) => {
+    const query = requireString(input, 'query')
+    const hits = await firecrawlSearch(ctx.env, ctx.db, query, {
+      limit: Number(input.limit ?? 5),
+      scrapeContent: Boolean(input.scrapeContent),
+    })
+    return { query, count: hits.length, results: hits }
+  },
+}
+
+const webSiteMapTool: ToolDefinition = {
+  id: 'web-site-map',
+  name: 'Website URL Map (Firecrawl)',
+  description: 'Discovers a site\'s full URL tree quickly (link discovery only, no content fetch) — use this first to decide which specific pages of a large site are worth scraping individually with web-scrape.',
+  category: 'Data',
+  risk: 'safe',
+  parameters: { type: 'object', properties: { url: { type: 'string' }, search: { type: 'string' }, limit: { type: 'number' } }, required: ['url'] },
+  run: async (input, ctx) => {
+    const url = requireString(input, 'url')
+    const result = await firecrawlMap(ctx.env, ctx.db, url, { search: input.search as string | undefined, limit: Number(input.limit ?? 100) })
+    return { url, count: result.urls.length, urls: result.urls }
+  },
+}
+
+// ---- Hugging Face tools (open-model text generation + embeddings) --------
+
+const hfGenerateTextTool: ToolDefinition = {
+  id: 'hf-generate-text',
+  name: 'Open-Model Text Generation (Hugging Face)',
+  description: 'Generates text using an open-weights model via Hugging Face Inference Providers, routed to whichever backend serves it fastest. Use as an alternative/fallback LLM to the primary chat model, e.g. for cost, license, or model-diversity reasons — pass a specific model id to pick a particular open model.',
+  category: 'Cognition',
+  risk: 'safe',
+  parameters: {
+    type: 'object',
+    properties: { prompt: { type: 'string' }, model: { type: 'string' }, temperature: { type: 'number' }, maxTokens: { type: 'number' } },
+    required: ['prompt'],
+  },
+  run: async (input, ctx) => {
+    const prompt = requireString(input, 'prompt')
+    const result = await huggingfaceChat(ctx.env, ctx.db, [{ role: 'user', content: prompt }], {
+      model: input.model as string | undefined,
+      temperature: input.temperature ? Number(input.temperature) : undefined,
+      maxTokens: input.maxTokens ? Number(input.maxTokens) : undefined,
+    })
+    return result
+  },
+}
+
+const hfEmbedTextTool: ToolDefinition = {
+  id: 'hf-embed-text',
+  name: 'Text Embedding (Hugging Face)',
+  description: 'Computes a dense embedding vector for a piece of text via Hugging Face feature-extraction, as a higher-quality alternative to the local pseudo-embedding fallback used when Workers AI is unavailable. Mainly used internally by embeddings.ts, exposed here for direct inspection/testing.',
+  category: 'Data',
+  risk: 'safe',
+  parameters: { type: 'object', properties: { text: { type: 'string' }, model: { type: 'string' } }, required: ['text'] },
+  run: async (input, ctx) => {
+    const text = requireString(input, 'text')
+    const vector = await huggingfaceEmbed(ctx.env, ctx.db, text, { model: input.model as string | undefined })
+    return { dimensions: vector.length, vector: vector.slice(0, 16), truncatedPreview: vector.length > 16 }
+  },
+}
+
 // ---- Provider/ops introspection ---------------------------------------
 
 const providerStatusTool: ToolDefinition = {
   id: 'provider-status',
   name: 'Third-Party Provider Status',
-  description: 'Reports which external providers (Supabase, Kaggle, E2B) are configured and how many pooled accounts each has, without ever exposing key material. Useful for diagnosing "why did tool X fail" before assuming it is a bug.',
+  description: 'Reports which external providers (Supabase, Kaggle, E2B, Firecrawl, Hugging Face) are configured and how many pooled accounts each has, without ever exposing key material. Useful for diagnosing "why did tool X fail" before assuming it is a bug.',
   category: 'Ops',
   risk: 'safe',
   parameters: { type: 'object', properties: {} },
@@ -832,6 +922,8 @@ const providerStatusTool: ToolDefinition = {
       supabase: supabaseStatus(ctx.env),
       kaggle: kaggleStatus(ctx.env),
       e2b: e2bStatus(ctx.env),
+      firecrawl: firecrawlStatus(ctx.env),
+      huggingface: huggingfaceStatus(ctx.env),
     }
   },
 }
@@ -874,6 +966,11 @@ export const toolRegistry: ToolDefinition[] = [
   supabaseQueryTool,
   supabaseWriteTool,
   supabaseDeleteTool,
+  webScrapeTool,
+  webSearchProTool,
+  webSiteMapTool,
+  hfGenerateTextTool,
+  hfEmbedTextTool,
   providerStatusTool,
 ]
 

@@ -47,9 +47,12 @@
   //   or add to server/.dev.vars             (local dev, gitignored)
   //
   // Kaggle (https://www.kaggle.com/settings -> API -> "Create New Token"):
-  //   KAGGLE_USERNAME + KAGGLE_KEY        single account, OR
-  //   KAGGLE_ACCOUNTS_JSON                 pool of many accounts, e.g.:
-  //     [{"username":"acct1","key":"xxxx"},{"username":"acct2","key":"yyyy"}, ...]
+  //   KAGGLE_TOKEN                          single account, NEW "KGAT_..." bearer
+  //                                          token (recommended format going forward), OR
+  //   KAGGLE_USERNAME + KAGGLE_KEY          single account, legacy username+key pair, OR
+  //   KAGGLE_ACCOUNTS_JSON                   pool of many accounts, mixing both formats
+  //                                          is fine, e.g.:
+  //     [{"token":"KGAT_xxxx","label":"acct1"},{"username":"acct2","key":"yyyy"}, ...]
   //
   // E2B (https://e2b.dev/dashboard -> API Keys):
   //   E2B_API_KEY                          single account, OR
@@ -62,6 +65,21 @@
   //     [{"url":"https://xxx.supabase.co","serviceKey":"eyJ...","label":"acct1"}, ...]
   //   Workspaces are pinned to one project by a hash of workspaceId (sticky
   //   sharding) so a workspace's rows/embeddings always land in — and are
-  //   read back from — the same project. Kaggle/E2B pools use plain
-  //   round-robin instead since those calls are stateless.
+  //   read back from — the same project. Kaggle/E2B/Firecrawl/Hugging Face
+  //   pools use plain round-robin instead since those calls are stateless.
+  //
+  // Firecrawl (https://www.firecrawl.dev/app/api-keys) — web scrape/search/map:
+  //   FIRECRAWL_API_KEY                    single account, OR
+  //   FIRECRAWL_ACCOUNTS_JSON               pool of many accounts, e.g.:
+  //     [{"apiKey":"fc-xxxx","label":"acct1"},{"apiKey":"fc-yyyy","label":"acct2"}, ...]
+  //
+  // Hugging Face (https://huggingface.co/settings/tokens — fine-grained token
+  // with "Make calls to Inference Providers" permission) — open-model text
+  // generation + embeddings:
+  //   HUGGINGFACE_API_KEY                  single account, OR
+  //   HUGGINGFACE_ACCOUNTS_JSON             pool of many accounts, e.g.:
+  //     [{"token":"hf_xxxx","label":"acct1"},{"token":"hf_yyyy","label":"acct2"}, ...]
+  //
+  // Cloudflare (for BYOK deploys only — set via the Deploy panel, not here):
+  //   CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_API_TOKEN
 }

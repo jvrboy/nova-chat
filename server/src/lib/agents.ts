@@ -46,11 +46,11 @@ export const agentRegistry: AgentDefinition[] = [
   {
     key: 'research',
     name: 'Research Agent',
-    description: 'Fetches and synthesizes information from public web pages.',
+    description: 'Fetches and synthesizes information from public web pages, now with real Firecrawl-backed scraping/search/site-mapping that handles JS-rendered and anti-bot-protected pages far better than a raw fetch.',
     systemPrompt:
-      'You are Nova\'s Research Agent. You can fetch public HTTPS pages with web-fetch or web-search-summary and summarize what you find. Always cite the URL(s) you used. If a fetch fails, say so plainly rather than inventing content. Keep the final answer under 300 words.',
-    allowedToolIds: ['web-fetch', 'web-search-summary', 'summarize', 'chunk-text', 'entity-extract'],
-    maxSteps: 6,
+      'You are Nova\'s Research Agent. Prefer web-scrape (Firecrawl) over web-fetch for real page content — it renders JS and strips boilerplate into clean markdown, which raw web-fetch cannot do. Use web-search-pro when you need full page content per search result, or the lighter web-search-summary when snippets suffice. Use web-site-map first on a large site to find the right specific pages before scraping each one individually. Always cite the URL(s) you used. If a fetch fails, say so plainly rather than inventing content. Keep the final answer under 300 words.',
+    allowedToolIds: ['web-fetch', 'web-search-summary', 'web-scrape', 'web-search-pro', 'web-site-map', 'summarize', 'chunk-text', 'entity-extract'],
+    maxSteps: 8,
   },
   {
     key: 'coder',
@@ -75,10 +75,10 @@ export const agentRegistry: AgentDefinition[] = [
   {
     key: 'writer',
     name: 'Writer Agent',
-    description: 'Drafts and refines written content: summaries, translations, tone adjustments.',
+    description: 'Drafts and refines written content: summaries, translations, tone adjustments. Can optionally generate a draft via an open-weights model (Hugging Face) for style diversity.',
     systemPrompt:
-      'You are Nova\'s Writer Agent. You draft, summarize, translate, and refine written content clearly and concisely. Use the summarize/translate/sentiment tools when they would improve accuracy, otherwise just write directly.',
-    allowedToolIds: ['summarize', 'translate', 'sentiment', 'word-count'],
+      'You are Nova\'s Writer Agent. You draft, summarize, translate, and refine written content clearly and concisely. Use the summarize/translate/sentiment tools when they would improve accuracy, otherwise just write directly. hf-generate-text is available if you specifically want a second opinion/draft from a different (open-weights) model to compare against your own writing.',
+    allowedToolIds: ['summarize', 'translate', 'sentiment', 'word-count', 'hf-generate-text'],
     maxSteps: 5,
   },
   {
@@ -102,9 +102,9 @@ export const agentRegistry: AgentDefinition[] = [
   {
     key: 'integrations',
     name: 'Integrations Agent',
-    description: 'Manages data stored in the user\'s own connected third-party accounts (Supabase project tables) and reports on which providers are configured.',
+    description: 'Manages data stored in the user\'s own connected third-party accounts (Supabase project tables) and reports on which providers (Supabase, Kaggle, E2B, Firecrawl, Hugging Face) are configured.',
     systemPrompt:
-      'You are Nova\'s Integrations Agent. You read and write data in the user\'s own Supabase project tables via supabase-query/supabase-write/supabase-delete (PostgREST — respects whatever tables and RLS policies already exist there; you cannot create tables). Use provider-status first if you are unsure whether Supabase/Kaggle/E2B are configured at all, so you can give an accurate answer instead of guessing. supabase-write and supabase-delete are sensitive and require approval — always explain exactly what will change before those run.',
+      'You are Nova\'s Integrations Agent. You read and write data in the user\'s own Supabase project tables via supabase-query/supabase-write/supabase-delete (PostgREST — respects whatever tables and RLS policies already exist there; you cannot create tables). Use provider-status first if you are unsure whether Supabase/Kaggle/E2B/Firecrawl/Hugging Face are configured at all, so you can give an accurate answer instead of guessing. supabase-write and supabase-delete are sensitive and require approval — always explain exactly what will change before those run.',
     allowedToolIds: ['supabase-query', 'supabase-write', 'supabase-delete', 'provider-status', 'json-format'],
     maxSteps: 6,
   },

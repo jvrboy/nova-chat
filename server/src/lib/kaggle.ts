@@ -1,37 +1,52 @@
 // Kaggle Public API client (REST, no SDK dependency — Kaggle's official client
 // is a Python CLI, so we talk to the documented HTTPS endpoints directly).
 //
-// Auth: HTTP Basic, base64("username:key"). Get a token at
-// https://www.kaggle.com/settings -> API -> "Create New Token", which downloads
-// a kaggle.json file shaped { "username": "...", "key": "..." }.
+// Auth: Kaggle supports TWO credential formats, both accepted by the same
+// `https://www.kaggle.com/api/v1/*` REST surface used here:
+//   1. NEW-style bearer token ("KGAT_..." — Kaggle Granted Access Token,
+//      created at kaggle.com/settings -> API -> "Create New Token"):
+//        Authorization: Bearer KGAT_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+//      This is the recommended format going forward and is a single string,
+//      no username needed. Verified empirically against the live API.
+//   2. LEGACY username+key pair (downloaded as kaggle.json, "Legacy API
+//      Credentials" section of the same settings page):
+//        Authorization: Basic base64("username:key")
 //
 // Supports pooling across multiple Kaggle accounts (see credentialPool.ts) so
 // dataset-heavy workloads spread across up to N accounts' rate limits instead
-// of exhausting a single one.
+// of exhausting a single one. A pool entry can be EITHER a bare token string
+// or a { username, key } pair — see poolFromEnv below.
 import type { Bindings } from './types'
 import { parsePool, pickPoolEntry, poolSummary } from './credentialPool'
 
 const KAGGLE_BASE = 'https://www.kaggle.com/api/v1'
 
-export type KaggleAccount = { username: string; key: string; label?: string }
+export type KaggleAccount = { token?: string; username?: string; key?: string; label?: string }
 
 function poolFromEnv(env: Bindings): KaggleAccount[] {
-  const pooled = parsePool(env.KAGGLE_ACCOUNTS_JSON).filter((e) => e.username && e.key) as unknown as KaggleAccount[]
+  // KAGGLE_ACCOUNTS_JSON: array of either { token, label } (new bearer tokens)
+  // or { username, key, label } (legacy pair). Mixed pools are fine.
+  const pooled = parsePool(env.KAGGLE_ACCOUNTS_JSON)
+    .map((e) => ({ token: e.token, username: e.username, key: e.key, label: e.label }))
+    .filter((e) => e.token || (e.username && e.key)) as KaggleAccount[]
   if (pooled.length) return pooled
-  // Single-account fallback via plain KAGGLE_USERNAME / KAGGLE_KEY secrets.
+  // Single-account fallbacks.
+  if (env.KAGGLE_TOKEN) return [{ token: env.KAGGLE_TOKEN }]
   if (env.KAGGLE_USERNAME && env.KAGGLE_KEY) return [{ username: env.KAGGLE_USERNAME, key: env.KAGGLE_KEY }]
   return []
 }
 
 export function kaggleStatus(env: Bindings) {
-  return poolSummary(poolFromEnv(env) as unknown as Record<string, string>[], 'username')
+  return poolSummary(poolFromEnv(env) as unknown as Record<string, string>[], 'label')
 }
 
 async function pickAccount(env: Bindings, db?: D1Database): Promise<KaggleAccount> {
   const accounts = poolFromEnv(env)
   if (!accounts.length) {
     throw new Error(
-      'Kaggle is not configured. Set KAGGLE_USERNAME + KAGGLE_KEY (single account) or KAGGLE_ACCOUNTS_JSON (multi-account pool) as Worker secrets. Get credentials at https://www.kaggle.com/settings -> API -> "Create New Token".'
+      'Kaggle is not configured. Set KAGGLE_TOKEN (new "KGAT_..." bearer token, recommended) or ' +
+        'KAGGLE_USERNAME + KAGGLE_KEY (legacy pair), or KAGGLE_ACCOUNTS_JSON for a multi-account pool, as Worker secrets. ' +
+        'Get credentials at https://www.kaggle.com/settings -> API -> "Create New Token".'
     )
   }
   const picked = await pickPoolEntry(db, 'kaggle', accounts as unknown as Record<string, string>[])
@@ -39,8 +54,8 @@ async function pickAccount(env: Bindings, db?: D1Database): Promise<KaggleAccoun
 }
 
 function authHeader(account: KaggleAccount): string {
-  const creds = btoa(`${account.username}:${account.key}`)
-  return `Basic ${creds}`
+  if (account.token) return `Bearer ${account.token}`
+  return `Basic ${btoa(`${account.username}:${account.key}`)}`
 }
 
 export type KaggleDataset = {
@@ -58,18 +73,20 @@ export type KaggleDataset = {
 }
 
 function normalizeDataset(raw: Record<string, unknown>): KaggleDataset {
+  const derivedRef =
+    raw.ref ?? (raw.ownerRefNullable && raw.titleNullable ? `${raw.ownerRefNullable}/${raw.titleNullable}` : '')
   return {
-    ref: String(raw.ref ?? ''),
+    ref: String(raw.ref ?? derivedRef ?? ''),
     title: String(raw.title ?? raw.titleNullable ?? ''),
-    subtitle: (raw.subtitle as string) || undefined,
-    ownerName: (raw.ownerName as string) || undefined,
-    url: (raw.url as string) || (raw.ref ? `https://www.kaggle.com/datasets/${raw.ref}` : undefined),
-    totalBytes: (raw.totalBytes as number) ?? undefined,
+    subtitle: (raw.subtitle as string) || (raw.subtitleNullable as string) || undefined,
+    ownerName: (raw.ownerName as string) || (raw.ownerNameNullable as string) || (raw.creatorNameNullable as string) || undefined,
+    url: (raw.url as string) || (raw.urlNullable as string) || (raw.ref ? `https://www.kaggle.com/datasets/${raw.ref}` : undefined),
+    totalBytes: (raw.totalBytes as number) ?? (raw.totalBytesNullable as number) ?? undefined,
     lastUpdated: (raw.lastUpdated as string) || undefined,
     downloadCount: (raw.downloadCount as number) ?? undefined,
     voteCount: (raw.voteCount as number) ?? undefined,
-    usabilityRating: (raw.usabilityRating as number) ?? undefined,
-    licenseName: (raw.licenseName as string) || undefined,
+    usabilityRating: (raw.usabilityRating as number) ?? (raw.usabilityRatingNullable as number) ?? undefined,
+    licenseName: (raw.licenseName as string) || (raw.licenseNameNullable as string) || undefined,
   }
 }
 
@@ -108,7 +125,7 @@ export async function kaggleGetDatasetInfo(
   })
   if (!response.ok) throw new Error(`Kaggle dataset lookup failed: ${response.status} ${await response.text().catch(() => '')}`)
   const raw = (await response.json()) as Record<string, unknown>
-  return { ...normalizeDataset(raw), description: (raw.description as string) || undefined }
+  return { ...normalizeDataset(raw), description: (raw.description as string) || (raw.descriptionNullable as string) || undefined }
 }
 
 /** Downloads a dataset (as a zip, Kaggle always zips dataset downloads) and

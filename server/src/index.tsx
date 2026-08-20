@@ -86,7 +86,7 @@ app.get('/', (c) => {
       </a>
       <a href="/api/tools" class="block rounded-lg border border-slate-800 bg-slate-900 p-4 hover:border-sky-500 transition">
         <div class="font-semibold">GET /api/tools</div>
-        <div class="text-sm text-slate-400">List available backend tools (36)</div>
+        <div class="text-sm text-slate-400">List available backend tools (41)</div>
       </a>
       <a href="/api/agents" class="block rounded-lg border border-slate-800 bg-slate-900 p-4 hover:border-sky-500 transition">
         <div class="font-semibold">GET /api/agents</div>

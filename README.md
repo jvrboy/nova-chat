@@ -116,13 +116,15 @@ runners.
 ## Status / What's Implemented vs. Outstanding
 
 **Done this pass:**
-- ✅ Real backend (`/server`) with 36 tools, 10 agents (with delegation),
+- ✅ Real backend (`/server`) with 41 tools, 10 agents (with delegation),
   streaming chat, RAG/vector memory, scheduled workflows, push
   notifications, rate limiting, API-key auth — see `server/README.md`.
 - ✅ Multi-account provider integrations: Kaggle (dataset/kernel search +
-  download), E2B (real sandboxed code execution), and Supabase (generic
-  table CRUD + Storage, sticky-sharded across many projects) — each
-  supports pooling many accounts to spread load. See
+  download, new KGAT bearer-token or legacy username+key), E2B (real
+  sandboxed code execution), Firecrawl (web scrape/search/site-map with
+  clean markdown), Hugging Face (open-model text generation + embeddings),
+  and Supabase (generic table CRUD + Storage, sticky-sharded across many
+  projects) — each supports pooling many accounts to spread load. See
   [server/README.md § Provider Integrations & Credential Setup](server/README.md#provider-integrations--credential-setup)
   for exactly which API keys are needed and how to get them.
 - ✅ Mobile app wired to the backend (streaming chat, push registration,

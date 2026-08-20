@@ -1,21 +1,47 @@
 import type { Bindings } from './types'
 import { newId, nowIso } from './ids'
 import { pickSupabaseProject, supabasePoolFromEnv } from './supabase'
+import { huggingfaceEmbed, usingHuggingFaceForEmbeddings } from './huggingface'
 
 const EMBEDDING_MODEL = '@cf/baai/bge-base-en-v1.5' // 768-dim, fast, good general-purpose embedding on Workers AI
+const EMBEDDING_DIM = 768 // fixed vector width used everywhere below so all three backends are comparable/mixable
+
+/** Zero-pads or truncates a vector to EMBEDDING_DIM. Extra zero components
+ * don't change dot-product-based similarity against same-length vectors, so
+ * this keeps cosineSimilarity() meaningful even when a lower-dim backend
+ * (e.g. HF's 384-dim MiniLM) is mixed with the 768-dim Workers AI backend. */
+function toFixedDim(vector: number[], dim = EMBEDDING_DIM): number[] {
+  if (vector.length === dim) return vector
+  if (vector.length > dim) return vector.slice(0, dim)
+  return [...vector, ...new Array(dim - vector.length).fill(0)]
+}
 
 export type EmbeddingMatch = { ownerId: string; ownerType: 'memory' | 'message'; content: string; score: number }
 
-/** Embeds one or more strings via Cloudflare Workers AI. Falls back to a cheap
- * hashing-based pseudo-embedding if the AI binding isn't available (e.g. very
- * old wrangler config) so RAG degrades gracefully instead of crashing. */
+/** Embeds one or more strings, preferring backends in this order:
+ * 1. Cloudflare Workers AI (@cf/baai/bge-base-en-v1.5, 768-dim) — fastest, no
+ *    external network hop, used when the `AI` binding is present.
+ * 2. Hugging Face Inference Providers (feature-extraction) — used when Workers
+ *    AI isn't bound but at least one HUGGINGFACE_* secret is configured; a
+ *    real neural embedding is still meaningfully better than the hash fallback.
+ * 3. Local deterministic pseudo-embedding (character-trigram hashing) — the
+ *    last resort so RAG stays *functional* (never throws) with zero external
+ *    config at all. */
 export async function embedTexts(env: Bindings, texts: string[]): Promise<number[][]> {
   if (env.AI) {
     const result = await env.AI.run(EMBEDDING_MODEL, { text: texts })
     const data = (result as { data?: number[][] }).data
-    if (data && data.length === texts.length) return data
+    if (data && data.length === texts.length) return data.map((v) => toFixedDim(v))
   }
-  return texts.map((t) => pseudoEmbed(t))
+  if (usingHuggingFaceForEmbeddings(env)) {
+    try {
+      const vectors = await Promise.all(texts.map((t) => huggingfaceEmbed(env, undefined, t)))
+      return vectors.map((v) => toFixedDim(v))
+    } catch {
+      // fall through to the pseudo-embedding below rather than failing RAG entirely
+    }
+  }
+  return texts.map((t) => toFixedDim(pseudoEmbed(t)))
 }
 
 /** Deterministic 64-dim fallback embedding (bag-of-character-ngram hashing).

@@ -3,6 +3,8 @@ import type { AppEnv } from '../lib/types'
 import { supabaseStatus } from '../lib/supabase'
 import { kaggleStatus } from '../lib/kaggle'
 import { e2bStatus } from '../lib/e2b'
+import { firecrawlStatus } from '../lib/firecrawl'
+import { huggingfaceStatus } from '../lib/huggingface'
 
 const observability = new Hono<AppEnv>()
 
@@ -91,6 +93,8 @@ observability.get('/health', async (c) => {
         supabase: supabaseStatus(c.env),
         kaggle: kaggleStatus(c.env),
         e2b: e2bStatus(c.env),
+        firecrawl: firecrawlStatus(c.env),
+        huggingface: huggingfaceStatus(c.env),
       },
     })
   } catch (error) {
@@ -105,6 +109,8 @@ observability.get('/providers', (c) => {
     supabase: supabaseStatus(c.env),
     kaggle: kaggleStatus(c.env),
     e2b: e2bStatus(c.env),
+    firecrawl: firecrawlStatus(c.env),
+    huggingface: huggingfaceStatus(c.env),
   })
 })
 

@@ -14,13 +14,16 @@ export type Bindings = {
   // projects/accounts (see lib/supabase.ts and lib/credentialPool.ts). Takes
   // priority over the single SUPABASE_URL/SUPABASE_SERVICE_KEY pair above.
   SUPABASE_ACCOUNTS_JSON?: string
-  // Optional single-account Kaggle credentials (username + API key from
-  // kaggle.com/settings -> API -> "Create New Token", which downloads a
-  // kaggle.json file). See lib/kaggle.ts.
+  // Optional single-account Kaggle credentials. Prefer KAGGLE_TOKEN (the new
+  // "KGAT_..." bearer token from kaggle.com/settings -> API -> "Create New
+  // Token"); KAGGLE_USERNAME/KAGGLE_KEY is the legacy username+key pair
+  // (kaggle.json, "Legacy API Credentials"). See lib/kaggle.ts.
+  KAGGLE_TOKEN?: string
   KAGGLE_USERNAME?: string
   KAGGLE_KEY?: string
-  // Optional: JSON array of { username, key, label } to pool multiple Kaggle
-  // accounts. Takes priority over the single KAGGLE_USERNAME/KAGGLE_KEY pair.
+  // Optional: JSON array of { token, label } and/or { username, key, label }
+  // to pool multiple Kaggle accounts (mixed auth styles OK). Takes priority
+  // over the single-account fields above.
   KAGGLE_ACCOUNTS_JSON?: string
   // Optional single-account E2B API key (from e2b.dev/dashboard -> API Keys).
   // See lib/e2b.ts.
@@ -28,6 +31,19 @@ export type Bindings = {
   // Optional: JSON array of { apiKey, label } to pool multiple E2B accounts.
   // Takes priority over the single E2B_API_KEY above.
   E2B_ACCOUNTS_JSON?: string
+  // Optional single-account Firecrawl API key (from
+  // firecrawl.dev/app/api-keys). See lib/firecrawl.ts.
+  FIRECRAWL_API_KEY?: string
+  // Optional: JSON array of { apiKey, label } to pool multiple Firecrawl
+  // accounts. Takes priority over the single FIRECRAWL_API_KEY above.
+  FIRECRAWL_ACCOUNTS_JSON?: string
+  // Optional single-account Hugging Face fine-grained token (with "Make
+  // calls to Inference Providers" permission) from
+  // huggingface.co/settings/tokens. See lib/huggingface.ts.
+  HUGGINGFACE_API_KEY?: string
+  // Optional: JSON array of { token, label } to pool multiple Hugging Face
+  // accounts. Takes priority over the single HUGGINGFACE_API_KEY above.
+  HUGGINGFACE_ACCOUNTS_JSON?: string
   // Optional: raises the default per-key rate limit ceiling (see lib/ratelimit.ts).
   RATE_LIMIT_PER_MINUTE?: string
   // Optional: enables Expo push delivery (lib/push.ts falls back to a no-op log without it).

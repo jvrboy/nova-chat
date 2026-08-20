@@ -7,9 +7,11 @@ memory/RAG, scheduled workflows, push notifications, rate limiting, and API
 key auth — all running on Cloudflare's edge (D1 for SQL, R2 for files,
 Workers AI for embeddings).
 
-It also integrates three external provider ecosystems — **Supabase**
+It also integrates five external provider ecosystems — **Supabase**
 (database/vector/storage), **Kaggle** (public dataset search + download),
-and **E2B** (real sandboxed code execution) — each with built-in
+**E2B** (real sandboxed code execution), **Firecrawl** (web scrape / search /
+site-map with clean markdown output), and **Hugging Face** (open-weights
+text generation + embeddings via Inference Providers) — each with built-in
 **multi-account pooling** so you can spread load across many free-tier
 accounts instead of hitting one account's rate limit. See
 [Provider Integrations & Credential Setup](#provider-integrations--credential-setup)
@@ -34,9 +36,9 @@ below for exactly what to configure.
 |---|---|
 | Chat | `POST /api/chats/:id/messages` (single JSON reply) and `POST /api/chats/:id/stream` (Server-Sent Events, real token-by-token streaming) |
 | RAG / memory | `src/lib/embeddings.ts` — Workers AI (`@cf/baai/bge-base-en-v1.5`) embeddings with a local pseudo-embedding fallback, D1-backed vector store, optional Supabase pgvector backend (BYOK) |
-| Tools | 36 tools in `src/lib/tools.ts` (calculator, redact, summarize, translate, sentiment, web-fetch, risk-score, PDF extract, image OCR, semantic recall, entity extraction, classification, diff, regex extract, unit convert, CSV↔JSON, schedule parsing, code generation, web-search summary, and more, **plus** Kaggle dataset search/info/download/kernel-search, real sandboxed `code-execute`, generic Supabase query/write/delete, and `provider-status`) |
+| Tools | 41 tools in `src/lib/tools.ts` (calculator, redact, summarize, translate, sentiment, web-fetch, risk-score, PDF extract, image OCR, semantic recall, entity extraction, classification, diff, regex extract, unit convert, CSV↔JSON, schedule parsing, code generation, web-search summary, and more, **plus** Kaggle dataset search/info/download/kernel-search, real sandboxed `code-execute`, generic Supabase query/write/delete, Firecrawl `web-scrape`/`web-search-pro`/`web-site-map`, Hugging Face `hf-generate-text`/`hf-embed-text`, and `provider-status`) |
 | Agents | 10 agents in `src/lib/agents.ts` (planner, research, coder, ops, writer, analyst, support, guardian, **datasci**, **integrations**) with multi-agent **delegation**: the planner can hand off sub-tasks to research/coder/writer/analyst/datasci/integrations automatically (depth-limited to 3, audited in `agent_delegations`) |
-| Provider integrations | `src/lib/kaggle.ts`, `src/lib/e2b.ts`, `src/lib/supabase.ts`, `src/lib/credentialPool.ts`, `src/lib/zip.ts` — multi-account pooled clients for Kaggle (dataset/kernel search + download + in-Worker ZIP extraction), E2B (real Python/JS/TS/R/bash execution in an isolated sandbox), and Supabase (generic table CRUD + Storage, with sticky per-workspace project sharding across many projects) |
+| Provider integrations | `src/lib/kaggle.ts`, `src/lib/e2b.ts`, `src/lib/supabase.ts`, `src/lib/firecrawl.ts`, `src/lib/huggingface.ts`, `src/lib/credentialPool.ts`, `src/lib/zip.ts` — multi-account pooled clients for Kaggle (dataset/kernel search + download + in-Worker ZIP extraction), E2B (real Python/JS/TS/R/bash execution in an isolated sandbox), Supabase (generic table CRUD + Storage, with sticky per-workspace project sharding across many projects), Firecrawl (scrape/search/map, round-robin pool), and Hugging Face (chat completion + feature-extraction embeddings, round-robin pool) |
 | Pipelines | 4 multi-step pipelines in `src/lib/pipelines.ts` (file-to-task, research-brief, content-review, incident-triage) combining tools, agents, approval gates, and notifications |
 | Workflows | User-defined, and now **schedulable**: `PATCH /api/workflows/:id/schedule` sets a recurring interval; the Cron Trigger (`*/5 * * * *`) calls `runDueScheduledWorkflows()` |
 | Push notifications | `src/lib/push.ts` — Expo push API; fired on job completion/failure, approval decisions, and alert triggers. Register a device with `POST /api/push/register` |
@@ -99,7 +101,7 @@ POST   /api/api-keys                      create API key (returns raw key once)
 
 GET    /api/observability                 basic metrics
 GET    /api/observability/dashboard       aggregated dashboard payload
-GET    /api/observability/providers       Supabase / Kaggle / E2B configuration status (no secrets ever returned, just accountCount + labels)
+GET    /api/observability/providers       Supabase / Kaggle / E2B / Firecrawl / Hugging Face configuration status (no secrets ever returned, just accountCount + labels)
 GET    /api/projects                      projects
 GET    /api/connectors                    connector status
 ```
@@ -116,7 +118,12 @@ GET    /api/connectors                    connector status
 | `supabase-query` | safe | Generic `SELECT`-style read from a table in the workspace's pinned Supabase project |
 | `supabase-write` | **sensitive** | Generic upsert into a table in the workspace's pinned Supabase project |
 | `supabase-delete` | **sensitive** | Generic delete from a table (filters required — refuses an unfiltered delete) |
-| `provider-status` | safe | Reports whether Supabase/Kaggle/E2B are configured and how many accounts are pooled for each, with **zero external calls** — safe to run even with nothing configured |
+| `web-scrape` | safe | Fetches a single URL via Firecrawl and returns clean markdown of its real rendered content (handles JS-rendered/anti-bot pages far better than `web-fetch`) |
+| `web-search-pro` | safe | Full-text web search via Firecrawl, optionally returning full scraped markdown per result (`scrapeContent: true`), not just snippets |
+| `web-site-map` | safe | Discovers a site's full URL tree quickly via Firecrawl, without fetching page content — useful before deciding which pages to `web-scrape` individually |
+| `hf-generate-text` | safe | Generates text using an open-weights model via Hugging Face Inference Providers (default `openai/gpt-oss-120b:fastest`) |
+| `hf-embed-text` | safe | Computes a dense embedding vector for text via Hugging Face feature-extraction (default `sentence-transformers/all-MiniLM-L6-v2`) |
+| `provider-status` | safe | Reports whether Supabase/Kaggle/E2B/Firecrawl/Hugging Face are configured and how many accounts are pooled for each, with **zero external calls** — safe to run even with nothing configured |
 
 `review`/`sensitive` tools go through the existing approval gate
 (`POST /api/tools/:id/run` with no `confirm:true` returns
@@ -141,6 +148,10 @@ Migrations live in `migrations/*.sql` and are applied with:
 npx wrangler d1 migrations apply webapp-production --local   # local dev
 npx wrangler d1 migrations apply webapp-production           # production (after deploy)
 ```
+
+Firecrawl and Hugging Face are stateless HTTP integrations with no dedicated
+tables of their own (unlike Kaggle's R2 zip cache) — they only touch the
+shared `credential_rotation` table for round-robin pooling.
 
 ## Local Development
 
@@ -175,7 +186,7 @@ to production** to get real neural embeddings.
 
 ## Provider Integrations & Credential Setup
 
-All three integrations are **fully optional** — the backend runs fine with
+All five integrations are **fully optional** — the backend runs fine with
 none of them configured; the relevant tools just return a clear "not
 configured" error (see `provider-status` / `/api/observability/providers`
 to check current state at any time, without needing to read logs or code).
@@ -197,11 +208,12 @@ to check current state at any time, without needing to read logs or code).
                                        │ outbound fetch() from Worker code
                                        │ (never from the mobile app directly —
                                        │  keys never reach the client)
-              ┌────────────────────────┼────────────────────────┐
-              ▼                        ▼                        ▼
-     Supabase (×10 projects)    Kaggle (×10 accounts)     E2B (×5 accounts)
-     PostgREST + Storage API    api/v1 REST (Basic auth)  api.e2b.app + envd
-     STICKY per-workspace pin   round-robin pool           round-robin pool
+              ┌───────────┬────────────┼────────────┬───────────┐
+              ▼           ▼            ▼            ▼           ▼
+     Supabase (×10)  Kaggle (×10)   E2B (×7)   Firecrawl (×10) HF (×3)
+     PostgREST+Store  api/v1 REST   api.e2b.app  api/v2 REST   router.hf.co
+     STICKY pin       Bearer/Basic  + envd       Bearer        Bearer
+     round-robin: Kaggle, E2B, Firecrawl, Hugging Face — Supabase is sticky
 ```
 
 - The **Worker is the only thing that ever talks to these services.** The
@@ -222,9 +234,10 @@ to check current state at any time, without needing to read logs or code).
   would scatter one workspace's data across 10 different databases and
   make reads fail to find it. Round-robin is fine for stateless calls;
   sharded data needs a stable, deterministic assignment.
-- Every client (`kaggle.ts`, `e2b.ts`, `supabase.ts`) accepts **either** a
-  single flat account (two secrets) **or** a `*_ACCOUNTS_JSON` array (your
-  full pool) — set whichever matches how many accounts you're supplying.
+- Every client (`kaggle.ts`, `e2b.ts`, `supabase.ts`, `firecrawl.ts`,
+  `huggingface.ts`) accepts **either** a single flat account (one or two
+  secrets) **or** a `*_ACCOUNTS_JSON` array (your full pool) — set whichever
+  matches how many accounts you're supplying.
 
 ### What you need to give me / set yourself
 
@@ -233,36 +246,74 @@ Set them locally in `server/.dev.vars` (already gitignored) for dev/testing
 in this sandbox, and in production with `npx wrangler pages secret put
 <NAME>` (interactive prompt, value never touches shell history or git).
 
-**1. Kaggle — you said 10 accounts.** For each account:
+**1. Kaggle — 10 accounts (KGAT bearer tokens).** Kaggle now supports a
+   simpler single-token format ("Kaggle Granted Access Token") in addition
+   to the older username+key pair; both hit the same REST API and both work
+   in the same pool.
    1. Log in to that Kaggle account → https://www.kaggle.com/settings →
-      **API** section → **"Create New Token"** → downloads a `kaggle.json`
-      file shaped `{"username": "...", "key": "..."}`.
+      **API** section → **"Create New Token"** → gives you a token shaped
+      `KGAT_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx` (recommended — this is what
+      you gave me for all 10 accounts). The older flow (download
+      `kaggle.json`, shaped `{"username": "...", "key": "..."}`) still works
+      too, and can be mixed into the same pool.
    2. Combine all 10 into **one** secret, `KAGGLE_ACCOUNTS_JSON`:
       ```json
       [
-        {"username":"acct1","key":"xxxxxxxxxxxxxxxx"},
-        {"username":"acct2","key":"xxxxxxxxxxxxxxxx"},
+        {"token":"KGAT_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx","label":"acct1"},
+        {"token":"KGAT_yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy","label":"acct2"},
         ... (all 10)
       ]
       ```
-   (If you only ever want to use 1 account, `KAGGLE_USERNAME` +
-   `KAGGLE_KEY` as two plain secrets also works — no JSON needed. The pool
-   JSON form is what you want for all 10.)
+   (If you only ever want to use 1 account, `KAGGLE_TOKEN` as a single plain
+   secret also works — no JSON needed. `KAGGLE_USERNAME` + `KAGGLE_KEY` is
+   the equivalent single-account fallback for the legacy pair. The pool JSON
+   form above is what you want for all 10.)
 
-**2. E2B — you said 5 accounts.** For each account:
+**2. E2B — 7 accounts.** For each account:
    1. Log in to that E2B account → https://e2b.dev/dashboard → **API Keys**
       → create a key (looks like `e2b_xxxxxxxxxxxxxxxxxxxxxxxx`).
-   2. Combine all 5 into one secret, `E2B_ACCOUNTS_JSON`:
+   2. Combine all 7 into one secret, `E2B_ACCOUNTS_JSON`:
       ```json
       [
         {"apiKey":"e2b_xxxxxxxxxxxxxxxxxxxxxxxx","label":"acct1"},
         {"apiKey":"e2b_yyyyyyyyyyyyyyyyyyyyyyyy","label":"acct2"},
-        ... (all 5)
+        ... (all 7)
       ]
       ```
    (Single account: `E2B_API_KEY` as one plain secret.)
 
-**3. Supabase — you said 10 accounts/projects.** For each project (create
+**3. Firecrawl — 10 accounts.** For each account:
+   1. Log in → https://www.firecrawl.dev/app/api-keys → create/copy a key
+      (looks like `fc-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`).
+   2. Combine all 10 into one secret, `FIRECRAWL_ACCOUNTS_JSON`:
+      ```json
+      [
+        {"apiKey":"fc-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx","label":"acct1"},
+        {"apiKey":"fc-yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy","label":"acct2"},
+        ... (all 10)
+      ]
+      ```
+   (Single account: `FIRECRAWL_API_KEY` as one plain secret.) Note: one of
+   the 10 keys provided returned "insufficient credits" on live testing —
+   auth is valid, but that specific account has no Firecrawl credits left.
+   The pool will simply be less likely to round-robin onto that account's
+   *successful* runs until it's topped up; it won't break the others.
+
+**4. Hugging Face — 3 accounts.** For each account:
+   1. Log in → https://huggingface.co/settings/tokens → create a
+      **fine-grained** token with the **"Make calls to Inference Providers"**
+      permission checked (looks like `hf_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`).
+   2. Combine all 3 into one secret, `HUGGINGFACE_ACCOUNTS_JSON`:
+      ```json
+      [
+        {"token":"hf_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx","label":"acct1"},
+        {"token":"hf_yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy","label":"acct2"},
+        {"token":"hf_zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz","label":"acct3"}
+      ]
+      ```
+   (Single account: `HUGGINGFACE_API_KEY` as one plain secret.)
+
+**5. Supabase — you said 10 accounts/projects.** For each project (create
    one new project per Supabase account if you haven't already):
    1. https://app.supabase.com → open the project → **Project Settings** →
       **API** → copy the **Project URL** and the **`service_role` secret
@@ -304,7 +355,7 @@ in this sandbox, and in production with `npx wrangler pages secret put
    (Single project: `SUPABASE_URL` + `SUPABASE_SERVICE_KEY` as two plain
    secrets, same as before — this still works unchanged.)
 
-**4. Cloudflare — you said 1 account (this is the deploy target, not a
+**6. Cloudflare — 1 account (this is the deploy target, not a
    pooled integration).** No extra JSON needed. You just need:
    - A Cloudflare API token with **Pages: Edit** + **D1: Edit** + **R2: Edit**
      permissions (create at
@@ -313,13 +364,21 @@ in this sandbox, and in production with `npx wrangler pages secret put
      which handles this for you).
    - This is used for `wrangler pages deploy`, `wrangler d1 migrations
      apply`, etc. — see the Deployment section below.
+   - ⚠️ The Cloudflare account provided already hosts an unrelated existing
+     project ("flyer-arcade": its own D1 database, Pages project, and R2
+     bucket). Any new resources created for this project use the
+     `webapp`/`webapp-production` naming from `wrangler.jsonc` and will not
+     collide with it, but double-check resource names before running any
+     destructive `wrangler` command against this account.
 
 ### Setting the secrets
 
 Local dev (`server/.dev.vars`, gitignored):
 ```
-KAGGLE_ACCOUNTS_JSON=[{"username":"acct1","key":"..."}, ...]
+KAGGLE_ACCOUNTS_JSON=[{"token":"KGAT_...","label":"acct1"}, ...]
 E2B_ACCOUNTS_JSON=[{"apiKey":"e2b_...","label":"acct1"}, ...]
+FIRECRAWL_ACCOUNTS_JSON=[{"apiKey":"fc-...","label":"acct1"}, ...]
+HUGGINGFACE_ACCOUNTS_JSON=[{"token":"hf_...","label":"acct1"}, ...]
 SUPABASE_ACCOUNTS_JSON=[{"url":"https://...supabase.co","serviceKey":"...","label":"acct1"}, ...]
 ```
 
@@ -328,6 +387,8 @@ when prompted, nothing is echoed or logged:
 ```bash
 npx wrangler pages secret put KAGGLE_ACCOUNTS_JSON --project-name <name>
 npx wrangler pages secret put E2B_ACCOUNTS_JSON --project-name <name>
+npx wrangler pages secret put FIRECRAWL_ACCOUNTS_JSON --project-name <name>
+npx wrangler pages secret put HUGGINGFACE_ACCOUNTS_JSON --project-name <name>
 npx wrangler pages secret put SUPABASE_ACCOUNTS_JSON --project-name <name>
 ```
 
@@ -349,11 +410,15 @@ only, **secret values are never echoed back by any endpoint.**
 - ✅ Rate limiting (fixed-window, D1-backed)
 - ✅ API-key bearer auth with scoped keys
 - ✅ PDF extraction + image OCR tools
-- ✅ Kaggle dataset/kernel search + download + in-Worker ZIP extraction, with multi-account pooling
-- ✅ Real sandboxed code execution via E2B (`code-execute`), with multi-account pooling and a full execution audit trail
+- ✅ Kaggle dataset/kernel search + download + in-Worker ZIP extraction, with multi-account pooling (now also accepts new-style KGAT bearer tokens, verified live against 1 of the 10 provided)
+- ✅ Real sandboxed code execution via E2B (`code-execute`), with multi-account pooling and a full execution audit trail (verified live: full create→execute→kill lifecycle against a real account)
 - ✅ Generic Supabase table CRUD + Storage tools, with multi-project sticky sharding per workspace
+- ✅ Firecrawl web scrape / full-content search / site-map tools (`web-scrape`, `web-search-pro`, `web-site-map`), multi-account pooling (verified live: scrape/search/map all working against a real account; 1 of 10 provided keys is valid but out of credits)
+- ✅ Hugging Face open-model text generation + embeddings (`hf-generate-text`, `hf-embed-text`), multi-account pooling, with embeddings.ts now falling back Workers AI → Hugging Face → local pseudo-embed (verified live: chat completion + feature-extraction both working against real accounts)
 - ✅ `datasci` agent: find-a-dataset → download → parse → actually run analysis code loop
-- ✅ `integrations` agent: manage data in the user's own connected Supabase tables
+- ✅ `integrations` agent: manage data in the user's own connected Supabase/Kaggle/E2B/Firecrawl/Hugging Face integrations
+- ✅ `research` agent: now prefers Firecrawl (`web-scrape`/`web-search-pro`/`web-site-map`) over the plain `web-fetch` for real page content
+- ✅ `writer` agent: can optionally draft via `hf-generate-text` (open-weights model) for a second opinion/style comparison
 
 **Known gaps / next steps:**
 - ⬜ Scopes are defined on API keys but `requireScope()` is not yet applied
@@ -381,9 +446,11 @@ This project is *not* deployed yet by design. When ready:
 3. Re-enable the `ai` binding in `wrangler.jsonc`.
 4. Set production secrets (`OPENAI_API_KEY`, `OPENAI_BASE_URL`, `LLM_MODEL`,
    `LLM_AGENT_MODEL`, and optionally `SUPABASE_URL`/`SUPABASE_SERVICE_KEY`
-   or `SUPABASE_ACCOUNTS_JSON`, `KAGGLE_USERNAME`/`KAGGLE_KEY` or
-   `KAGGLE_ACCOUNTS_JSON`, `E2B_API_KEY` or `E2B_ACCOUNTS_JSON`,
-   `EXPO_ACCESS_TOKEN`) via `wrangler pages secret put <NAME>` — see
+   or `SUPABASE_ACCOUNTS_JSON`, `KAGGLE_TOKEN` or `KAGGLE_USERNAME`/`KAGGLE_KEY`
+   or `KAGGLE_ACCOUNTS_JSON`, `E2B_API_KEY` or `E2B_ACCOUNTS_JSON`,
+   `FIRECRAWL_API_KEY` or `FIRECRAWL_ACCOUNTS_JSON`, `HUGGINGFACE_API_KEY` or
+   `HUGGINGFACE_ACCOUNTS_JSON`, `EXPO_ACCESS_TOKEN`) via
+   `wrangler pages secret put <NAME>` — see
    [Provider Integrations & Credential Setup](#provider-integrations--credential-setup)
    above for exactly what each one should contain.
 5. `npx wrangler d1 migrations apply webapp-production`.
