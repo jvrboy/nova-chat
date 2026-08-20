@@ -4,6 +4,7 @@ import { appendEvent } from '../agent/runtime';
 import { CapabilityStatus, getCapabilityStatus, requestCapability } from '../platform/capabilities';
 import { createTextFile, defaultStorageSettings, exportWorkspace, importPickedFiles, loadWorkspace, NovaFile, recoverWorkspace, removeWorkspaceFile, saveWorkspace, StorageSettings, updateStorageSettings } from '../storage/workspace';
 import type { Tool } from './types';
+import { advancedTools } from '../agent/advancedTools';
 
 export type Message = { id: string; role: 'user' | 'assistant'; text: string; tool?: string };
 export type Chat = { id: string; title: string; messages: Message[]; updatedAt: string };
@@ -16,6 +17,7 @@ const tools: Tool[] = [
   { id: 'summarize', name: 'Summarizer', description: 'Compress notes into useful briefs.', icon: 'scan', category: 'Utilities' },
   { id: 'planner', name: 'Project Planner', description: 'Create milestones, tasks, and next actions.', icon: 'list', category: 'Productivity' },
   ...agentTools.map((tool) => ({ id: tool.id, name: tool.name, description: tool.description, icon: 'sparkles', category: 'Agentic' })),
+  ...advancedTools.map((tool) => ({ id: tool.id, name: tool.name, description: tool.description, icon: 'construct', category: 'Advanced' })),
 ];
 const initialChats: Chat[] = [{ id: 'nova', title: 'New conversation', updatedAt: new Date().toISOString(), messages: [{ id: 'welcome', role: 'assistant', text: 'I’m Nova. I can help you think, build, plan, and remember — entirely on this device.' }] }];
 const initialProjects: Project[] = [{ id: 'mobile', name: 'Mobile workspace', description: 'Your converted Expo command center.', color: '#55d6ff', files: 12 }, { id: 'ideas', name: 'Ideas lab', description: 'Capture and develop new directions.', color: '#a78bfa', files: 7 }];
@@ -32,7 +34,7 @@ export function NovaProvider({ children }: { children: React.ReactNode }) {
   const log = async (event: Omit<AgentEvent, 'id' | 'createdAt'>) => { const next = await appendEvent(event); setEvents((value) => [next, ...value].slice(0, 500)); };
   const createChat = () => setChats((value) => [{ id: `${Date.now()}`, title: 'New conversation', updatedAt: new Date().toISOString(), messages: [] }, ...value]);
   const sendMessage = (text: string) => { const trimmed = text.trim(); if (!trimmed) return; setChats((value) => value.map((chat, index) => index ? chat : ({ ...chat, title: chat.messages.length ? chat.title : trimmed.slice(0, 28), updatedAt: new Date().toISOString(), messages: [...chat.messages, { id: `${Date.now()}`, role: 'user', text: trimmed }, { id: `a${Date.now()}`, role: 'assistant', text: reply(trimmed), tool: toolFor(trimmed) }] }))); };
-  const startRun = (input: string, toolId = 'extract') => { const run = createRun(input); const job = createJob(run.id, toolId, input); run.jobIds = [job.id]; run.status = 'running'; setRuns((value) => [run, ...value]); setJobs((value) => [job, ...value]); void log({ type: 'run.created', runId: run.id, message: `Started ${run.title}` }); if (agentTools.find((tool) => tool.id === toolId)?.risk !== 'safe') { setApprovals((value) => [requestApproval(run, job, agentTools.find((tool) => tool.id === toolId)?.risk ?? 'review'), ...value]); void log({ type: 'approval.requested', runId: run.id, message: `Approval required for ${toolId}` }); } };
+  const startRun = (input: string, toolId = 'extract') => { const run = createRun(input); const job = createJob(run.id, toolId, input); run.jobIds = [job.id]; run.status = 'running'; setRuns((value) => [run, ...value]); setJobs((value) => [job, ...value]); void log({ type: 'run.created', runId: run.id, message: `Started ${run.title}` }); const selectedTool = [...agentTools, ...advancedTools].find((tool) => tool.id === toolId); if (selectedTool?.risk !== 'safe') { setApprovals((value) => [requestApproval(run, job, selectedTool?.risk ?? 'review'), ...value]); void log({ type: 'approval.requested', runId: run.id, message: `Approval required for ${toolId}` }); } };
   const startPipeline = (pipeline: Pipeline, input: string) => startRun(`${pipeline.name}: ${input}`, pipeline.id === 'media' ? 'media-summary' : 'extract');
   const approve = (id: string, approved: boolean) => { setApprovals((value) => value.map((item) => item.id === id ? { ...item, status: approved ? 'approved' : 'rejected', resolvedAt: new Date().toISOString() } : item)); void log({ type: 'approval.resolved', message: `${approved ? 'Approved' : 'Rejected'} approval ${id}` }); };
   const saveMemory = (content: string, tags: string[] = []) => { if (content.trim()) setMemories((value) => [addMemory(content, tags), ...value]); };

@@ -28,7 +28,7 @@
       [
         "expo-notifications",
         {
-          "icon": "./assets/icon-nova-notification.png",
+          "icon": "./assets/icon-nova-notification-v2.png",
           "color": "#55d6ff"
         }
       ],
@@ -49,9 +49,9 @@
     "android": {
       "package": "im.nova.workspace",
       "adaptiveIcon": {
-        "foregroundImage": "./assets/icon-nova-adaptive.png",
+        "foregroundImage": "./assets/icon-nova-foreground.png",
         "backgroundColor": "#07111f",
-        "monochromeImage": "./assets/icon-nova-monochrome.png"
+        "monochromeImage": "./assets/icon-nova-monochrome-v2.png"
       },
       "permissions": [
         "CAMERA",
@@ -65,7 +65,17 @@
     "web": {
       "bundler": "metro",
       "output": "static",
-      "favicon": "./assets/icon-nova-settings.png"
+      "favicon": "./assets/icon-nova-settings-v2.png"
+    },
+    "extra": {
+      "novaIcons": {
+        "primary": "./assets/icon-nova-primary.png",
+        "adaptive": "./assets/icon-nova-foreground.png",
+        "monochrome": "./assets/icon-nova-monochrome-v2.png",
+        "notification": "./assets/icon-nova-notification-v2.png",
+        "settings": "./assets/icon-nova-settings-v2.png",
+        "widget": "./assets/icon-nova-widget.png"
+      }
     }
   }
 }
