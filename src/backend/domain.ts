@@ -1,0 +1,14 @@
+export type EntityId = string;
+export type Timestamp = string;
+export type EntityStatus = 'active' | 'archived' | 'deleted';
+export type ProjectRecord = { id: EntityId; workspaceId: EntityId; name: string; description: string; color: string; status: EntityStatus; ownerId: string; createdAt: Timestamp; updatedAt: Timestamp; tags: string[] };
+export type TaskRecord = { id: EntityId; projectId: EntityId; title: string; description: string; status: 'backlog' | 'todo' | 'in_progress' | 'blocked' | 'done'; priority: 'low' | 'medium' | 'high' | 'urgent'; assigneeId?: string; dueAt?: Timestamp; createdAt: Timestamp; updatedAt: Timestamp; labels: string[] };
+export type WorkflowRecord = { id: EntityId; workspaceId: EntityId; name: string; description: string; trigger: 'manual' | 'schedule' | 'webhook' | 'file_import'; steps: WorkflowStep[]; enabled: boolean; createdAt: Timestamp; updatedAt: Timestamp };
+export type WorkflowStep = { id: EntityId; type: 'tool' | 'condition' | 'approval' | 'notification' | 'export'; name: string; config: Record<string, unknown>; risk: 'safe' | 'review' | 'sensitive' };
+export type ConnectorRecord = { id: EntityId; workspaceId: EntityId; provider: 'webhook' | 'calendar' | 'storage' | 'llm' | 'analytics'; name: string; status: 'connected' | 'paused' | 'error' | 'not_configured'; endpoint?: string; lastCheckedAt?: Timestamp; createdAt: Timestamp; updatedAt: Timestamp };
+export type AuditRecord = { id: EntityId; workspaceId: EntityId; actorId: string; action: string; resource: string; resourceId?: string; risk: 'low' | 'medium' | 'high'; metadata: Record<string, unknown>; createdAt: Timestamp };
+export type UsageMetric = { id: EntityId; workspaceId: EntityId; day: string; runs: number; toolCalls: number; filesIndexed: number; syncs: number; errors: number; latencyMs: number; createdAt: Timestamp };
+export type ApiKeyRecord = { id: EntityId; workspaceId: EntityId; name: string; prefix: string; createdAt: Timestamp; lastUsedAt?: Timestamp; revokedAt?: Timestamp; scopes: string[] };
+export type SearchDocument = { id: EntityId; workspaceId: EntityId; entityType: 'file' | 'memory' | 'project' | 'task' | 'run'; title: string; body: string; tags: string[]; updatedAt: Timestamp };
+export type NotificationRecord = { id: EntityId; workspaceId: EntityId; channel: 'local' | 'push' | 'email' | 'webhook'; title: string; body: string; route?: string; status: 'queued' | 'sent' | 'failed'; createdAt: Timestamp; sentAt?: Timestamp };
+export type ServerSnapshot = { version: number; workspaceId: EntityId; projects: ProjectRecord[]; tasks: TaskRecord[]; workflows: WorkflowRecord[]; connectors: ConnectorRecord[]; audit: AuditRecord[]; usage: UsageMetric[]; notifications: NotificationRecord[]; cursor: string; generatedAt: Timestamp };
