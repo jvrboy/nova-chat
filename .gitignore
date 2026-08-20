@@ -1,3 +1,6 @@
+# Expo local state
+.expo/
+
 # Dependencies
 **/node_modules
 .pnpm-store/
