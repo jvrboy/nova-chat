@@ -2,24 +2,70 @@
   "expo": {
     "name": "Nova",
     "slug": "nova",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "scheme": "nova",
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
+    "icon": "./assets/icon-nova-primary.png",
     "plugins": [
       "expo-router",
-      "expo-font"
+      "expo-font",
+      "expo-audio",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Nova uses your photos when you choose to import media.",
+          "cameraPermission": "Nova uses the camera only when you tap Capture."
+        }
+      ],
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "Nova uses your media library when you choose to index media.",
+          "savePhotosPermission": "Nova saves captured media only when you request it."
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon-nova-notification.png",
+          "color": "#55d6ff"
+        }
+      ],
+      "expo-asset"
     ],
     "experiments": {
       "typedRoutes": true
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "im.nova.workspace",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Nova uses the camera only when you tap Capture.",
+        "NSMicrophoneUsageDescription": "Nova uses the microphone only for audio capture.",
+        "NSPhotoLibraryUsageDescription": "Nova uses your photos when you choose to import media."
+      }
     },
     "android": {
+      "package": "im.nova.workspace",
       "adaptiveIcon": {
-        "backgroundColor": "#07111f"
-      }
+        "foregroundImage": "./assets/icon-nova-adaptive.png",
+        "backgroundColor": "#07111f",
+        "monochromeImage": "./assets/icon-nova-monochrome.png"
+      },
+      "permissions": [
+        "CAMERA",
+        "RECORD_AUDIO",
+        "POST_NOTIFICATIONS",
+        "READ_MEDIA_IMAGES",
+        "READ_MEDIA_VIDEO",
+        "READ_MEDIA_AUDIO"
+      ]
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "static",
+      "favicon": "./assets/icon-nova-settings.png"
     }
   }
 }
