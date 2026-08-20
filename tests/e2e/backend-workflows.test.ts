@@ -89,3 +89,27 @@ describe('Nova realtime client fallback', () => {
     client.stop();
   });
 });
+
+
+describe('Nova multi-region replication and failover', () => {
+  it('replicates ordered worker mutations and reports standby lag', async () => {
+    const { appendReplicationEntry, loadReplicationState, replicatePending } = await import('../../src/backend/regions');
+    await appendReplicationEntry('us-east-1', { id: 'mutation-1', kind: 'job', payload: { toolId: 'workspace-health' }, attempts: 0, nextAttemptAt: new Date().toISOString(), createdAt: new Date().toISOString() });
+    await appendReplicationEntry('us-east-1', { id: 'mutation-2', kind: 'job', payload: { toolId: 'analytics-rollup' }, attempts: 0, nextAttemptAt: new Date().toISOString(), createdAt: new Date().toISOString() });
+    const result = await replicatePending('eu-west-1');
+    expect(result.applied).toHaveLength(2);
+    const state = await loadReplicationState();
+    expect(state.regions.find((region) => region.id === 'eu-west-1')?.lastAppliedSequence).toBe(2);
+  });
+  it('enforces a single leader lease and promotes the best healthy region', async () => {
+    const { acquireLeaderLease, executeFailover, heartbeatRegion, planFailover } = await import('../../src/backend/regions');
+    await acquireLeaderLease('workspace-e2e', 'us-east-1', 30_000);
+    await expect(acquireLeaderLease('workspace-e2e', 'eu-west-1', 30_000)).rejects.toThrow('Leader lease');
+    await heartbeatRegion('us-east-1', 0, false);
+    const plan = await planFailover('workspace-e2e', 'primary heartbeat lost');
+    expect(plan.toRegion).toBe('eu-west-1');
+    const promoted = await executeFailover(plan);
+    expect(promoted.state.primaryRegion).toBe('eu-west-1');
+    expect(promoted.state.failoverCount).toBe(1);
+  });
+});

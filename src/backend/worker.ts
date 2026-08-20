@@ -16,3 +16,36 @@ async function saveQueue(queue: WorkerJob[]) { await AsyncStorage.setItem(QUEUE_
 async function saveDeadLetters(queue: WorkerJob[]) { await AsyncStorage.setItem(DEAD_KEY, JSON.stringify(queue.slice(-100))); }
 async function execute(job: WorkerJob) { if (job.toolId === 'analytics-rollup') return { metric: 'usage', value: Object.keys(job.input).length }; if (job.toolId === 'notification') { await queueNotification({ workspaceId: String(job.input.workspaceId ?? 'nova-local'), channel: 'local', title: String(job.input.title ?? 'Nova worker'), body: String(job.input.body ?? 'Worker job completed.'), route: typeof job.input.route === 'string' ? job.input.route : undefined }); return { sent: true }; } if (job.toolId === 'workspace-health') { const store = await loadBackendStore(); return { projects: store.projects.length, tasks: store.tasks.length, connectors: store.connectors.length }; } throw new Error(`Unknown worker tool: ${job.toolId}`); }
 export async function processWorkerQueue(workspaceId: string, actorId = 'local-worker'): Promise<WorkerResult> { const queue = (await loadWorkerQueue()).filter((job) => new Date(job.nextRunAt).getTime() <= Date.now()).sort((a, b) => b.priority - a.priority || a.createdAt.localeCompare(b.createdAt)); const pending = (await loadWorkerQueue()).filter((job) => new Date(job.nextRunAt).getTime() > Date.now()); const completed: string[] = []; const retried: string[] = []; const deadLettered: string[] = []; const dead = await loadDeadLetters(); for (const job of queue) { try { await execute(job); completed.push(job.id); await appendAudit({ workspaceId, actorId, action: 'worker.completed', resource: 'job', resourceId: job.id, risk: 'low', metadata: { toolId: job.toolId, attempts: job.attempts } }); } catch (error) { const attempts = job.attempts + 1; if (attempts >= job.maxAttempts) { deadLettered.push(job.id); dead.push({ ...job, status: 'failed', attempts, updatedAt: now(), error: error instanceof Error ? error.message : 'worker failure' }); } else { retried.push(job.id); pending.push({ ...job, status: 'queued', attempts, updatedAt: now(), nextRunAt: new Date(Date.now() + Math.min(30 * 60_000, 2 ** attempts * 5000)).toISOString(), error: error instanceof Error ? error.message : 'worker retry' }); } } } await saveQueue(pending); await saveDeadLetters(dead); await recordUsage({ workspaceId, day: new Date().toISOString().slice(0, 10), runs: completed.length, toolCalls: queue.length, filesIndexed: 0, syncs: 0, errors: deadLettered.length, latencyMs: 0 }); return { completed, retried, deadLettered }; }
+
+
+import { acquireLeaderLease, appendReplicationEntry, executeFailover, heartbeatRegion, loadReplicationState, planFailover, replicatePending } from './regions';
+export type RegionalWorkerResult = WorkerResult & { regionId: string; role: 'leader' | 'standby'; failedOver: boolean; replicationApplied: number; leaseEpoch?: number };
+export async function processWorkerQueueRegional(workspaceId: string, regionId: string, options: { autoFailover?: boolean; leaseTtlMs?: number } = {}): Promise<RegionalWorkerResult> {
+  const state = await loadReplicationState();
+  const region = state.regions.find((item) => item.id === regionId);
+  if (!region) throw new Error(`Unknown worker region: ${regionId}`);
+  await heartbeatRegion(regionId, 0, true);
+  const replication = await replicatePending(regionId);
+  let activeRegion = regionId;
+  let failedOver = false;
+  const isLeader = state.primaryRegion === regionId || region.status === 'promoted';
+  if (!isLeader) return { completed: [], retried: [], deadLettered: [], regionId, role: 'standby', failedOver: false, replicationApplied: replication.applied.length };
+  try {
+    const lease = await acquireLeaderLease(workspaceId, activeRegion, options.leaseTtlMs ?? 30_000);
+    const result = await processWorkerQueue(workspaceId, `worker-${activeRegion}`);
+    for (const jobId of [...result.completed, ...result.retried, ...result.deadLettered]) await appendReplicationEntry(activeRegion, { id: jobId, kind: 'job', payload: { workspaceId, jobId, result }, attempts: 0, nextAttemptAt: new Date().toISOString(), createdAt: new Date().toISOString() });
+    return { ...result, regionId: activeRegion, role: 'leader', failedOver, replicationApplied: replication.applied.length, leaseEpoch: lease.epoch };
+  } catch (error) {
+    await heartbeatRegion(activeRegion, 0, false);
+    if (!options.autoFailover) throw error;
+    const plan = await planFailover(workspaceId, error instanceof Error ? error.message : 'leader-unavailable');
+    const promoted = await executeFailover(plan);
+    activeRegion = promoted.plan.toRegion;
+    failedOver = true;
+    const lease = await acquireLeaderLease(workspaceId, activeRegion, options.leaseTtlMs ?? 30_000);
+    const result = await processWorkerQueue(workspaceId, `worker-${activeRegion}`);
+    for (const jobId of [...result.completed, ...result.retried, ...result.deadLettered]) await appendReplicationEntry(activeRegion, { id: jobId, kind: 'job', payload: { workspaceId, jobId, result, failover: true }, attempts: 0, nextAttemptAt: new Date().toISOString(), createdAt: new Date().toISOString() });
+    return { ...result, regionId: activeRegion, role: 'leader', failedOver, replicationApplied: replication.applied.length, leaseEpoch: lease.epoch };
+  }
+}
+export async function getRegionalWorkerStatus() { const state = await loadReplicationState(); return { primaryRegion: state.primaryRegion, failoverCount: state.failoverCount, regions: state.regions.map((region) => ({ ...region, lag: Math.max(0, state.lastSequence - region.lastAppliedSequence) })), lastSequence: state.lastSequence }; }
