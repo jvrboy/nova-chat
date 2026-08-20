@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const storage = vi.hoisted(() => new Map<string, string>());
 vi.mock('@react-native-async-storage/async-storage', () => ({ default: { getItem: async (key: string) => storage.get(key) ?? null, setItem: async (key: string, value: string) => { storage.set(key, value); }, removeItem: async (key: string) => { storage.delete(key); }, multiSet: async (entries: Array<[string, string]>) => { entries.forEach(([key, value]) => storage.set(key, value)); }, multiRemove: async (keys: string[]) => { keys.forEach((key) => storage.delete(key)); } } }));
+vi.mock('expo-secure-store', () => ({ WHEN_UNLOCKED_THIS_DEVICE_ONLY: 'WHEN_UNLOCKED_THIS_DEVICE_ONLY', getItemAsync: async () => null, setItemAsync: async () => undefined, deleteItemAsync: async () => undefined }));
 
 import { handleLocalApi } from '../../src/backend/api';
 import { loadBackendStore } from '../../src/backend/repository';

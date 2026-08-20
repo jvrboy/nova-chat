@@ -11,6 +11,7 @@
       "expo-router",
       "expo-font",
       "expo-audio",
+      "expo-secure-store",
       [
         "expo-image-picker",
         {
@@ -74,7 +75,11 @@
         "monochrome": "./assets/icon-nova-monochrome-v2.png",
         "notification": "./assets/icon-nova-notification-v2.png",
         "settings": "./assets/icon-nova-settings-v2.png",
-        "widget": "./assets/icon-nova-widget.png"
+        "widget": "./assets/icon-nova-widget.png",
+        "badge": "./assets/icon-nova-badge.png",
+        "shortcut": "./assets/icon-nova-shortcut.png",
+        "splash": "./assets/icon-nova-splash.png",
+        "share": "./assets/icon-nova-share.png"
       }
     }
   }

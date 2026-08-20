@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { BackendConfig, BackendEvent, BackendHealth, BackendJob, BackendMutation, BackendToolDescriptor, defaultBackendConfig, SyncEnvelope, SyncResult } from './contracts';
+import { deleteSecret, getSecret, setSecret } from './secureStorage';
 
 const CONFIG_KEY = 'nova.backend.config.v1';
 const OUTBOX_KEY = 'nova.backend.outbox.v1';
@@ -9,8 +10,8 @@ const CLIENT_ID_KEY = 'nova.backend.client-id.v1';
 const parse = <T,>(value: string | null, fallback: T): T => { try { return value ? JSON.parse(value) as T : fallback; } catch { return fallback; } };
 const makeId = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
-export async function loadBackendConfig(): Promise<BackendConfig> { return { ...defaultBackendConfig, ...parse<Partial<BackendConfig>>(await AsyncStorage.getItem(CONFIG_KEY), {}) }; }
-export async function saveBackendConfig(config: BackendConfig) { const baseUrl = config.baseUrl.trim().replace(/\/$/, ''); if (config.mode === 'remote' && baseUrl) { let parsed: URL; try { parsed = new URL(baseUrl); } catch { throw new Error('Backend URL must be a valid URL.'); } const local = parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1'; if (parsed.protocol !== 'https:' && !local) throw new Error('Remote backend URLs must use HTTPS.'); } const safe = { ...config, baseUrl }; await AsyncStorage.setItem(CONFIG_KEY, JSON.stringify(safe)); return safe; }
+export async function loadBackendConfig(): Promise<BackendConfig> { const stored = parse<Partial<BackendConfig>>(await AsyncStorage.getItem(CONFIG_KEY), {}); const apiToken = await getSecret('backend-api-token'); return { ...defaultBackendConfig, ...stored, apiToken: apiToken ?? undefined }; }
+export async function saveBackendConfig(config: BackendConfig) { const baseUrl = config.baseUrl.trim().replace(/\/$/, ''); if (config.mode === 'remote' && baseUrl) { let parsed: URL; try { parsed = new URL(baseUrl); } catch { throw new Error('Backend URL must be a valid URL.'); } const local = parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1'; if (parsed.protocol !== 'https:' && !local) throw new Error('Remote backend URLs must use HTTPS.'); } const safe = { ...config, baseUrl, apiToken: undefined }; await AsyncStorage.setItem(CONFIG_KEY, JSON.stringify(safe)); if (config.apiToken) await setSecret('backend-api-token', config.apiToken); else await deleteSecret('backend-api-token'); return { ...safe, apiToken: config.apiToken }; }
 export async function getClientId() { const existing = await AsyncStorage.getItem(CLIENT_ID_KEY); if (existing) return existing; const created = makeId('client'); await AsyncStorage.setItem(CLIENT_ID_KEY, created); return created; }
 export async function loadOutbox() { return parse<BackendMutation[]>(await AsyncStorage.getItem(OUTBOX_KEY), []); }
 export async function saveOutbox(outbox: BackendMutation[]) { await AsyncStorage.setItem(OUTBOX_KEY, JSON.stringify(outbox.slice(-300))); }
