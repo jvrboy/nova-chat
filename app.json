@@ -1,0 +1,1 @@
+{"expo":{"name":"Nova","slug":"nova","version":"1.0.0","scheme":"nova","orientation":"portrait","userInterfaceStyle":"dark","plugins":["expo-router"],"experiments":{"typedRoutes":true},"ios":{"supportsTablet":true},"android":{"adaptiveIcon":{"backgroundColor":"#07111f"}}}}
