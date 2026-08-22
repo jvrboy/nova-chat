@@ -28,7 +28,9 @@ const promptStarters = [
   { icon: 'list-outline' as IconName, label: 'Build a plan', prompt: 'Turn my idea into a practical plan with milestones, risks, and next actions.' },
   { icon: 'document-text-outline' as IconName, label: 'Summarize', prompt: 'Summarize the key points, decisions, and open questions from this context.' },
   { icon: 'flash-outline' as IconName, label: 'Solve it', prompt: 'Help me solve this step by step and show the assumptions behind the answer.' },
+  { icon: 'globe-outline' as IconName, label: '2026 tech brief', prompt: 'What are the most important technology news developments from the last 30 days of 2026? Cite the sources and explain why each matters.', tool: 'web-search-pro' },
 ];
+const codeLanguages = ['python', 'javascript', 'typescript', 'r', 'bash'] as const;
 
 export default function ChatScreen() {
   const { activeChat, sendMessage, runProductionTool, createChat, backendConnected, streamingReply, tools } = useNova();
@@ -36,6 +38,7 @@ export default function ChatScreen() {
   const [toolSheetOpen, setToolSheetOpen] = useState(false);
   const [toolQuery, setToolQuery] = useState('');
   const [activeTool, setActiveTool] = useState<string | null>(null);
+  const [codeLanguage, setCodeLanguage] = useState<(typeof codeLanguages)[number]>('python');
   const listRef = useRef<FlatList>(null);
 
   const visibleTools = useMemo(() => {
@@ -49,7 +52,7 @@ export default function ChatScreen() {
     if (activeTool === 'web-search-pro') {
       void runProductionTool(activeTool, { query: trimmed, limit: 5, scrapeContent: true });
     } else if (activeTool === 'code-execute') {
-      void runProductionTool(activeTool, { code: trimmed, language: 'python' });
+      void runProductionTool(activeTool, { code: trimmed, language: codeLanguage });
     } else {
       const enriched = activeTool ? `[Use ${activeTool}] ${trimmed}` : trimmed;
       sendMessage(enriched);
@@ -58,8 +61,9 @@ export default function ChatScreen() {
     requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }));
   };
 
-  const useStarter = (prompt: string) => {
+  const useStarter = (prompt: string, tool?: string) => {
     setText(prompt);
+    if (tool) setActiveTool(tool);
   };
 
   const copyOrShare = async (messageText: string) => {
@@ -100,7 +104,7 @@ export default function ChatScreen() {
             <Text style={s.starterTitle}>What are we working on?</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.starterRow}>
               {promptStarters.map((starter) => (
-                <Pressable key={starter.label} onPress={() => useStarter(starter.prompt)} style={({ pressed }) => [s.starterCard, pressed && s.pressed]}>
+                <Pressable key={starter.label} onPress={() => useStarter(starter.prompt, starter.tool)} style={({ pressed }) => [s.starterCard, pressed && s.pressed]}>
                   <Ionicons name={starter.icon} size={19} color={colors.primary} />
                   <Text style={s.starterLabel}>{starter.label}</Text>
                 </Pressable>
@@ -135,6 +139,7 @@ export default function ChatScreen() {
           <View style={s.activeToolBar}>
             <Ionicons name={toolIcons[tools.find((tool) => tool.id === activeTool)?.icon ?? 'sparkles'] ?? 'sparkles-outline'} size={16} color={colors.primary} />
             <Text style={s.activeToolText}>Using <Text style={s.activeToolName}>{tools.find((tool) => tool.id === activeTool)?.name ?? activeTool}</Text></Text>
+            {activeTool === 'code-execute' && <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.languageRow}>{codeLanguages.map((language) => <Pressable key={language} onPress={() => setCodeLanguage(language)} style={[s.languagePill, codeLanguage === language && s.languagePillActive]}><Text style={[s.languageText, codeLanguage === language && s.languageTextActive]}>{language}</Text></Pressable>)}</ScrollView>}
             <Pressable onPress={() => setActiveTool(null)} hitSlop={8}><Ionicons name="close-circle" size={18} color={colors.muted} /></Pressable>
           </View>
         )}
@@ -184,7 +189,7 @@ const s = StyleSheet.create({
   starterWrap: { paddingTop: 18 }, starterEyebrow: { color: colors.muted, fontSize: 10, letterSpacing: 1.4, fontWeight: '800', paddingHorizontal: 20 }, starterTitle: { color: colors.text, fontSize: 18, fontWeight: '800', paddingHorizontal: 20, marginTop: 5 }, starterRow: { gap: 8, paddingHorizontal: 20, paddingVertical: 12 }, starterCard: { backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1, borderRadius: radii.md, padding: 12, minWidth: 126, gap: 10 }, starterLabel: { color: colors.text, fontSize: 12, fontWeight: '700' }, pressed: { opacity: 0.72 },
   messages: { padding: 20, gap: 12, flexGrow: 1 }, message: { borderRadius: radii.md, padding: 15, maxWidth: '88%' }, assistantMessage: { backgroundColor: colors.surface, alignSelf: 'flex-start', borderTopLeftRadius: 4 }, userMessage: { backgroundColor: colors.surface2, alignSelf: 'flex-end', borderTopRightRadius: 4 }, errorMessage: { borderWidth: 1, borderColor: '#ff6b6b' }, messageHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 14 }, role: { fontSize: 10, letterSpacing: 1.2, color: colors.primary, fontWeight: '800', marginBottom: 7 }, messageText: { color: colors.text, fontSize: 15, lineHeight: 22 }, errorText: { color: '#ff9b9b' },
   empty: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 35 }, emptyOrb: { width: 54, height: 54, borderRadius: 20, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center', marginBottom: 14 }, emptyTitle: { color: colors.text, fontWeight: '800', fontSize: 20, textAlign: 'center' }, emptyText: { color: colors.muted, textAlign: 'center', fontSize: 14, lineHeight: 21, marginTop: 8 },
-  activeToolBar: { marginHorizontal: 12, marginBottom: 6, paddingHorizontal: 12, paddingVertical: 9, backgroundColor: colors.surface2, borderRadius: radii.sm, flexDirection: 'row', alignItems: 'center', gap: 8 }, activeToolText: { color: colors.muted, fontSize: 12, flex: 1 }, activeToolName: { color: colors.text, fontWeight: '800' },
+  activeToolBar: { marginHorizontal: 12, marginBottom: 6, paddingHorizontal: 12, paddingVertical: 9, backgroundColor: colors.surface2, borderRadius: radii.sm, flexDirection: 'row', alignItems: 'center', gap: 8 }, activeToolText: { color: colors.muted, fontSize: 12, flex: 1 }, activeToolName: { color: colors.text, fontWeight: '800' }, languageRow: { gap: 4 }, languagePill: { paddingHorizontal: 7, paddingVertical: 4, borderRadius: 8, backgroundColor: colors.surface }, languagePillActive: { backgroundColor: colors.primary }, languageText: { color: colors.muted, fontSize: 9, fontWeight: '800' }, languageTextActive: { color: colors.bg },
   composer: { margin: 12, padding: 8, backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1, borderRadius: radii.lg, flexDirection: 'row', alignItems: 'flex-end', gap: 6 }, toolTrigger: { backgroundColor: colors.surface2, borderRadius: 18, padding: 8, marginBottom: 2 }, input: { flex: 1, color: colors.text, fontSize: 15, maxHeight: 100, paddingHorizontal: 8, paddingVertical: 8 }, send: { backgroundColor: colors.primary, borderRadius: 20, padding: 10, minWidth: 40, alignItems: 'center' }, sendDisabled: { opacity: 0.38 },
   sheetBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.56)', justifyContent: 'flex-end' }, sheetDismiss: { flex: 1 }, sheet: { backgroundColor: colors.bg, borderTopLeftRadius: 26, borderTopRightRadius: 26, maxHeight: '78%', padding: 20, paddingTop: 10 }, sheetHandle: { width: 38, height: 4, borderRadius: 2, backgroundColor: colors.border, alignSelf: 'center', marginBottom: 16 }, sheetHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }, sheetEyebrow: { color: colors.primary, fontSize: 10, letterSpacing: 1.4, fontWeight: '800' }, sheetTitle: { color: colors.text, fontSize: 24, fontWeight: '800', marginTop: 4 }, searchBox: { marginTop: 16, backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1, borderRadius: radii.sm, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 8 }, searchInput: { flex: 1, color: colors.text, paddingVertical: 11, fontSize: 14 }, toolList: { marginTop: 12 }, toolRow: { paddingVertical: 12, flexDirection: 'row', alignItems: 'center', gap: 12, borderBottomColor: colors.border, borderBottomWidth: 1 }, toolIcon: { width: 40, height: 40, borderRadius: 12, backgroundColor: colors.surface2, alignItems: 'center', justifyContent: 'center' }, toolCopy: { flex: 1 }, toolName: { color: colors.text, fontSize: 14, fontWeight: '800' }, toolDescription: { color: colors.muted, fontSize: 12, lineHeight: 17, marginTop: 3 }, toolCategory: { color: colors.primary, fontSize: 9, letterSpacing: 1.1, fontWeight: '800', marginTop: 5 }, noResults: { color: colors.muted, textAlign: 'center', padding: 24 },
 });

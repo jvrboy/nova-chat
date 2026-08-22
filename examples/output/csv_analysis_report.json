@@ -1,0 +1,11 @@
+{
+  "source": "/home/ubuntu/nova-chat/examples/sample_sales.csv",
+  "rows_read": 8,
+  "x_column": "month",
+  "value_column": "revenue",
+  "total": 182250.0,
+  "average": 22781.25,
+  "minimum": 18400.0,
+  "maximum": 26900.0,
+  "top_value": "2026-08"
+}
