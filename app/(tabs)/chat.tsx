@@ -18,6 +18,9 @@ const toolIcons: Record<string, IconName> = {
   sparkles: 'sparkles-outline',
   globe: 'globe-outline',
   'code-slash': 'code-slash-outline',
+  analytics: 'analytics-outline',
+  language: 'language-outline',
+  pricetag: 'pricetag-outline',
   map: 'map-outline',
   construct: 'construct-outline',
   pulse: 'pulse-outline',
@@ -67,6 +70,13 @@ export default function ChatScreen() {
       void runProductionTool(activeTool, { text: trimmed });
     } else if (activeTool === 'code-generate') {
       void runProductionTool(activeTool, { description: trimmed, language: codeLanguage });
+    } else if (activeTool === 'web-search-summary') {
+      const urls = trimmed.split(/[\s,]+/).filter((value) => /^https:\/\//i.test(value)).slice(0, 5);
+      void runProductionTool(activeTool, { urls, focus: 'the key facts and differences across these sources' });
+    } else if (activeTool === 'translate') {
+      void runProductionTool(activeTool, { text: trimmed, targetLanguage: 'English' });
+    } else if (activeTool === 'classify') {
+      void runProductionTool(activeTool, { text: trimmed, labels: ['urgent', 'actionable', 'informational', 'other'] });
     } else if (activeTool === 'code-execute') {
       void runProductionTool(activeTool, { code: trimmed, language: codeLanguage });
     } else {
