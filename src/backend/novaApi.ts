@@ -76,6 +76,10 @@ export async function backendRunTool(config: BackendConfig, toolId: string, inpu
   return request(config, `/api/tools/${encodeURIComponent(toolId)}/run`, { method: 'POST', body: JSON.stringify({ input, confirm }) });
 }
 
+export async function backendAccessRequest<T>(config: BackendConfig, path: string, init: RequestInit = {}): Promise<T> {
+  return request<T>(config, `/api/access${path}`, init);
+}
+
 export type StreamEventHandlers = {
   onUserMessage?: (message: NovaChatMessage) => void;
   onDelta?: (text: string) => void;

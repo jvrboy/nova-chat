@@ -3,6 +3,7 @@ import type { AppEnv } from '../lib/types'
 import { toolRegistry, runTool } from '../lib/tools'
 import { newId, nowIso } from '../lib/ids'
 import { appendAudit } from '../lib/db'
+import { canUseTool } from './access'
 
 const tools = new Hono<AppEnv>()
 
@@ -20,8 +21,9 @@ tools.post('/:id/run', async (c) => {
   const input = (body?.input && typeof body.input === 'object' ? body.input : {}) as Record<string, unknown>
 
   const tool = toolRegistry.find((t) => t.id === toolId)
-  if (!tool) return c.json({ error: `Unknown tool: ${toolId}` }, 404)
-
+    if (!tool) return c.json({ error: `Unknown tool: ${toolId}` }, 404)
+  const allowed = await canUseTool(c.env.DB, workspaceId, actorId, toolId, tool.risk, c.get('apiKeyScopes') ?? [])
+  if (!allowed) return c.json({ error: `Your role is not allowed to use tool: ${toolId}` }, 403)
   if (tool.risk === 'sensitive' && body?.confirm !== true) {
     const approvalId = newId('approval')
     await c.env.DB.prepare(

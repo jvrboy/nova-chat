@@ -24,6 +24,7 @@ import alertRoutes from './routes/alerts'
 import fileRoutes from './routes/files'
 import apikeyRoutes from './routes/apikeys'
 import pushRoutes from './routes/push'
+import accessRoutes from './routes/access'
 
 const app = new Hono<AppEnv>()
 
@@ -61,6 +62,7 @@ app.route('/api/alerts', alertRoutes)
 app.route('/api/files', fileRoutes)
 app.route('/api/api-keys', apikeyRoutes)
 app.route('/api/push', pushRoutes)
+app.route('/api/access', accessRoutes)
 
 app.get('/api/health', (c) => c.json({ status: 'ok', service: 'nova-backend', time: new Date().toISOString() }))
 
