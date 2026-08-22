@@ -157,10 +157,12 @@ Gradle plugin resolution — see `UNSIGNED_BUILD_REPORT.md`):
 - ✅ Automated tests on both sides (app e2e + server tool suite) with a
   dedicated backend CI workflow.
 - ✅ Voice output for assistant replies via on-device text-to-speech.
-- ✅ GitHub Actions workflows added for unsigned Android + iOS builds.
+- ✅ GitHub Actions workflows verified green on real runs: Android unsigned
+  APK, iOS simulator build, and backend tests all pass (fixes applied along
+  the way: Node 22 for pnpm 11, `macos-15` for Xcode 16, removal of a
+  sandbox-specific pnpm `storeDir` override).
 
 **Outstanding / next steps:**
-- ⬜ Confirm the GitHub Actions build workflows succeed on a real run.
 - ⬜ Backend not yet deployed to Cloudflare (deliberately deferred).
 - ⬜ Per-user auth (Clerk/Auth0) not implemented — only workspace-level API
   keys / header auth. The header fallback remains intentional for local dev;
