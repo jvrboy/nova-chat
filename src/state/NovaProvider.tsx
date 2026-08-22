@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { addMemory, agentTools, appendEvent, AgentEvent, AgentJob, AgentRun, Approval, clearRuntime, createJob, createRun, exportRuntime, loadRuntime, Memory, pipelines, Pipeline, requestApproval, RuntimeData, saveRuntime } from '../agent/runtime';
-import { CapabilityStatus, getCapabilityStatus, requestCapability } from '../platform/capabilities';
+import { addMemory, agentTools, appendEvent, AgentEvent, AgentJob, AgentRun, Approval, clearRuntime, createJob, createRun, exportRuntime, importRuntime, loadRuntime, Memory, pipelines, Pipeline, requestApproval, RuntimeData, saveRuntime } from '../agent/runtime';
+import { CapabilityStatus, getCapabilityStatus, pickFiles, readFileText, requestCapability } from '../platform/capabilities';
 import { createTextFile, defaultStorageSettings, exportWorkspace, importPickedFiles, loadWorkspace, NovaFile, recoverWorkspace, removeWorkspaceFile, saveWorkspace, StorageSettings, updateStorageSettings } from '../storage/workspace';
 import type { Tool } from './types';
 import { advancedTools } from '../agent/advancedTools';
@@ -47,7 +47,7 @@ function categoryForTool(tool: ToolDefinition): string {
 const initialChats: Chat[] = [{ id: 'nova', title: 'New conversation', updatedAt: new Date().toISOString(), messages: [{ id: 'welcome', role: 'assistant', text: 'I’m Nova. I can help you think, build, plan, and remember. Connect a backend in Settings → Backend for real LLM replies with tools, memory, and agents — otherwise I run useful local heuristics only.' }] }];
 const initialProjects: Project[] = [{ id: 'mobile', name: 'Mobile workspace', description: 'Your converted Expo command center.', color: '#55d6ff', files: 12 }, { id: 'ideas', name: 'Ideas lab', description: 'Capture and develop new directions.', color: '#a78bfa', files: 7 }];
 
-type NovaContextValue = { chats: Chat[]; projects: Project[]; tools: Tool[]; runs: AgentRun[]; approvals: Approval[]; memories: Memory[]; jobs: AgentJob[]; events: AgentEvent[]; files: NovaFile[]; settings: StorageSettings; capabilities: CapabilityStatus; pipelines: Pipeline[]; activeChat: Chat; ready: boolean; backendConnected: boolean; streamingReply: boolean; createChat: () => void; sendMessage: (text: string) => void; runProductionTool: (toolId: string, input: Record<string, unknown>) => Promise<void>; runLocalToolInChat: (toolId: string, input: string) => Promise<string | null>; decideBackendApproval: (approvalId: string, approved: boolean) => Promise<void>; startRun: (input: string, toolId?: string) => Promise<string | null> | null; startPipeline: (pipeline: Pipeline, input: string) => Promise<string | null> | null; approve: (id: string, approved: boolean) => void; saveMemory: (content: string, tags?: string[]) => void; importFiles: () => Promise<void>; createNote: () => Promise<void>; deleteFile: (id: string) => Promise<void>; exportFiles: () => Promise<void>; updateSettings: (settings: StorageSettings) => Promise<void>; recoverStorage: () => Promise<void>; exportAgentData: () => Promise<string>; resetAgentData: () => Promise<void>; requestPermission: (name: keyof CapabilityStatus) => Promise<CapabilityStatus[keyof CapabilityStatus]> };
+type NovaContextValue = { chats: Chat[]; projects: Project[]; tools: Tool[]; runs: AgentRun[]; approvals: Approval[]; memories: Memory[]; jobs: AgentJob[]; events: AgentEvent[]; files: NovaFile[]; settings: StorageSettings; capabilities: CapabilityStatus; pipelines: Pipeline[]; activeChat: Chat; ready: boolean; backendConnected: boolean; streamingReply: boolean; createChat: () => void; sendMessage: (text: string) => void; runProductionTool: (toolId: string, input: Record<string, unknown>) => Promise<void>; runLocalToolInChat: (toolId: string, input: string) => Promise<string | null>; decideBackendApproval: (approvalId: string, approved: boolean) => Promise<void>; startRun: (input: string, toolId?: string) => Promise<string | null> | null; startPipeline: (pipeline: Pipeline, input: string) => Promise<string | null> | null; approve: (id: string, approved: boolean) => void; saveMemory: (content: string, tags?: string[]) => void; importFiles: () => Promise<void>; createNote: () => Promise<void>; deleteFile: (id: string) => Promise<void>; exportFiles: () => Promise<void>; updateSettings: (settings: StorageSettings) => Promise<void>; recoverStorage: () => Promise<void>; exportAgentData: () => Promise<string>; importAgentData: () => Promise<{ runs: number; memories: number; jobs: number } | null>; resetAgentData: () => Promise<void>; requestPermission: (name: keyof CapabilityStatus) => Promise<CapabilityStatus[keyof CapabilityStatus]> };
 const NovaContext = createContext<NovaContextValue | null>(null);
 
 export function NovaProvider({ children }: { children: React.ReactNode }) {
@@ -254,10 +254,19 @@ export function NovaProvider({ children }: { children: React.ReactNode }) {
   const recoverStorage = async () => setFiles(await recoverWorkspace());
   /** Serializes the full agent runtime (runs, approvals, memories, jobs, events) for backup/sharing. */
   const exportAgentData = () => exportRuntime({ runs, approvals, memories, jobs, events } as RuntimeData);
+  /** Restores agent runtime data from a previously exported JSON backup file. */
+  const importAgentData = async () => {
+    const result = await pickFiles(false);
+    if (result.canceled || !result.assets?.length) return null;
+    const text = await readFileText(result.assets[0].uri);
+    const data = await importRuntime(text);
+    setRuns(data.runs); setApprovals(data.approvals); setMemories(data.memories); setJobs(data.jobs); setEvents(data.events);
+    return { runs: data.runs.length, memories: data.memories.length, jobs: data.jobs.length };
+  };
   /** Clears all persisted agent runtime data on-device and resets in-memory state. */
   const resetAgentData = async () => { await clearRuntime(); setRuns([]); setApprovals([]); setMemories([]); setJobs([]); setEvents([]); };
   const requestPermission = async (name: keyof CapabilityStatus) => { const next = await requestCapability(name); setCapabilities((value) => ({ ...value, [name]: next })); return next; };
-  const value = useMemo(() => ({ chats, projects: initialProjects, tools, runs, approvals, memories, jobs, events, files, settings, capabilities, pipelines, activeChat, ready, backendConnected, streamingReply, createChat, sendMessage, runProductionTool, runLocalToolInChat, decideBackendApproval, startRun, startPipeline, approve, saveMemory, importFiles, createNote, deleteFile, exportFiles, updateSettings, recoverStorage, exportAgentData, resetAgentData, requestPermission }), [chats, runs, approvals, memories, jobs, events, files, settings, capabilities, activeChat, ready, backendConnected, streamingReply]);
+  const value = useMemo(() => ({ chats, projects: initialProjects, tools, runs, approvals, memories, jobs, events, files, settings, capabilities, pipelines, activeChat, ready, backendConnected, streamingReply, createChat, sendMessage, runProductionTool, runLocalToolInChat, decideBackendApproval, startRun, startPipeline, approve, saveMemory, importFiles, createNote, deleteFile, exportFiles, updateSettings, recoverStorage, exportAgentData, importAgentData, resetAgentData, requestPermission }), [chats, runs, approvals, memories, jobs, events, files, settings, capabilities, activeChat, ready, backendConnected, streamingReply]);
   return <NovaContext.Provider value={value}>{children}</NovaContext.Provider>;
 }
 export function useNova() { const value = useContext(NovaContext); if (!value) throw new Error('useNova must be used inside NovaProvider'); return value; }

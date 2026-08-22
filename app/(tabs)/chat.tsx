@@ -1,10 +1,11 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, KeyboardAvoidingView, Platform, Pressable, ScrollView, Share, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { findLocalTool, useNova } from '../../src/state/NovaProvider';
 import type { Message } from '../../src/state/NovaProvider';
+import { speakAloud, stopSpeaking } from '../../src/platform/speech';
 import { colors, radii } from '../../src/ui/theme';
 
 type IconName = keyof typeof Ionicons.glyphMap;
@@ -70,7 +71,20 @@ export default function ChatScreen() {
   const [toolQuery, setToolQuery] = useState('');
   const [activeTool, setActiveTool] = useState<string | null>(null);
   const [codeLanguage, setCodeLanguage] = useState<(typeof codeLanguages)[number]>('python');
+  const [speakingId, setSpeakingId] = useState<string | null>(null);
   const listRef = useRef<FlatList>(null);
+
+  const toggleSpeech = (message: Message) => {
+    if (speakingId === message.id) {
+      stopSpeaking();
+      setSpeakingId(null);
+      return;
+    }
+    setSpeakingId(message.id);
+    void speakAloud(message.text);
+  };
+
+  useEffect(() => () => stopSpeaking(), []);
 
   const visibleTools = useMemo(() => {
     const query = toolQuery.trim().toLowerCase();
@@ -80,6 +94,8 @@ export default function ChatScreen() {
   const submit = (value = text) => {
     const trimmed = value.trim();
     if (!trimmed || streamingReply) return;
+    stopSpeaking();
+    setSpeakingId(null);
 
     // Slash commands execute instantly on-device, even offline.
     if (trimmed.startsWith('/')) {
@@ -217,6 +233,9 @@ export default function ChatScreen() {
                 <Text style={s.role}>{item.role === 'user' ? 'YOU' : 'NOVA'}{item.tool ? `  ·  ${item.tool.toUpperCase()}` : ''}</Text>
                 {item.role === 'assistant' && !item.pending && !!item.text && (
                   <View style={s.messageActions}>
+                    <Pressable accessibilityLabel={speakingId === item.id ? 'Stop reading aloud' : 'Read aloud'} onPress={() => toggleSpeech(item)} hitSlop={8}>
+                      <Ionicons name={speakingId === item.id ? 'stop-circle-outline' : 'volume-medium-outline'} size={16} color={speakingId === item.id ? colors.primary : colors.muted} />
+                    </Pressable>
                     <Pressable accessibilityLabel="Save to memory" onPress={() => rememberMessage(item)} hitSlop={8}>
                       <Ionicons name="bookmark-outline" size={16} color={colors.muted} />
                     </Pressable>

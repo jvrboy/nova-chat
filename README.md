@@ -48,8 +48,17 @@ nova-chat/
   saves it to the on-device Memory Vault (tagged by tool), where it feeds
   Global Search and backend memory recall.
 - **Agent data management** — Diagnostics now shows a Memories metric and
-  offers one-tap JSON export (share sheet) or a confirmed reset of all runs,
-  jobs, approvals, memories, and events stored on-device.
+  offers one-tap JSON export (share sheet), restore-from-backup, or a
+  confirmed reset of all runs, jobs, approvals, memories, and events stored
+  on-device.
+- **Read aloud** — every assistant reply has a speaker action that reads it
+  out with on-device text-to-speech (`expo-speech`); sending a new message or
+  tapping again stops playback.
+- **Atomic rate limiter** — the D1 fixed-window counter now uses a single
+  `INSERT … ON CONFLICT DO UPDATE … RETURNING` statement, eliminating the
+  read-modify-write race that let concurrent requests exceed the limit.
+- **Backend CI** — new `.github/workflows/backend-tests.yml` runs the server
+  typecheck + Vitest suite on pushes/PRs touching `server/**`.
 - Fixed: duplicate tool IDs causing React key collisions, the Tools tab hiding
   ~25 tools behind a stale category filter, double-send of messages when the
   SSE stream ended without parseable events (retries now happen only on true
@@ -143,20 +152,21 @@ Gradle plugin resolution — see `UNSIGNED_BUILD_REPORT.md`):
   usage dashboard) with graceful offline fallback **and** real local tool
   execution (Toolbox + slash commands).
 - ✅ Security pass: scope-gated key management, chat-loop risk enforcement,
-  SSRF guards, deep-link whitelist, filename sanitization, LLM timeouts.
-- ✅ Automated tests on both sides (app e2e + server tool suite).
+  SSRF guards (web tools + webhook connectors), deep-link whitelist, filename
+  sanitization, LLM timeouts, atomic rate limiting.
+- ✅ Automated tests on both sides (app e2e + server tool suite) with a
+  dedicated backend CI workflow.
+- ✅ Voice output for assistant replies via on-device text-to-speech.
 - ✅ GitHub Actions workflows added for unsigned Android + iOS builds.
 
 **Outstanding / next steps:**
-- ⬜ Confirm the two GitHub Actions build workflows succeed on a real run.
+- ⬜ Confirm the GitHub Actions build workflows succeed on a real run.
 - ⬜ Backend not yet deployed to Cloudflare (deliberately deferred).
 - ⬜ Per-user auth (Clerk/Auth0) not implemented — only workspace-level API
   keys / header auth. The header fallback remains intentional for local dev;
   production deployments should provision API keys.
-- ⬜ Voice input/output for the chat screen not implemented (`expo-audio`
-  is already a dependency but unused for this).
-- ⬜ Non-atomic rate limiter (read-modify-write race under concurrency);
-  would need D1 batch/tombstone or DO-based counters.
+- ⬜ Voice *input* (speech-to-text) not implemented — would require a backend
+  STT provider; `expo-audio` is available for recording.
 - ⬜ No Slack/email alert channel wired up.
 - ⬜ Real (non-placeholder) D1 database id / R2 bucket — created at deploy
   time, not before.
