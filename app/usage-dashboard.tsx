@@ -45,7 +45,7 @@ export default function UsageDashboardScreen() {
             <Ionicons name="close" size={20} color={colors.text} />
           </Pressable>
         </View>
-        <Text style={s.subtitle}>Live 24h backend metrics: requests, agent runs, job status, and pending approvals.</Text>
+        <Text style={s.subtitle}>Live 24h backend metrics: requests, tool performance, agent runs, job status, and pending approvals.</Text>
 
         {loading && !data && <ActivityIndicator size="large" color={colors.primary} style={{ marginTop: 30 }} />}
         {error && <View style={s.errorCard}><Ionicons name="warning-outline" size={20} color="#ff9b9b" /><Text style={s.errorText}>{error}</Text></View>}
@@ -59,6 +59,21 @@ export default function UsageDashboardScreen() {
               <Metric label="Pending approvals" value={data.pendingApprovals} />
               <Metric label="Chats" value={data.chatCount} />
               <Metric label="Memories" value={data.memoryCount} />
+            </View>
+
+            <Text style={s.section}>Tool usage and performance</Text>
+            <View style={s.panel}>
+              {data.toolStats.length === 0 && <Text style={s.empty}>No tool executions recorded in the last 24h.</Text>}
+              {data.toolStats.map((row) => {
+                const successRate = row.executions ? Math.round((row.successes / row.executions) * 100) : 0;
+                return <View key={row.tool_id} style={s.toolRow}><View style={s.copy}><Text style={s.rowLabel}>{row.tool_id}</Text><Text style={s.meta}>{successRate}% success · avg {Math.round(row.avg_duration_ms || 0)} ms · max {Math.round(row.p95_duration_ms || 0)} ms</Text></View><Text style={s.rowValue}>{row.executions}</Text></View>;
+              })}
+            </View>
+
+            <Text style={s.section}>Recent tool history</Text>
+            <View style={s.panel}>
+              {data.recentToolExecutions.length === 0 && <Text style={s.empty}>No recent tool history.</Text>}
+              {data.recentToolExecutions.slice(0, 12).map((row) => <View key={row.id} style={s.toolRow}><View style={s.copy}><Text style={s.rowLabel}>{row.tool_id}</Text><Text style={s.meta}>{row.actor_id} · {new Date(row.created_at).toLocaleString()}</Text></View><Text style={[s.rowValue, row.status === 'error' && s.failure]}>{row.duration_ms} ms</Text></View>)}
             </View>
 
             <Text style={s.section}>Agent runs by agent</Text>
@@ -115,7 +130,11 @@ const s = StyleSheet.create({
   section: { color: colors.muted, textTransform: 'uppercase', fontSize: 11, letterSpacing: 1.4, fontWeight: '800', marginTop: 8 },
   panel: { backgroundColor: colors.surface, borderRadius: radii.md, borderWidth: 1, borderColor: colors.border, overflow: 'hidden' },
   row: { padding: 14, borderBottomWidth: 1, borderBottomColor: colors.border, flexDirection: 'row', justifyContent: 'space-between' },
+  toolRow: { padding: 14, borderBottomWidth: 1, borderBottomColor: colors.border, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  copy: { flex: 1 },
   rowLabel: { color: colors.text, fontWeight: '700', textTransform: 'capitalize' },
   rowValue: { color: colors.primary, fontWeight: '800' },
+  failure: { color: '#ff9b9b' },
+  meta: { color: colors.muted, fontSize: 11, marginTop: 4 },
   empty: { color: colors.muted, padding: 14, fontSize: 13 },
 });

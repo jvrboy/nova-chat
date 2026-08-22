@@ -993,10 +993,23 @@ export async function runTool(id: string, input: Record<string, unknown>, ctx: T
   const tool = getTool(id)
   if (!tool) throw new Error(`Unknown tool: ${id}`)
   const startedAt = Date.now()
+  const runId = newId('toolrun')
+  const at = nowIso()
+  const inputChars = JSON.stringify(input).length
+  const record = async (status: 'success' | 'error', durationMs: number, output: unknown, errorMessage?: string) => {
+    if (!ctx.db) return
+    await ctx.db.prepare('INSERT INTO tool_execution_history (id, workspace_id, actor_id, tool_id, status, risk, duration_ms, input_chars, output_chars, error_message, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .bind(runId, ctx.workspaceId, ctx.actorId, tool.id, status, tool.risk, durationMs, inputChars, output == null ? 0 : JSON.stringify(output).length, errorMessage ?? null, at).run().catch(() => {})
+  }
   try {
     const result = await tool.run(input, ctx)
-    return { ok: true as const, result, tool: tool.id, durationMs: Date.now() - startedAt, runId: newId('toolrun'), at: nowIso() }
+    const durationMs = Date.now() - startedAt
+    await record('success', durationMs, result)
+    return { ok: true as const, result, tool: tool.id, durationMs, runId, at }
   } catch (error) {
-    return { ok: false as const, error: error instanceof Error ? error.message : 'Tool execution failed.', tool: tool.id, durationMs: Date.now() - startedAt, runId: newId('toolrun'), at: nowIso() }
+    const message = error instanceof Error ? error.message : 'Tool execution failed.'
+    const durationMs = Date.now() - startedAt
+    await record('error', durationMs, null, message)
+    return { ok: false as const, error: message, tool: tool.id, durationMs, runId, at }
   }
 }

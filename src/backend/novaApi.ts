@@ -70,6 +70,8 @@ export async function backendSendMessage(config: BackendConfig, chatId: string, 
 }
 
 export type BackendToolRun = { ok?: boolean; result?: unknown; error?: string; requiresConfirmation?: boolean; approvalId?: string; message?: string; tool?: string; durationMs?: number };
+export type ToolAnalyticsRow = { tool_id: string; executions: number; successes: number; failures: number; avg_duration_ms: number; p95_duration_ms: number };
+export type ToolExecutionRecord = { id: string; actor_id: string; tool_id: string; status: 'success' | 'error'; risk: string; duration_ms: number; error_message?: string | null; created_at: string };
 
 /** Invoke one of the backend's registered production tools directly from the tool drawer. */
 export async function backendRunTool(config: BackendConfig, toolId: string, input: Record<string, unknown>, confirm = false): Promise<BackendToolRun> {
@@ -78,6 +80,26 @@ export async function backendRunTool(config: BackendConfig, toolId: string, inpu
 
 export async function backendAccessRequest<T>(config: BackendConfig, path: string, init: RequestInit = {}): Promise<T> {
   return request<T>(config, `/api/access${path}`, init);
+}
+
+export async function backendDecideApproval(config: BackendConfig, approvalId: string, approved: boolean): Promise<{ id: string; status: string }> {
+  return request(config, `/api/approvals/${encodeURIComponent(approvalId)}/decision`, { method: 'POST', body: JSON.stringify({ approved }) });
+}
+
+export type UsageDashboard = {
+  windowHours: number;
+  requests: { requests: number; server_errors?: number; avg_latency_ms?: number };
+  agentRuns: Array<{ agent_key: string; count: number }>;
+  jobStats: Array<{ status: string; count: number }>;
+  toolStats: ToolAnalyticsRow[];
+  recentToolExecutions: ToolExecutionRecord[];
+  pendingApprovals: number;
+  chatCount: number;
+  memoryCount: number;
+};
+
+export async function backendGetDashboard(config: BackendConfig): Promise<UsageDashboard> {
+  return request(config, '/api/observability/dashboard');
 }
 
 export type StreamEventHandlers = {
@@ -162,18 +184,4 @@ export async function streamNovaMessage(config: BackendConfig, chatId: string, t
 
 export async function backendRegisterPushToken(config: BackendConfig, token: string, platform: 'ios' | 'android' | 'web'): Promise<void> {
   await request(config, '/api/push/register', { method: 'POST', body: JSON.stringify({ token, platform }) });
-}
-
-export type UsageDashboard = {
-  windowHours: number;
-  requests: { requests: number; server_errors: number | null; avg_latency_ms: number | null };
-  agentRuns: Array<{ agent_key: string; count: number }>;
-  jobStats: Array<{ status: string; count: number }>;
-  pendingApprovals: number;
-  chatCount: number;
-  memoryCount: number;
-};
-
-export async function backendGetDashboard(config: BackendConfig): Promise<UsageDashboard> {
-  return request(config, '/api/observability/dashboard');
 }

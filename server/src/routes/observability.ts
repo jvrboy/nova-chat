@@ -66,12 +66,16 @@ observability.get('/dashboard', async (c) => {
   const pendingApprovals = await c.env.DB.prepare(`SELECT COUNT(*) as count FROM approvals WHERE workspace_id = ? AND status = 'pending'`).bind(workspaceId).first<{ count: number }>()
   const chatCount = await c.env.DB.prepare(`SELECT COUNT(*) as count FROM chats WHERE workspace_id = ?`).bind(workspaceId).first<{ count: number }>()
   const memoryCount = await c.env.DB.prepare(`SELECT COUNT(*) as count FROM memories WHERE workspace_id = ?`).bind(workspaceId).first<{ count: number }>()
+  const toolStats = await c.env.DB.prepare(`SELECT tool_id, COUNT(*) as executions, SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) as successes, SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END) as failures, AVG(duration_ms) as avg_duration_ms, MAX(duration_ms) as p95_duration_ms FROM tool_execution_history WHERE workspace_id = ? AND created_at >= ? GROUP BY tool_id ORDER BY executions DESC LIMIT 30`).bind(workspaceId, since).all()
+  const recentToolExecutions = await c.env.DB.prepare(`SELECT id, actor_id, tool_id, status, risk, duration_ms, error_message, created_at FROM tool_execution_history WHERE workspace_id = ? ORDER BY created_at DESC LIMIT 50`).bind(workspaceId).all()
 
   return c.json({
     windowHours: 24,
     requests: totals,
     agentRuns: agentRuns.results,
     jobStats: jobStats.results,
+    toolStats: toolStats.results,
+    recentToolExecutions: recentToolExecutions.results,
     pendingApprovals: pendingApprovals?.count ?? 0,
     chatCount: chatCount?.count ?? 0,
     memoryCount: memoryCount?.count ?? 0,
