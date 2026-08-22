@@ -19,6 +19,9 @@ export default function AccessControlScreen() {
   const [toolId, setToolId] = useState('web-search-pro');
   const [effect, setEffect] = useState<'allow' | 'deny'>('allow');
   const [loading, setLoading] = useState(false);
+  const [pluginName, setPluginName] = useState('');
+  const [pluginEndpoint, setPluginEndpoint] = useState('');
+  const [pluginDescription, setPluginDescription] = useState('');
 
   const loadRoles = async () => {
     if (!config.baseUrl) return;
@@ -35,6 +38,11 @@ export default function AccessControlScreen() {
     setLoading(true);
     try { await backendAccessRequest(config, `/roles/${selectedRole.id}/members`, { method: 'POST', body: JSON.stringify({ actorId: actorId.trim() }) }); Alert.alert('Member assigned', `${actorId.trim()} is now ${selectedRole.name}.`); setActorId(''); } catch (error) { Alert.alert('Could not assign member', error instanceof Error ? error.message : 'Request failed.'); } finally { setLoading(false); }
   };
+  const createPlugin = async () => {
+    if (!pluginName.trim() || !pluginEndpoint.trim()) return Alert.alert('Missing plugin details', 'Enter a name and HTTPS endpoint.');
+    setLoading(true);
+    try { await backendAccessRequest(config, '/plugins', { method: 'POST', body: JSON.stringify({ name: pluginName.trim(), endpoint: pluginEndpoint.trim(), description: pluginDescription.trim(), method: 'POST', risk: 'review' }) }); Alert.alert('Plugin registered', 'The HTTPS plugin is ready for role permissions.'); setPluginName(''); setPluginEndpoint(''); setPluginDescription(''); } catch (error) { Alert.alert('Could not register plugin', error instanceof Error ? error.message : 'Request failed.'); } finally { setLoading(false); }
+  };
   const setPermission = async () => {
     if (!selectedRole || !toolId.trim()) return Alert.alert('Missing permission', 'Select a role and enter a tool ID.');
     setLoading(true);
@@ -48,6 +56,7 @@ export default function AccessControlScreen() {
     <Text style={s.section}>Roles</Text><View style={s.card}><TextInput value={roleName} onChangeText={setRoleName} placeholder="Role name" placeholderTextColor={colors.muted} autoCapitalize="none" style={s.input} /><TextInput value={roleDescription} onChangeText={setRoleDescription} placeholder="Description" placeholderTextColor={colors.muted} style={s.input} /><Pressable disabled={loading || !config.baseUrl} onPress={() => void createRole()} style={s.primaryButton}><Ionicons name="add-circle-outline" size={18} color={colors.bg} /><Text style={s.primaryText}>Create role</Text></Pressable></View>
     <View style={s.roleList}>{roles.map((role) => <Pressable key={role.id} onPress={() => setSelectedRole(role)} style={[s.role, selectedRole?.id === role.id && s.roleSelected]}><View style={s.roleIcon}><Ionicons name="people-outline" size={18} color={selectedRole?.id === role.id ? colors.bg : colors.primary} /></View><View style={s.copy}><Text style={s.roleName}>{role.name}</Text><Text style={s.meta}>{role.description || 'No description'}</Text></View>{selectedRole?.id === role.id && <Ionicons name="checkmark-circle" size={19} color={colors.success} />}</Pressable>)}</View>
     <Text style={s.section}>Assign a member</Text><View style={s.card}><TextInput value={actorId} onChangeText={setActorId} placeholder="Actor ID (for example key:abc123)" placeholderTextColor={colors.muted} autoCapitalize="none" style={s.input} /><Text style={s.selected}>Selected role: <Text style={s.selectedValue}>{selectedRole?.name ?? 'none'}</Text></Text><Pressable disabled={loading || !config.baseUrl} onPress={() => void assignMember()} style={s.secondaryButton}><Text style={s.secondaryText}>Assign member</Text></Pressable></View>
+    <Text style={s.section}>Custom plugin</Text><View style={s.card}><TextInput value={pluginName} onChangeText={setPluginName} placeholder="Plugin name" placeholderTextColor={colors.muted} style={s.input} /><TextInput value={pluginEndpoint} onChangeText={setPluginEndpoint} placeholder="https://api.example.com/nova" placeholderTextColor={colors.muted} autoCapitalize="none" autoCorrect={false} style={s.input} /><TextInput value={pluginDescription} onChangeText={setPluginDescription} placeholder="What this integration does" placeholderTextColor={colors.muted} style={s.input} /><Text style={s.meta}>Credentials are referenced by a backend environment secret; Nova never stores API keys in the mobile app.</Text><Pressable disabled={loading || !config.baseUrl} onPress={() => void createPlugin()} style={s.secondaryButton}><Text style={s.secondaryText}>Register HTTPS plugin</Text></Pressable></View>
     <Text style={s.section}>Tool permission</Text><View style={s.card}><TextInput value={toolId} onChangeText={setToolId} placeholder="Tool ID, e.g. web-search-pro" placeholderTextColor={colors.muted} autoCapitalize="none" style={s.input} /><View style={s.effectRow}>{(['allow', 'deny'] as const).map((value) => <Pressable key={value} onPress={() => setEffect(value)} style={[s.effect, effect === value && s.effectActive]}><Text style={[s.effectText, effect === value && s.effectTextActive]}>{value.toUpperCase()}</Text></Pressable>)}</View><Pressable disabled={loading || !config.baseUrl} onPress={() => void setPermission()} style={s.secondaryButton}><Text style={s.secondaryText}>Save permission</Text></Pressable></View>
   </ScrollView></SafeAreaView>;
 }
