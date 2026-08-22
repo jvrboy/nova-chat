@@ -78,6 +78,8 @@ export async function chatComplete(
       Authorization: `Bearer ${env.OPENAI_API_KEY}`,
     },
     body: JSON.stringify(body),
+    // A hung provider must not stall the whole request chain.
+    signal: AbortSignal.timeout(60_000),
   })
 
   if (!response.ok) {
@@ -119,6 +121,7 @@ export async function* streamChatComplete(
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${env.OPENAI_API_KEY}` },
     body: JSON.stringify(body),
+    signal: AbortSignal.timeout(60_000),
   })
   if (!response.ok || !response.body) {
     const text = await response.text().catch(() => '')

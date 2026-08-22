@@ -4,7 +4,7 @@ import type { AppEnv } from '../lib/types'
 import { newId, nowIso } from '../lib/ids'
 import { appendAudit } from '../lib/db'
 import { chatComplete, streamChatComplete, LlmMessage } from '../lib/llm'
-import { runTool, toolAsLlmSpec, toolRegistry } from '../lib/tools'
+import { runTool, toolAsLlmSpec, toolRegistry, getTool } from '../lib/tools'
 import { semanticSearch, upsertEmbedding } from '../lib/embeddings'
 
 const chat = new Hono<AppEnv>()
@@ -21,9 +21,12 @@ Be direct and avoid filler. If you don't know something and no tool can help, sa
 const chatTools = toolRegistry.filter((t) => t.risk === 'safe').map(toolAsLlmSpec)
 
 async function buildContextMessages(env: AppEnv['Bindings'], db: D1Database, workspaceId: string, chatId: string, latestUserText: string): Promise<LlmMessage[]> {
-  const history = await db.prepare('SELECT role, content, tool_name FROM messages WHERE chat_id = ? ORDER BY created_at ASC LIMIT 30')
+  // Take the NEWEST 30 messages (DESC) then restore chronological order —
+  // ordering ASC with LIMIT would pin the model to the chat's oldest turns.
+  const { results } = await db.prepare('SELECT role, content, tool_name FROM messages WHERE chat_id = ? ORDER BY created_at DESC LIMIT 30')
     .bind(chatId)
     .all<{ role: string; content: string; tool_name: string | null }>()
+  results.reverse()
 
   const messages: LlmMessage[] = [{ role: 'system', content: SYSTEM_PROMPT }]
 
@@ -40,8 +43,22 @@ async function buildContextMessages(env: AppEnv['Bindings'], db: D1Database, wor
     }
   } catch { /* RAG is best-effort; never block the chat on it */ }
 
-  messages.push(...history.results.map((m) => ({ role: m.role as LlmMessage['role'], content: m.content })))
+  messages.push(...results.map((m) => ({ role: m.role as LlmMessage['role'], content: m.content })))
   return messages
+}
+
+/**
+ * Defense-in-depth for model-emitted tool calls: even though only "safe" tools
+ * are advertised to the LLM, a prompt-injected or jailbroken completion could
+ * emit any tool name. Enforce the same policy as /api/tools/:id/run here —
+ * anything not explicitly safe is refused instead of executed.
+ */
+function enforceChatToolPolicy(toolName: string): void {
+  const tool = getTool(toolName)
+  if (!tool) throw new Error(`Unknown tool requested by model: ${toolName}`)
+  if (tool.risk !== 'safe') {
+    throw new Error(`Tool "${toolName}" (${tool.risk}) may not run inside open chat. Use POST /api/tools/${toolName}/run with explicit approval instead.`)
+  }
 }
 
 // GET /api/chats - list chats for the workspace
@@ -111,7 +128,13 @@ chat.post('/:id/messages', async (c) => {
           let args: Record<string, unknown> = {}
           try { args = JSON.parse(call.function.arguments || '{}') } catch { /* ignore */ }
           toolUsed = call.function.name
-          const outcome = await runTool(call.function.name, args, { env: c.env, workspaceId, actorId, db: c.env.DB })
+          let outcome: Awaited<ReturnType<typeof runTool>>
+          try {
+            enforceChatToolPolicy(call.function.name)
+            outcome = await runTool(call.function.name, args, { env: c.env, workspaceId, actorId, db: c.env.DB })
+          } catch (policyError) {
+            outcome = { ok: false as const, error: policyError instanceof Error ? policyError.message : 'Tool blocked by chat safety policy.', tool: call.function.name, durationMs: 0, runId: 'blocked', at: nowIso() }
+          }
           messages.push({ role: 'tool', tool_call_id: call.id, content: JSON.stringify(outcome), name: call.function.name })
         }
         continue
@@ -193,7 +216,13 @@ chat.post('/:id/stream', async (c) => {
             try { args = JSON.parse(call.function.arguments || '{}') } catch { /* ignore */ }
             toolUsed = call.function.name
             await stream.writeSSE({ event: 'tool_call', data: JSON.stringify({ tool: call.function.name, args }) })
-            const outcome = await runTool(call.function.name, args, { env: c.env, workspaceId, actorId, db: c.env.DB })
+            let outcome: Awaited<ReturnType<typeof runTool>>
+            try {
+              enforceChatToolPolicy(call.function.name)
+              outcome = await runTool(call.function.name, args, { env: c.env, workspaceId, actorId, db: c.env.DB })
+            } catch (policyError) {
+              outcome = { ok: false as const, error: policyError instanceof Error ? policyError.message : 'Tool blocked by chat safety policy.', tool: call.function.name, durationMs: 0, runId: 'blocked', at: nowIso() }
+            }
             await stream.writeSSE({ event: 'tool_result', data: JSON.stringify(outcome) })
             messages.push({ role: 'tool', tool_call_id: call.id, content: JSON.stringify(outcome), name: call.function.name })
           }

@@ -9,8 +9,10 @@ const memory = new Hono<AppEnv>()
 memory.get('/', async (c) => {
   const workspaceId = c.get('workspaceId')
   const search = c.req.query('q')
-  const stmt = search
-    ? c.env.DB.prepare('SELECT * FROM memories WHERE workspace_id = ? AND content LIKE ? ORDER BY created_at DESC LIMIT 200').bind(workspaceId, `%${search}%`)
+  // Escape LIKE wildcards so a query like "100%" matches literally.
+  const pattern = search ? `%${search.replace(/([%_\\])/g, '\\$1')}%` : null
+  const stmt = pattern
+    ? c.env.DB.prepare("SELECT * FROM memories WHERE workspace_id = ? AND content LIKE ? ESCAPE '\\' ORDER BY created_at DESC LIMIT 200").bind(workspaceId, pattern)
     : c.env.DB.prepare('SELECT * FROM memories WHERE workspace_id = ? ORDER BY created_at DESC LIMIT 200').bind(workspaceId)
   const { results } = await stmt.all<any>()
   return c.json({ memories: results.map((r) => ({ ...r, tags: parseJson(r.tags, []) })) })

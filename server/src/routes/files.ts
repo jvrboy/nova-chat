@@ -5,6 +5,21 @@ import { appendAudit } from '../lib/db'
 
 const files = new Hono<AppEnv>()
 
+/**
+ * Sanitizes a client-supplied filename before it is used in an R2 key or a
+ * Content-Disposition header: strips path separators, control/CRLF characters,
+ * and quotes, and caps the length.
+ */
+function safeFileName(name: string): string {
+  const cleaned = name
+    .replace(/[^\x20-\x7E]/g, '')
+    .replace(/[/\\?%*:|"<>\x00-\x1f]/g, '_')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 120)
+  return cleaned || 'upload.bin'
+}
+
 files.get('/', async (c) => {
   const workspaceId = c.get('workspaceId')
   const { results } = await c.env.DB.prepare('SELECT * FROM files WHERE workspace_id = ? ORDER BY created_at DESC LIMIT 200').bind(workspaceId).all()
@@ -20,13 +35,14 @@ files.post('/upload', async (c) => {
   if (file.size > 25 * 1024 * 1024) return c.json({ error: 'File exceeds 25MB limit.' }, 413)
 
   const id = newId('file')
-  const r2Key = `${workspaceId}/${id}-${file.name}`
+  const displayName = safeFileName(file.name)
+  const r2Key = `${workspaceId}/${id}-${displayName}`
   await c.env.BUCKET.put(r2Key, await file.arrayBuffer(), { httpMetadata: { contentType: file.type || 'application/octet-stream' } })
   await c.env.DB.prepare('INSERT INTO files (id, workspace_id, name, r2_key, size, mime_type, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
-    .bind(id, workspaceId, file.name, r2Key, file.size, file.type || 'application/octet-stream', nowIso())
+    .bind(id, workspaceId, displayName, r2Key, file.size, file.type || 'application/octet-stream', nowIso())
     .run()
   await appendAudit(c.env.DB, { workspaceId, actorId: c.get('actorId'), action: 'file.uploaded', resource: 'file', resourceId: id, metadata: { size: file.size } })
-  return c.json({ id, name: file.name, size: file.size }, 201)
+  return c.json({ id, name: displayName, size: file.size }, 201)
 })
 
 files.get('/:id/download', async (c) => {
@@ -36,7 +52,7 @@ files.get('/:id/download', async (c) => {
   if (!row) return c.json({ error: 'File not found in workspace.' }, 404)
   const object = await c.env.BUCKET.get(row.r2_key)
   if (!object) return c.json({ error: 'File missing from storage.' }, 404)
-  return new Response(object.body, { headers: { 'Content-Type': row.mime_type, 'Content-Disposition': `attachment; filename="${row.name}"` } })
+  return new Response(object.body, { headers: { 'Content-Type': row.mime_type, 'Content-Disposition': `attachment; filename="${safeFileName(row.name)}"; filename*=UTF-8''${encodeURIComponent(safeFileName(row.name))}` } })
 })
 
 files.delete('/:id', async (c) => {

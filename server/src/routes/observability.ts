@@ -12,7 +12,10 @@ const observability = new Hono<AppEnv>()
 // middleware in src/index.tsx on every request) — not a simulation.
 observability.get('/summary', async (c) => {
   const workspaceId = c.get('workspaceId')
-  const windowMinutes = Number(c.req.query('windowMinutes') ?? 60)
+  const requested = Number(c.req.query('windowMinutes') ?? 60)
+  // Clamp to a sane range — a non-numeric or absurd value previously produced
+  // an invalid Date and an unhandled 500.
+  const windowMinutes = Number.isFinite(requested) ? Math.min(Math.max(Math.floor(requested), 1), 60 * 24 * 7) : 60
   const since = new Date(Date.now() - windowMinutes * 60_000).toISOString()
 
   const totals = await c.env.DB.prepare(

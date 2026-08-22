@@ -1,8 +1,8 @@
 # Nova Chat
 
 An Expo (React Native) AI workspace app — chat, agents, tools, memory, files,
-and automation — now backed by a real Cloudflare Workers API instead of a
-purely on-device simulation.
+and automation — backed by a Cloudflare Workers API with a full offline
+fallback.
 
 ## Structure
 
@@ -10,46 +10,85 @@ purely on-device simulation.
 nova-chat/
 ├── app/                    Expo Router screens (file-based routing)
 ├── src/
-│   ├── state/NovaProvider.tsx   Core app state; sendMessage() now calls the backend
+│   ├── state/NovaProvider.tsx   Core app state; sendMessage() calls the backend,
+│   │                            local tool execution engine, approval workflow
 │   ├── backend/                 Backend client, config, contracts, novaApi.ts
-│   ├── agent/                   Local tool/agent definitions (offline fallback)
+│   ├── agent/                   Local tool/agent definitions (offline capable)
+│   │   └── utilityTools.ts      14 pure on-device utilities (calculator, codecs…)
 │   ├── platform/                Native capability helpers (camera, mic, notifications)
 │   ├── storage/                 On-device file workspace (AsyncStorage/FileSystem)
-│   └── ui/                      Theme and shared UI primitives
+│   └── ui/theme.ts              Design tokens (colors incl. danger/warning, radii)
 ├── android/ , ios/          Expo-prebuilt native projects (for local/CI builds)
 ├── server/                  Cloudflare Workers + Hono + D1 backend (see server/README.md)
 └── .github/workflows/       CI: unsigned Android APK + iOS simulator build
 ```
 
-## What Changed: Real Backend Integration
+## What's New
 
-The app previously simulated everything (chat replies, memory, agents) purely
-in AsyncStorage with keyword-matched replies. It now has a real backend
-(`/server`) and the mobile app is wired to use it:
+### Mobile app
+- **Real local tool execution** — selecting a safe tool (from Chat's tool
+  drawer, the Tools Center, or the new Toolbox) now actually executes it
+  on-device, records a durable Run/Job/Event trail, and posts the output into
+  the conversation. Review-risk tools pause in **Operations → Approvals**, and
+  approving one now executes it for real instead of leaving jobs queued forever.
+- **New Toolbox screen** (`/toolbox`, linked from Settings) — instant access to
+  14 on-device utilities: calculator, text metrics, case converter, slugify,
+  Base64 codec, URL codec/parser, UUID generator, password generator, JSON
+  formatter, regex tester, timestamp converter, number-base converter, color
+  converter, and lorem-ipsum generator. Everything runs offline; nothing leaves
+  the phone.
+- **Slash commands in chat** — type `/help` to see `/calc`, `/wc`, `/uuid`,
+  `/b64e`, `/b64d`, `/case`, `/slug`, `/pass`, `/json`, `/color`, `/ts`,
+  `/base`, `/regex`, `/url`, `/lorem`. They execute instantly on-device even
+  while offline.
+- **Conversation export** — new header action shares the full transcript;
+  approval prompts now render Approve/Reject for *any* pending backend
+  approval, not just web research.
+- **Memory Vault is real** — every assistant reply has a bookmark action that
+  saves it to the on-device Memory Vault (tagged by tool), where it feeds
+  Global Search and backend memory recall.
+- **Agent data management** — Diagnostics now shows a Memories metric and
+  offers one-tap JSON export (share sheet) or a confirmed reset of all runs,
+  jobs, approvals, memories, and events stored on-device.
+- Fixed: duplicate tool IDs causing React key collisions, the Tools tab hiding
+  ~25 tools behind a stale category filter, double-send of messages when the
+  SSE stream ended without parseable events (retries now happen only on true
+  network failures), unreachable Audio screen, unvalidated push-notification
+  deep links (now whitelisted), duplicated Settings rows, and scattered
+  hardcoded colors (consolidated into `src/ui/theme.ts`).
 
-- **`src/backend/novaApi.ts`** — new API client: `backendCreateChat`,
-  `backendSendMessage`, `streamNovaMessage` (SSE), `backendRegisterPushToken`,
-  `backendGetDashboard`.
-- **`src/state/NovaProvider.tsx`** — `sendMessage()` now:
-  1. If a backend is connected (Settings → Backend → toggle "Remote" + set a
-     base URL), lazily creates a backend chat, then streams the reply via
-     `POST /api/chats/:id/stream` (falls back to the single-shot
-     `POST /api/chats/:id/messages` JSON endpoint if the runtime doesn't
-     expose a readable stream body).
-  2. If no backend is connected, falls back to the original local heuristic
-     reply — **the app remains fully usable offline**, it just won't have
-     real LLM intelligence, tool-calling, or memory recall.
-- **Chat screen** (`app/(tabs)/chat.tsx`) shows live connection status (cloud
-  icon + "Live AI backend connected" vs "Local heuristics only"), a
-  streaming indicator, and inline error states per message.
-- **Notifications screen** (`app/notifications.tsx`) can now register the
-  device's Expo push token with the backend (`POST /api/push/register`) so
-  job completions, approval decisions, and alert incidents can push a
-  real notification even when the app isn't open.
-- **New Usage Dashboard** (`app/usage-dashboard.tsx`, linked from Settings)
-  surfaces the backend's `GET /api/observability/dashboard` (24h requests,
-  errors, latency, agent runs, job status, pending approvals) directly in
-  the app instead of only via API calls.
+### Backend (`server/`)
+- **55 registered tools** (was 41), adding: `base64-codec`, `url-codec`,
+  `jwt-decode`, `timestamp-convert`, `number-base-convert`, `case-convert`,
+  `color-convert`, `slugify`, `password-generate`, `lorem-ipsum`,
+  `cron-describe`, `keyword-extract`, `readability-score`, `html-strip`.
+- Security hardening:
+  - API-key minting/revocation now requires `workspace:admin` scope (a
+    read-only key can no longer escalate itself), and requested scopes are
+    validated against a known-scope allowlist.
+  - The chat tool-calling loop enforces the same risk policy as
+    `/api/tools/:id/run` — a prompt-injected completion can no longer invoke
+    review/sensitive tools inside open chat.
+  - SSRF guard (`assertPublicHttpsUrl`) blocks private/loopback/link-local/
+    cloud-metadata hosts in `web-fetch`, `web-search-summary`, URL parsing,
+    **and webhook connector endpoints** (validated at create time and again at
+    test-fire, plus a 15 s delivery timeout).
+- Robustness fixes:
+  - Chat history now sends the model the **newest** 30 turns (previously the
+    oldest 30 once a chat grew past that).
+  - `regex-extract` no longer crashes when `flags` is omitted.
+  - `csv-to-json` is RFC-4180-aware (quoted commas, escaped quotes, multiline cells).
+  - `unit-convert` falls through cleanly across categories instead of
+    reporting a misleading temperature error.
+  - `qr-payload` escapes reserved WiFi characters.
+  - `windowMinutes` on observability endpoints is validated/clamped (no more 500s).
+  - Memory keyword search escapes LIKE wildcards.
+  - Uploaded filenames are sanitized before use in R2 keys and
+    Content-Disposition headers.
+  - All LLM provider calls carry a 60 s abort timeout so a hung provider
+    cannot stall request chains.
+- **First automated backend test suite** (`pnpm test` inside `server/`) covering
+  the new/fixed tools, the registry, and the SSRF guard.
 
 ### Connecting to the backend
 
@@ -57,43 +96,27 @@ in AsyncStorage with keyword-matched replies. It now has a real backend
 2. In the app: **Settings → Backend** → toggle "Remote", set **Base URL**
    (e.g. `http://localhost:3000` in dev, or your deployed Cloudflare Pages
    URL), and optionally an API key if the backend has one configured.
-3. Chat now streams real replies with tool-calling and memory recall.
-
-The backend is **not yet deployed to Cloudflare** in this repo state — local
-dev only, by design (deployment is a deliberate, separate next step).
+3. Chat now streams real replies with tool-calling and memory recall — and the
+   app stays fully usable offline thanks to the local tool runtime.
 
 ## Local Development
 
 ```bash
 pnpm install
-pnpm run check     # tsc --noEmit
+pnpm run check     # tsc --noEmit (app)
 pnpm start         # expo start
 ```
 
 ## Testing
 
 ```bash
-pnpm run test:e2e
+pnpm run test:e2e        # app-side suite (41 tests across workflows + utilities)
+cd server && pnpm test   # server-side suite (tool registry, fixes, SSRF guard)
 ```
-
-## Dependency Updates
-
-`pnpm update` was run to reduce known vulnerabilities in transitive
-dev-tooling dependencies (Metro/Babel/PostCSS, pulled in by the Expo SDK
-toolchain, not runtime app code):
-
-- **Before**: 12 vulnerabilities (1 low, 4 moderate, 7 high)
-- **After**: 8 vulnerabilities (1 low, 3 moderate, 4 high)
-
-The remaining 8 are pinned transitively by Expo SDK 54's own toolchain
-(`@expo/metro-config` → `postcss`, `@expo/cli` → `@babel/core`, etc.) and
-cannot be bumped independently without breaking the Expo SDK version;
-resolving them fully requires an Expo SDK major upgrade, which is out of
-scope for this pass.
 
 ## Unsigned Builds via GitHub Actions
 
-Two new workflows attempt fully unsigned builds on GitHub-hosted runners
+Two workflows attempt fully unsigned builds on GitHub-hosted runners
 (the direct-in-sandbox attempt on this Linux sandbox previously failed on
 Gradle plugin resolution — see `UNSIGNED_BUILD_REPORT.md`):
 
@@ -108,43 +131,32 @@ Gradle plugin resolution — see `UNSIGNED_BUILD_REPORT.md`):
   intentionally does not have — the simulator build is the closest usable
   unsigned artifact and can be installed with `xcrun simctl install`.
 
-Both workflows are new in this pass and have **not yet had a completed run
-observed** (they trigger on push to `main`/manual dispatch) — check the
-Actions tab after this push lands to confirm they succeed on GitHub's
-runners.
-
 ## Status / What's Implemented vs. Outstanding
 
-**Done this pass:**
-- ✅ Real backend (`/server`) with 41 tools, 10 agents (with delegation),
-  streaming chat, RAG/vector memory, scheduled workflows, push
-  notifications, rate limiting, API-key auth — see `server/README.md`.
-- ✅ Multi-account provider integrations: Kaggle (dataset/kernel search +
-  download, new KGAT bearer-token or legacy username+key), E2B (real
-  sandboxed code execution), Firecrawl (web scrape/search/site-map with
-  clean markdown), Hugging Face (open-model text generation + embeddings),
-  and Supabase (generic table CRUD + Storage, sticky-sharded across many
-  projects) — each supports pooling many accounts to spread load. See
-  [server/README.md § Provider Integrations & Credential Setup](server/README.md#provider-integrations--credential-setup)
-  for exactly which API keys are needed and how to get them.
+**Done:**
+- ✅ Real backend (`/server`) with 55 tools, 10 agents (with delegation),
+  streaming chat, RAG/vector memory, scheduled workflows, push notifications,
+  rate limiting, API-key auth — see `server/README.md`.
+- ✅ Multi-account provider integrations: Kaggle, E2B, Firecrawl, Hugging Face,
+  Supabase — each supports pooling many accounts to spread load.
 - ✅ Mobile app wired to the backend (streaming chat, push registration,
-  usage dashboard) with graceful offline fallback.
-- ✅ UI improvements: connection status indicator, streaming cursor, error
-  states, usage dashboard screen.
-- ✅ `pnpm update` run (12 → 8 vulnerabilities; remainder pinned by Expo SDK).
+  usage dashboard) with graceful offline fallback **and** real local tool
+  execution (Toolbox + slash commands).
+- ✅ Security pass: scope-gated key management, chat-loop risk enforcement,
+  SSRF guards, deep-link whitelist, filename sanitization, LLM timeouts.
+- ✅ Automated tests on both sides (app e2e + server tool suite).
 - ✅ GitHub Actions workflows added for unsigned Android + iOS builds.
 
 **Outstanding / next steps:**
-- ⬜ Confirm the two new GitHub Actions workflows actually succeed on a real
-  run (not yet observed to complete).
+- ⬜ Confirm the two GitHub Actions build workflows succeed on a real run.
 - ⬜ Backend not yet deployed to Cloudflare (deliberately deferred).
 - ⬜ Per-user auth (Clerk/Auth0) not implemented — only workspace-level API
-  keys / header auth.
+  keys / header auth. The header fallback remains intentional for local dev;
+  production deployments should provision API keys.
 - ⬜ Voice input/output for the chat screen not implemented (`expo-audio`
   is already a dependency but unused for this).
-- ⬜ `requireScope()` exists on the backend but isn't enforced on any route
-  yet.
-- ⬜ No automated backend test suite; no backend CI pipeline.
+- ⬜ Non-atomic rate limiter (read-modify-write race under concurrency);
+  would need D1 batch/tombstone or DO-based counters.
 - ⬜ No Slack/email alert channel wired up.
 - ⬜ Real (non-placeholder) D1 database id / R2 bucket — created at deploy
   time, not before.

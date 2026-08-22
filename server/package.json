@@ -6,6 +6,8 @@
     "build": "vite build",
     "preview": "wrangler pages dev",
     "deploy": "npm run build && wrangler pages deploy",
+    "check": "tsc --noEmit",
+    "test": "vitest run tests",
     "cf-typegen": "wrangler types --env-interface CloudflareBindings"
   },
   "dependencies": {
@@ -18,6 +20,7 @@
     "@hono/vite-dev-server": "^0.26.1",
     "typescript": "^7.0.2",
     "vite": "^8.1.4",
+    "vitest": "^4.1.11",
     "wrangler": "^4.110.0"
   }
 }

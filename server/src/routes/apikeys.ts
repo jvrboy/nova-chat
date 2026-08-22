@@ -3,10 +3,11 @@ import type { AppEnv } from '../lib/types'
 import { newId, nowIso } from '../lib/ids'
 import { randomToken, sha256Hex } from '../lib/crypto'
 import { appendAudit } from '../lib/db'
+import { requireScope } from '../lib/auth'
 
 const apikeys = new Hono<AppEnv>()
 
-apikeys.get('/', async (c) => {
+apikeys.get('/', requireScope('workspace:admin'), async (c) => {
   const workspaceId = c.get('workspaceId')
   const { results } = await c.env.DB.prepare('SELECT id, name, prefix, scopes, created_at, revoked_at FROM api_keys WHERE workspace_id = ? ORDER BY created_at DESC')
     .bind(workspaceId)
@@ -15,12 +16,17 @@ apikeys.get('/', async (c) => {
 })
 
 // Returns the plaintext key exactly once — only the SHA-256 hash is ever stored.
-apikeys.post('/', async (c) => {
+// Admin-gated: without this, a read-only key could mint itself a workspace:admin
+// key (privilege escalation).
+const KNOWN_SCOPES = new Set(['workspace:read', 'workspace:write', 'workspace:admin'])
+apikeys.post('/', requireScope('workspace:admin'), async (c) => {
   const workspaceId = c.get('workspaceId')
   const actorId = c.get('actorId')
   const body = await c.req.json().catch(() => ({}))
   const name = typeof body?.name === 'string' && body.name.trim() ? body.name.trim() : 'Unnamed key'
-  const scopes = Array.isArray(body?.scopes) ? body.scopes.filter((s: unknown) => typeof s === 'string') : ['workspace:read', 'workspace:write']
+  let scopes = Array.isArray(body?.scopes) ? body.scopes.filter((s: unknown) => typeof s === 'string') : ['workspace:read', 'workspace:write']
+  scopes = scopes.filter((s: string) => KNOWN_SCOPES.has(s))
+  if (!scopes.length) scopes = ['workspace:read']
 
   const secret = randomToken(24)
   const prefix = `nv_${secret.slice(0, 8)}`
@@ -36,7 +42,7 @@ apikeys.post('/', async (c) => {
   return c.json({ id, name, prefix, scopes, plaintextKey: plaintext }, 201)
 })
 
-apikeys.post('/:id/revoke', async (c) => {
+apikeys.post('/:id/revoke', requireScope('workspace:admin'), async (c) => {
   const workspaceId = c.get('workspaceId')
   const id = c.req.param('id')
   const result = await c.env.DB.prepare('UPDATE api_keys SET revoked_at = ? WHERE id = ? AND workspace_id = ? AND revoked_at IS NULL')

@@ -2,6 +2,7 @@ import { Hono } from 'hono'
 import type { AppEnv } from '../lib/types'
 import { newId, nowIso } from '../lib/ids'
 import { createWebhookSignature } from '../lib/webhook'
+import { assertPublicHttpsUrl } from '../lib/tools'
 
 const connectors = new Hono<AppEnv>()
 
@@ -20,10 +21,16 @@ connectors.post('/', async (c) => {
   const validProviders = ['webhook', 'calendar', 'storage', 'llm', 'analytics', 'email']
   if (!validProviders.includes(provider)) return c.json({ error: `provider must be one of ${validProviders.join(', ')}` }, 400)
   const name = typeof body?.name === 'string' ? body.name.trim() : provider
+  // Validate early: an endpoint must be a public HTTPS URL, or the connector
+  // is stored unconfigured. Prevents SSRF via test-fire later.
+  let endpoint: string | null = null
+  if (typeof body?.endpoint === 'string' && body.endpoint.trim()) {
+    endpoint = assertPublicHttpsUrl(body.endpoint.trim()).toString()
+  }
   const id = newId('conn')
   const at = nowIso()
   await c.env.DB.prepare('INSERT INTO connectors (id, workspace_id, provider, name, status, endpoint, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
-    .bind(id, workspaceId, provider, name, body?.endpoint ? 'connected' : 'not_configured', body?.endpoint ?? null, at, at)
+    .bind(id, workspaceId, provider, name, endpoint ? 'connected' : 'not_configured', endpoint, at, at)
     .run()
   return c.json({ id, provider, name }, 201)
 })
@@ -40,10 +47,14 @@ connectors.post('/:id/test-fire', async (c) => {
   const payload = JSON.stringify({ event: 'test.fired', workspaceId, at: nowIso() })
   const signature = await createWebhookSignature(payload, id)
   try {
-    const response = await fetch(row.endpoint, {
+    // Defense-in-depth: re-validate at fire time in case an old row predates
+    // create-time validation.
+    const target = assertPublicHttpsUrl(row.endpoint)
+    const response = await fetch(target.toString(), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-Nova-Signature': signature },
       body: payload,
+      signal: AbortSignal.timeout(15_000),
     })
     await c.env.DB.prepare('UPDATE connectors SET status = ?, last_checked_at = ? WHERE id = ?')
       .bind(response.ok ? 'connected' : 'error', nowIso(), id)

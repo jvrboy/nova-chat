@@ -48,7 +48,7 @@ export default function UsageDashboardScreen() {
         <Text style={s.subtitle}>Live 24h backend metrics: requests, tool performance, agent runs, job status, and pending approvals.</Text>
 
         {loading && !data && <ActivityIndicator size="large" color={colors.primary} style={{ marginTop: 30 }} />}
-        {error && <View style={s.errorCard}><Ionicons name="warning-outline" size={20} color="#ff9b9b" /><Text style={s.errorText}>{error}</Text></View>}
+        {error && <View style={s.errorCard}><Ionicons name="warning-outline" size={20} color={colors.dangerText} /><Text style={s.errorText}>{error}</Text></View>}
 
         {data && (
           <>
@@ -121,8 +121,8 @@ const s = StyleSheet.create({
   eyebrow: { fontSize: 10, letterSpacing: 1.5, color: colors.primary, fontWeight: '700' },
   title: { color: colors.text, fontSize: 30, fontWeight: '800', marginTop: 4 },
   subtitle: { color: colors.muted, fontSize: 14, lineHeight: 20 },
-  errorCard: { padding: 14, borderRadius: radii.md, backgroundColor: colors.surface, borderWidth: 1, borderColor: '#ff6b6b', flexDirection: 'row', alignItems: 'center', gap: 10 },
-  errorText: { color: '#ff9b9b', flex: 1, lineHeight: 18 },
+  errorCard: { padding: 14, borderRadius: radii.md, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.danger, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  errorText: { color: colors.dangerText, flex: 1, lineHeight: 18 },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   metric: { width: '31%', minWidth: 90, padding: 12, borderRadius: radii.md, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
   metricValue: { color: colors.primary, fontSize: 22, fontWeight: '900' },
@@ -134,7 +134,7 @@ const s = StyleSheet.create({
   copy: { flex: 1 },
   rowLabel: { color: colors.text, fontWeight: '700', textTransform: 'capitalize' },
   rowValue: { color: colors.primary, fontWeight: '800' },
-  failure: { color: '#ff9b9b' },
+  failure: { color: colors.dangerText },
   meta: { color: colors.muted, fontSize: 11, marginTop: 4 },
   empty: { color: colors.muted, padding: 14, fontSize: 13 },
 });
