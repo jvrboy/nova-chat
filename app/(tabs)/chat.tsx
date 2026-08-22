@@ -18,6 +18,7 @@ const toolIcons: Record<string, IconName> = {
   sparkles: 'sparkles-outline',
   globe: 'globe-outline',
   'code-slash': 'code-slash-outline',
+  map: 'map-outline',
   construct: 'construct-outline',
   pulse: 'pulse-outline',
   'shield-checkmark': 'shield-checkmark-outline',
@@ -29,6 +30,7 @@ const promptStarters = [
   { icon: 'document-text-outline' as IconName, label: 'Summarize', prompt: 'Summarize the key points, decisions, and open questions from this context.' },
   { icon: 'flash-outline' as IconName, label: 'Solve it', prompt: 'Help me solve this step by step and show the assumptions behind the answer.' },
   { icon: 'globe-outline' as IconName, label: '2026 tech brief', prompt: 'What are the most important technology news developments from the last 30 days of 2026? Cite the sources and explain why each matters.', tool: 'web-search-pro' },
+  { icon: 'scan-outline' as IconName, label: 'Audit a website', prompt: 'https://example.com', tool: 'web-scrape' },
 ];
 const codeLanguages = ['python', 'javascript', 'typescript', 'r', 'bash'] as const;
 
@@ -51,6 +53,12 @@ export default function ChatScreen() {
     if (!trimmed || streamingReply) return;
     if (activeTool === 'web-search-pro') {
       void runProductionTool(activeTool, { query: trimmed, limit: 5, scrapeContent: true });
+    } else if (activeTool === 'web-scrape') {
+      void runProductionTool(activeTool, { url: trimmed, onlyMainContent: true });
+    } else if (activeTool === 'web-site-map') {
+      void runProductionTool(activeTool, { url: trimmed, limit: 100 });
+    } else if (activeTool === 'provider-status') {
+      void runProductionTool(activeTool, {});
     } else if (activeTool === 'code-execute') {
       void runProductionTool(activeTool, { code: trimmed, language: codeLanguage });
     } else {

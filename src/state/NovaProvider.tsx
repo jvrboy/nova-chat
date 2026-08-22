@@ -26,6 +26,9 @@ const tools: Tool[] = [
   ...productionTools.map((tool) => ({ id: tool.id, name: tool.name, description: tool.description, icon: 'shield-checkmark', category: 'Production' })),
   { id: 'web-search-pro', name: 'Web Search Pro', description: 'Search the live web and optionally return full page content for grounded answers.', icon: 'globe', category: 'Production' },
   { id: 'code-execute', name: 'Code Executor', description: 'Run Python, JavaScript, TypeScript, R, or Bash in an isolated ephemeral sandbox. Requires approval.', icon: 'code-slash', category: 'Production' },
+  { id: 'web-scrape', name: 'Page Scraper', description: 'Fetch a public HTTPS page and return clean, readable content for grounded analysis.', icon: 'globe', category: 'Production' },
+  { id: 'web-site-map', name: 'Site Mapper', description: 'Discover the URL tree of a public website before selecting pages to analyze.', icon: 'map', category: 'Production' },
+  { id: 'provider-status', name: 'Provider Diagnostics', description: 'Check which external providers are configured without exposing secrets.', icon: 'pulse', category: 'Production' },
 ];
 const initialChats: Chat[] = [{ id: 'nova', title: 'New conversation', updatedAt: new Date().toISOString(), messages: [{ id: 'welcome', role: 'assistant', text: 'I’m Nova. I can help you think, build, plan, and remember. Connect a backend in Settings → Backend for real LLM replies with tools, memory, and agents — otherwise I run useful local heuristics only.' }] }];
 const initialProjects: Project[] = [{ id: 'mobile', name: 'Mobile workspace', description: 'Your converted Expo command center.', color: '#55d6ff', files: 12 }, { id: 'ideas', name: 'Ideas lab', description: 'Capture and develop new directions.', color: '#a78bfa', files: 7 }];
@@ -112,8 +115,8 @@ export function NovaProvider({ children }: { children: React.ReactNode }) {
 
   const runProductionTool = async (toolId: string, input: Record<string, unknown>) => {
     const chat = chatsRef.current[0] ?? initialChats[0];
-    const label = toolId === 'code-execute' ? 'Run code' : toolId === 'web-search-pro' ? 'Search the web' : `Run ${toolId}`;
-    const inputPreview = toolId === 'code-execute' ? String(input.code ?? '').slice(0, 120) : String(input.query ?? '').slice(0, 120);
+    const label = toolId === 'code-execute' ? 'Run code' : toolId === 'web-search-pro' ? 'Search the web' : toolId === 'web-scrape' ? 'Scrape page' : toolId === 'web-site-map' ? 'Map website' : toolId === 'provider-status' ? 'Check providers' : `Run ${toolId}`;
+    const inputPreview = toolId === 'code-execute' ? String(input.code ?? '').slice(0, 120) : toolId === 'web-scrape' || toolId === 'web-site-map' ? String(input.url ?? '').slice(0, 120) : String(input.query ?? '').slice(0, 120);
     const pendingId = `a${Date.now()}`;
     appendMessage(chat.id, { id: `u${Date.now() - 1}`, role: 'user', text: `${label}: ${inputPreview}` });
     appendMessage(chat.id, { id: pendingId, role: 'assistant', text: '', pending: true, tool: toolId });
