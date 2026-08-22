@@ -16,6 +16,8 @@ const toolIcons: Record<string, IconName> = {
   scan: 'scan-outline',
   list: 'list-outline',
   sparkles: 'sparkles-outline',
+  globe: 'globe-outline',
+  'code-slash': 'code-slash-outline',
   construct: 'construct-outline',
   pulse: 'pulse-outline',
   'shield-checkmark': 'shield-checkmark-outline',
@@ -29,7 +31,7 @@ const promptStarters = [
 ];
 
 export default function ChatScreen() {
-  const { activeChat, sendMessage, createChat, backendConnected, streamingReply, tools } = useNova();
+  const { activeChat, sendMessage, runProductionTool, createChat, backendConnected, streamingReply, tools } = useNova();
   const [text, setText] = useState('');
   const [toolSheetOpen, setToolSheetOpen] = useState(false);
   const [toolQuery, setToolQuery] = useState('');
@@ -44,8 +46,14 @@ export default function ChatScreen() {
   const submit = (value = text) => {
     const trimmed = value.trim();
     if (!trimmed || streamingReply) return;
-    const enriched = activeTool ? `[Use ${activeTool}] ${trimmed}` : trimmed;
-    sendMessage(enriched);
+    if (activeTool === 'web-search-pro') {
+      void runProductionTool(activeTool, { query: trimmed, limit: 5, scrapeContent: true });
+    } else if (activeTool === 'code-execute') {
+      void runProductionTool(activeTool, { code: trimmed, language: 'python' });
+    } else {
+      const enriched = activeTool ? `[Use ${activeTool}] ${trimmed}` : trimmed;
+      sendMessage(enriched);
+    }
     setText('');
     requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }));
   };

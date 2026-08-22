@@ -8,7 +8,7 @@ import { advancedTools } from '../agent/advancedTools';
 import { operationsTools } from '../agent/operationsTools';
 import { productionTools } from '../agent/productionTools';
 import { useBackend } from '../backend/BackendProvider';
-import { backendCreateChat, backendSendMessage, streamNovaMessage } from '../backend/novaApi';
+import { backendCreateChat, backendRunTool, backendSendMessage, streamNovaMessage } from '../backend/novaApi';
 
 export type Message = { id: string; role: 'user' | 'assistant'; text: string; tool?: string; pending?: boolean; error?: boolean };
 export type Chat = { id: string; title: string; messages: Message[]; updatedAt: string; backendChatId?: string };
@@ -24,11 +24,13 @@ const tools: Tool[] = [
   ...advancedTools.map((tool) => ({ id: tool.id, name: tool.name, description: tool.description, icon: 'construct', category: 'Advanced' })),
   ...operationsTools.map((tool) => ({ id: tool.id, name: tool.name, description: tool.description, icon: 'pulse', category: 'Operations' })),
   ...productionTools.map((tool) => ({ id: tool.id, name: tool.name, description: tool.description, icon: 'shield-checkmark', category: 'Production' })),
+  { id: 'web-search-pro', name: 'Web Search Pro', description: 'Search the live web and optionally return full page content for grounded answers.', icon: 'globe', category: 'Production' },
+  { id: 'code-execute', name: 'Code Executor', description: 'Run Python, JavaScript, TypeScript, R, or Bash in an isolated ephemeral sandbox. Requires approval.', icon: 'code-slash', category: 'Production' },
 ];
 const initialChats: Chat[] = [{ id: 'nova', title: 'New conversation', updatedAt: new Date().toISOString(), messages: [{ id: 'welcome', role: 'assistant', text: 'I’m Nova. I can help you think, build, plan, and remember. Connect a backend in Settings → Backend for real LLM replies with tools, memory, and agents — otherwise I run useful local heuristics only.' }] }];
 const initialProjects: Project[] = [{ id: 'mobile', name: 'Mobile workspace', description: 'Your converted Expo command center.', color: '#55d6ff', files: 12 }, { id: 'ideas', name: 'Ideas lab', description: 'Capture and develop new directions.', color: '#a78bfa', files: 7 }];
 
-type NovaContextValue = { chats: Chat[]; projects: Project[]; tools: Tool[]; runs: AgentRun[]; approvals: Approval[]; memories: Memory[]; jobs: AgentJob[]; events: AgentEvent[]; files: NovaFile[]; settings: StorageSettings; capabilities: CapabilityStatus; pipelines: Pipeline[]; activeChat: Chat; ready: boolean; backendConnected: boolean; streamingReply: boolean; createChat: () => void; sendMessage: (text: string) => void; startRun: (input: string, toolId?: string) => void; startPipeline: (pipeline: Pipeline, input: string) => void; approve: (id: string, approved: boolean) => void; saveMemory: (content: string, tags?: string[]) => void; importFiles: () => Promise<void>; createNote: () => Promise<void>; deleteFile: (id: string) => Promise<void>; exportFiles: () => Promise<void>; updateSettings: (settings: StorageSettings) => Promise<void>; recoverStorage: () => Promise<void>; requestPermission: (name: keyof CapabilityStatus) => Promise<CapabilityStatus[keyof CapabilityStatus]> };
+type NovaContextValue = { chats: Chat[]; projects: Project[]; tools: Tool[]; runs: AgentRun[]; approvals: Approval[]; memories: Memory[]; jobs: AgentJob[]; events: AgentEvent[]; files: NovaFile[]; settings: StorageSettings; capabilities: CapabilityStatus; pipelines: Pipeline[]; activeChat: Chat; ready: boolean; backendConnected: boolean; streamingReply: boolean; createChat: () => void; sendMessage: (text: string) => void; runProductionTool: (toolId: string, input: Record<string, unknown>) => Promise<void>; startRun: (input: string, toolId?: string) => void; startPipeline: (pipeline: Pipeline, input: string) => void; approve: (id: string, approved: boolean) => void; saveMemory: (content: string, tags?: string[]) => void; importFiles: () => Promise<void>; createNote: () => Promise<void>; deleteFile: (id: string) => Promise<void>; exportFiles: () => Promise<void>; updateSettings: (settings: StorageSettings) => Promise<void>; recoverStorage: () => Promise<void>; requestPermission: (name: keyof CapabilityStatus) => Promise<CapabilityStatus[keyof CapabilityStatus]> };
 const NovaContext = createContext<NovaContextValue | null>(null);
 
 export function NovaProvider({ children }: { children: React.ReactNode }) {
@@ -108,6 +110,25 @@ export function NovaProvider({ children }: { children: React.ReactNode }) {
     })();
   };
 
+  const runProductionTool = async (toolId: string, input: Record<string, unknown>) => {
+    const chat = chatsRef.current[0] ?? initialChats[0];
+    const label = toolId === 'code-execute' ? 'Run code' : toolId === 'web-search-pro' ? 'Search the web' : `Run ${toolId}`;
+    const inputPreview = toolId === 'code-execute' ? String(input.code ?? '').slice(0, 120) : String(input.query ?? '').slice(0, 120);
+    const pendingId = `a${Date.now()}`;
+    appendMessage(chat.id, { id: `u${Date.now() - 1}`, role: 'user', text: `${label}: ${inputPreview}` });
+    appendMessage(chat.id, { id: pendingId, role: 'assistant', text: '', pending: true, tool: toolId });
+    try {
+      if (!backendConnected) throw new Error('Connect a backend before running production tools.');
+      const outcome = await backendRunTool(backendConfig, toolId, input);
+      const resultText = outcome.requiresConfirmation
+        ? `${outcome.message ?? 'This tool requires approval before it can run.'}\n\nApproval ID: ${outcome.approvalId ?? 'pending'}`
+        : outcome.ok === false ? (outcome.error ?? 'Tool execution failed.') : formatToolResult(outcome.result);
+      if (pendingId) replaceMessage(chat.id, pendingId, { text: resultText, pending: false, error: outcome.ok === false || Boolean(outcome.requiresConfirmation) });
+    } catch (error) {
+      if (pendingId) replaceMessage(chat.id, pendingId, { text: error instanceof Error ? error.message : 'Production tool failed.', pending: false, error: true });
+    }
+  };
+
   const startRun = (input: string, toolId = 'extract') => { const run = createRun(input); const job = createJob(run.id, toolId, input); run.jobIds = [job.id]; run.status = 'running'; setRuns((value) => [run, ...value]); setJobs((value) => [job, ...value]); void log({ type: 'run.created', runId: run.id, message: `Started ${run.title}` }); const selectedTool = [...agentTools, ...advancedTools, ...operationsTools, ...productionTools].find((tool) => tool.id === toolId); if (selectedTool?.risk !== 'safe') { setApprovals((value) => [requestApproval(run, job, selectedTool?.risk ?? 'review'), ...value]); void log({ type: 'approval.requested', runId: run.id, message: `Approval required for ${toolId}` }); } };
   const startPipeline = (pipeline: Pipeline, input: string) => startRun(`${pipeline.name}: ${input}`, pipeline.id === 'media' ? 'media-summary' : 'extract');
   const approve = (id: string, approved: boolean) => { setApprovals((value) => value.map((item) => item.id === id ? { ...item, status: approved ? 'approved' : 'rejected', resolvedAt: new Date().toISOString() } : item)); void log({ type: 'approval.resolved', message: `${approved ? 'Approved' : 'Rejected'} approval ${id}` }); };
@@ -119,9 +140,10 @@ export function NovaProvider({ children }: { children: React.ReactNode }) {
   const updateSettings = async (next: StorageSettings) => { setSettings(next); await updateStorageSettings(next); };
   const recoverStorage = async () => setFiles(await recoverWorkspace());
   const requestPermission = async (name: keyof CapabilityStatus) => { const next = await requestCapability(name); setCapabilities((value) => ({ ...value, [name]: next })); return next; };
-  const value = useMemo(() => ({ chats, projects: initialProjects, tools, runs, approvals, memories, jobs, events, files, settings, capabilities, pipelines, activeChat, ready, backendConnected, streamingReply, createChat, sendMessage, startRun, startPipeline, approve, saveMemory, importFiles, createNote, deleteFile, exportFiles, updateSettings, recoverStorage, requestPermission }), [chats, runs, approvals, memories, jobs, events, files, settings, capabilities, activeChat, ready, backendConnected, streamingReply]);
+  const value = useMemo(() => ({ chats, projects: initialProjects, tools, runs, approvals, memories, jobs, events, files, settings, capabilities, pipelines, activeChat, ready, backendConnected, streamingReply, createChat, sendMessage, runProductionTool, startRun, startPipeline, approve, saveMemory, importFiles, createNote, deleteFile, exportFiles, updateSettings, recoverStorage, requestPermission }), [chats, runs, approvals, memories, jobs, events, files, settings, capabilities, activeChat, ready, backendConnected, streamingReply]);
   return <NovaContext.Provider value={value}>{children}</NovaContext.Provider>;
 }
 export function useNova() { const value = useContext(NovaContext); if (!value) throw new Error('useNova must be used inside NovaProvider'); return value; }
 function toolFor(text: string) { const value = text.toLowerCase(); if (value.includes('remember') || value.includes('memory')) return 'Memory Vault'; if (value.includes('plan')) return 'Project Planner'; if (value.includes('run') || value.includes('agent')) return 'Agent runtime'; return undefined; }
+function formatToolResult(result: unknown) { if (typeof result === 'string') return result; try { return JSON.stringify(result, null, 2); } catch { return String(result); } }
 function reply(text: string) { const tool = toolFor(text); if (tool === 'Memory Vault') return 'I can save that to the on-device Memory Vault. Use the memory tool to label it.'; if (tool === 'Project Planner') return 'I can turn that into a pipeline with milestones, risks, approvals, and a next action.'; if (tool === 'Agent runtime') return 'The local agent runtime can execute a durable run with retryable jobs, typed tools, approval gates, and event history.'; return 'That’s a good direction. I can help you explore it, turn it into a plan, execute local tools, or save the useful parts to memory.'; }

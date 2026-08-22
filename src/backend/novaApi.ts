@@ -69,6 +69,13 @@ export async function backendSendMessage(config: BackendConfig, chatId: string, 
   return request(config, `/api/chats/${chatId}/messages`, { method: 'POST', body: JSON.stringify({ text }) });
 }
 
+export type BackendToolRun = { ok?: boolean; result?: unknown; error?: string; requiresConfirmation?: boolean; approvalId?: string; message?: string; tool?: string; durationMs?: number };
+
+/** Invoke one of the backend's registered production tools directly from the tool drawer. */
+export async function backendRunTool(config: BackendConfig, toolId: string, input: Record<string, unknown>, confirm = false): Promise<BackendToolRun> {
+  return request(config, `/api/tools/${encodeURIComponent(toolId)}/run`, { method: 'POST', body: JSON.stringify({ input, confirm }) });
+}
+
 export type StreamEventHandlers = {
   onUserMessage?: (message: NovaChatMessage) => void;
   onDelta?: (text: string) => void;
