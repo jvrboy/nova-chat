@@ -59,6 +59,14 @@ export default function ChatScreen() {
       void runProductionTool(activeTool, { url: trimmed, limit: 100 });
     } else if (activeTool === 'provider-status') {
       void runProductionTool(activeTool, {});
+    } else if (activeTool === 'calculator') {
+      void runProductionTool(activeTool, { expression: trimmed });
+    } else if (activeTool === 'summarize') {
+      void runProductionTool(activeTool, { text: trimmed, style: 'executive' });
+    } else if (activeTool === 'word-count') {
+      void runProductionTool(activeTool, { text: trimmed });
+    } else if (activeTool === 'code-generate') {
+      void runProductionTool(activeTool, { description: trimmed, language: codeLanguage });
     } else if (activeTool === 'code-execute') {
       void runProductionTool(activeTool, { code: trimmed, language: codeLanguage });
     } else {
