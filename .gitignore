@@ -123,3 +123,7 @@ expo-env.d.ts
 # @end expo-cli
   server/.dev.vars
 server/.dev.vars
+
+# web frontend
+web/node_modules/
+web/dist/

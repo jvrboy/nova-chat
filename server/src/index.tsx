@@ -72,6 +72,22 @@ app.get('/api/health', (c) => c.json({ status: 'ok', service: 'nova-backend', ti
 
 app.use('/static/*', serveStatic({ root: './public' }))
 
+// Nova web app (the "Quiet intelligence" frontend) — built from web/ into
+// dist/app/. The hashed assets under /app/assets/* are excluded from the Worker
+// in _routes.json (see scripts/fix-routes.mjs) and served directly by Pages.
+// The index.html document itself is served here via the Pages ASSETS binding
+// (no static-content manifest required) so deep links and /app both resolve.
+async function serveSpaIndex(c: any) {
+  try {
+    const res = await (c.env.ASSETS as Fetcher).fetch(new Request(new URL('/app/index.html', c.req.url)))
+    if (res.ok) return new Response(res.body, { status: 200, headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' } })
+  } catch { /* fall through */ }
+  return c.text('Nova web app not found. Build web/ and redeploy.', 404)
+}
+app.get('/app', serveSpaIndex)
+app.get('/app/', serveSpaIndex)
+app.get('/app/*', serveSpaIndex)
+
 app.get('/', (c) => {
   return c.html(`<!DOCTYPE html>
 <html lang="en">

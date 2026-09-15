@@ -2,6 +2,9 @@ export type Bindings = {
   DB: D1Database
   BUCKET?: R2Bucket
   AI?: Ai
+  // Pages static-asset binding — used to serve the built web app's index.html
+  // at /app without requiring the static-content manifest in local dev.
+  ASSETS?: Fetcher
   OPENAI_API_KEY: string
   OPENAI_BASE_URL: string
   LLM_MODEL?: string

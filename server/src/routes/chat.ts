@@ -3,7 +3,7 @@ import { streamSSE } from 'hono/streaming'
 import type { AppEnv } from '../lib/types'
 import { newId, nowIso } from '../lib/ids'
 import { appendAudit } from '../lib/db'
-import { chatComplete, streamChatComplete, LlmMessage } from '../lib/llm'
+import { chatComplete, streamChatComplete, llmAvailable, offlineReply, LlmMessage } from '../lib/llm'
 import { runTool, toolAsLlmSpec, toolRegistry, getTool } from '../lib/tools'
 import { semanticSearch, upsertEmbedding } from '../lib/embeddings'
 
@@ -112,6 +112,21 @@ chat.post('/:id/messages', async (c) => {
 
   if (chatRow.title === 'New conversation') {
     await c.env.DB.prepare('UPDATE chats SET title = ?, updated_at = ? WHERE id = ?').bind(text.slice(0, 40), now, chatId).run()
+  }
+
+  // No LLM key configured on this deployment? Use the offline tool-backed
+  // responder so the web app stays fully functional instead of erroring.
+  if (!llmAvailable(c.env)) {
+    const reply = offlineReply(text)
+    const assistantMsgId = newId('msg')
+    await c.env.DB.prepare('INSERT INTO messages (id, chat_id, workspace_id, role, content, tool_name, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+      .bind(assistantMsgId, chatId, workspaceId, 'assistant', reply, 'offline-responder', nowIso())
+      .run()
+    await c.env.DB.prepare('UPDATE chats SET updated_at = ? WHERE id = ?').bind(nowIso(), chatId).run()
+    return c.json({
+      userMessage: { id: userMsgId, role: 'user', text, createdAt: now },
+      assistantMessage: { id: assistantMsgId, role: 'assistant', text: reply, tool: 'offline-responder', createdAt: nowIso() },
+    })
   }
 
   const messages = await buildContextMessages(c.env, c.env.DB, workspaceId, chatId, text)

@@ -43,6 +43,66 @@ export function resolveModel(env: Bindings, override?: string): string {
 }
 
 /**
+ * True when a usable LLM key is configured. When false (e.g. the OPENAI_API_KEY
+ * secret was never set on a fresh deploy), the chat route falls back to a
+ * built-in offline responder so the app stays functional instead of erroring.
+ */
+export function llmAvailable(env: Bindings): boolean {
+  return typeof env.OPENAI_API_KEY === 'string' && env.OPENAI_API_KEY.trim().length > 0 && !env.OPENAI_API_KEY.includes('dummy')
+}
+
+/**
+ * Offline fallback assistant. Produces a genuinely useful reply for the kinds
+ * of questions the local tool engine already covers (arithmetic, word counts,
+ * date math) and a clear capability summary otherwise. Used only when no LLM
+ * key is configured, so the deployed web app always responds.
+ */
+export function offlineReply(userText: string): string {
+  const text = userText.trim()
+  const lower = text.toLowerCase()
+
+  // Arithmetic: evaluate a simple expression like "12 * 8" or "what is 5 + 3?"
+  const exprMatch = lower.match(/(-?\d+(?:\.\d+)?)\s*([+\-*/x×÷^%]|plus|minus|times|divided by|multiplied by)\s*(-?\d+(?:\.\d+)?)/)
+  if (exprMatch) {
+    const a = parseFloat(exprMatch[1])
+    const b = parseFloat(exprMatch[3])
+    const op = exprMatch[2]
+    let result: number | null = null
+    if (op === '+' || op === 'plus') result = a + b
+    else if (op === '-' || op === 'minus') result = a - b
+    else if (op === '*' || op === 'x' || op === '×' || op === 'times' || op === 'multiplied by') result = a * b
+    else if (op === '/' || op === '÷' || op === 'divided by') result = b === 0 ? null : a / b
+    else if (op === '^') result = Math.pow(a, b)
+    else if (op === '%') result = b === 0 ? null : a % b
+    if (result !== null && isFinite(result)) {
+      const nice = Number.isInteger(result) ? String(result) : result.toFixed(4).replace(/\.?0+$/, '')
+      return `${a} ${op} ${b} = ${nice}. (Computed on-device by Nova's calculator tool — the language model isn't configured on this deployment yet.)`
+    }
+    return `That expression divides by zero, which is undefined. (Computed by Nova's calculator tool.)`
+  }
+
+  // Word / character count.
+  if (/\b(word count|how many words|count words|count the words)\b/.test(lower)) {
+    const words = text.split(/\s+/).filter(Boolean).length
+    return `That message is ${words} words and ${text.length} characters long. (From Nova's word-count tool — no LLM needed.)`
+  }
+
+  // Date / time.
+  if (/\b(what (day|date|time) is|today'?s date|current time|what time)\b/.test(lower)) {
+    const now = new Date()
+    return `Right now it's ${now.toUTCString()} (UTC). (From Nova's date-math tool.)`
+  }
+
+  // Greetings.
+  if (/^(hi|hello|hey|yo|good (morning|afternoon|evening))\b/.test(lower)) {
+    return `Hello — I'm Nova. I can help you think through a question, a draft, or a half-formed idea. Note: this deployment doesn't have a language-model key configured yet, so I'm running on my built-in tools (calculator, word count, date math, market analysis, data transforms). Set the OPENAI_API_KEY secret to unlock full conversational replies. What would you like to work on?`
+  }
+
+  // Default capability summary.
+  return `I'm Nova, running on my built-in tool engine because this deployment has no language-model key configured (set the OPENAI_API_KEY secret to enable full conversational replies). I can still help right now with: arithmetic ("12 * 8"), word/character counts, date & time, market analysis and backtests (see the Studio), data transformation (JSON/CSV/YAML/Base64), text statistics, hashing, UUIDs, and more. What are you working through?`
+}
+
+/**
  * Minimal OpenAI-compatible chat completion client built on fetch, so it works
  * inside the Cloudflare Workers runtime without pulling in the full Node SDK.
  */

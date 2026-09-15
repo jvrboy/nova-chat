@@ -1,5 +1,6 @@
 import { Hono } from 'hono'
 import type { AppEnv } from '../lib/types'
+import { runTool, getTool } from '../lib/tools'
 
 // ---------------------------------------------------------------------------
 // /api/insights — new advanced backend capabilities, added on top of the ported
@@ -215,6 +216,86 @@ insights.post('/text', async (c) => {
     readingTimeMinutes: Number(readTimeMin.toFixed(2)),
     topWords,
   })
+})
+
+// --- Agentic multi-step task runner ----------------------------------------
+// POST /api/insights/agent { steps: [{ tool, input, as? }] }
+// Chains existing backend tools server-side in a single call. Later steps can
+// reference earlier step outputs with {{stepId}} or {{stepId.path.to.value}}
+// placeholders inside any string in their input. Only "safe" tools are allowed.
+insights.post('/agent', async (c) => {
+  const workspaceId = c.get('workspaceId')
+  const actorId = c.get('actorId')
+  const body = await c.req.json().catch(() => ({}))
+  const b = (body && typeof body === 'object' ? body : {}) as Record<string, unknown>
+  const steps = Array.isArray(b.steps) ? (b.steps as Record<string, unknown>[]) : []
+  if (!steps.length) return c.json({ error: 'Provide a non-empty "steps" array of { tool, input, as? }.' }, 400)
+  if (steps.length > 10) return c.json({ error: 'A task may have at most 10 steps.' }, 400)
+
+  const outputs: Record<string, unknown> = {}
+  const trace: { step: string; tool: string; ok: boolean; durationMs: number; error?: string }[] = []
+
+  // Deep-resolve {{...}} placeholders against prior outputs.
+  const resolve = (value: unknown): unknown => {
+    if (typeof value === 'string') {
+      return value.replace(/\{\{\s*([\w.-]+)\s*\}\}/g, (_, path: string) => {
+        const [head, ...rest] = path.split('.')
+        let cur: unknown = outputs[head]
+        for (const key of rest) {
+          if (cur && typeof cur === 'object') cur = (cur as Record<string, unknown>)[key]
+          else return ''
+        }
+        if (cur == null) return ''
+        return typeof cur === 'string' ? cur : JSON.stringify(cur)
+      })
+    }
+    if (Array.isArray(value)) return value.map(resolve)
+    if (value && typeof value === 'object') {
+      const out: Record<string, unknown> = {}
+      for (const [k, v] of Object.entries(value)) out[k] = resolve(v)
+      return out
+    }
+    return value
+  }
+
+  for (let i = 0; i < steps.length; i++) {
+    const toolId = String(steps[i].tool ?? '')
+    const alias = typeof steps[i].as === 'string' && steps[i].as ? String(steps[i].as) : `step${i + 1}`
+    const tool = getTool(toolId)
+    if (!tool) return c.json({ error: `Step ${i + 1}: unknown tool "${toolId}".`, trace }, 400)
+    if (tool.risk !== 'safe') return c.json({ error: `Step ${i + 1}: tool "${toolId}" (${tool.risk}) is not safe to run inside an automated task.`, trace }, 403)
+    const input = (resolve(steps[i].input ?? {}) ?? {}) as Record<string, unknown>
+    const outcome = await runTool(toolId, input, { env: c.env, workspaceId, actorId, db: c.env.DB })
+    if (outcome.ok) {
+      outputs[alias] = outcome.result
+      trace.push({ step: alias, tool: toolId, ok: true, durationMs: outcome.durationMs })
+    } else {
+      trace.push({ step: alias, tool: toolId, ok: false, durationMs: outcome.durationMs, error: outcome.error })
+      return c.json({ error: `Step "${alias}" (${toolId}) failed: ${outcome.error}`, trace, outputs }, 502)
+    }
+  }
+  return c.json({ ok: true, steps: trace.length, trace, outputs })
+})
+
+// --- Document extraction (PDF text / image OCR) -----------------------------
+// POST /api/insights/document { type: 'pdf'|'image', dataBase64?, url? }
+// Convenience wrapper over the backend's pdf-extract / ocr-image tools so a
+// client can extract document content with one call.
+insights.post('/document', async (c) => {
+  const workspaceId = c.get('workspaceId')
+  const actorId = c.get('actorId')
+  const body = await c.req.json().catch(() => ({}))
+  const b = (body && typeof body === 'object' ? body : {}) as Record<string, unknown>
+  const type = String(b.type ?? '').toLowerCase()
+  const toolId = type === 'pdf' ? 'pdf-extract' : type === 'image' ? 'ocr-image' : null
+  if (!toolId) return c.json({ error: 'Provide type: "pdf" or "image".' }, 400)
+  const input: Record<string, unknown> = {}
+  if (typeof b.dataBase64 === 'string') input.dataBase64 = b.dataBase64
+  if (typeof b.url === 'string') input.url = b.url
+  if (typeof b.imageBase64 === 'string') input.imageBase64 = b.imageBase64
+  const outcome = await runTool(toolId, input, { env: c.env, workspaceId, actorId, db: c.env.DB })
+  if (!outcome.ok) return c.json({ error: outcome.error, tool: toolId }, 502)
+  return c.json({ ok: true, tool: toolId, durationMs: outcome.durationMs, result: outcome.result })
 })
 
 export default insights
