@@ -497,3 +497,49 @@ fresh account):
 
 Hono, TypeScript, Cloudflare Workers/Pages, D1 (SQLite), R2, Workers AI,
 Cron Triggers, `unpdf` (PDF text extraction), Expo push API.
+
+## Added: Market Analysis Engine + Insights (ported capabilities)
+
+Two new route groups were added on top of the existing backend. The frontend
+(Expo app) is untouched; these are pure backend additions.
+
+### `/api/market` — market-analysis engine
+Ported from the `nexus-analysis` repo's `src/lib/nexus` engine (pure TypeScript,
+zero external deps, Worker-safe). The browser-only Deriv WebSocket client was
+intentionally not ported; data comes from a deterministic seeded synthetic
+generator (`src/lib/market/market.ts`) unless the caller passes their own OHLCV
+bars in the request body (`{ "bars": [...] }`).
+
+- `GET  /api/market/symbols` — 25-symbol catalog (fx / metals / indices / synthetics)
+- `GET  /api/market/quote/:symbol?timeframe=1h` — latest price + 24-period change
+- `GET  /api/market/bars/:symbol?timeframe=1h&count=200` — OHLCV series
+- `POST /api/market/indicators` — indicator series / latest values (EMA, RSI, MACD, ATR, …)
+- `POST /api/market/analyze` — full unified analysis: regime, support/resistance,
+  Wyckoff, Fibonacci, market structure, supply/demand, divergence, candlestick
+  patterns, confluence score, trade plan + natural-language commentary.
+  Results are persisted to the new `market_analysis` D1 table.
+- `GET  /api/market/analysis/:id` — fetch a stored analysis
+- `GET  /api/market/history` — list recent analyses for the workspace
+- `GET  /api/market/topdown/:symbol` — multi-timeframe cascading bias
+- `GET  /api/market/signal/:symbol?timeframe=1h` — aggregated multi-TF signal
+- `GET  /api/market/smt?timeframe=1h` — smart-money (SMT) divergence scan across correlated pairs
+- `POST /api/market/debate` — bull-vs-bear evidence debate
+- `POST /api/market/session` — active trading sessions + hourly volatility profile
+- `GET  /api/market/strategies` — 12 built-in strategy definitions
+- `POST /api/market/backtest` — backtest a built-in (by `strategyId`) or custom strategy
+
+### `/api/insights` — new advanced capabilities
+- `POST /api/insights/crypto` — `{ op: hash|hmac|uuid|random|password|b64e|b64d, ... }`
+  (SHA-1/256/384/512, HMAC, UUID v4, CSPRNG bytes, password generator, Base64)
+- `POST /api/insights/transform` — `{ from, to, data }` across json / csv / yaml / base64 / text
+- `POST /api/insights/text` — text statistics: word/character/sentence counts,
+  reading time, average lengths, top-word frequencies
+
+### Schema
+- New migration `migrations/0006_market_analysis.sql` (applied to both local and
+  remote `webapp-production` D1).
+
+### Tests
+- `tests/market.test.ts` — 9 tests covering the ported engine (symbol catalog,
+  deterministic bar generation, indicators, unified analysis, multi-TF cascade,
+  signal aggregation, SMT scan, debate, session profile, backtests).
