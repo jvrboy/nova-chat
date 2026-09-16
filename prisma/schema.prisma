@@ -1,0 +1,177 @@
+// Prisma schema (fallback for local dev / when Supabase is not configured)
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model UserProfile {
+  id           String   @id @default(cuid())
+  email        String?  @unique
+  displayName  String?
+  avatarUrl    String?
+  preferences  String   @default("{}") // JSON string
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  chats        Chat[]
+  settings     UserSettings?
+  artifacts    Artifact[]
+  toolRuns     ToolRun[]
+  memories     Memory[]
+  fileUploads  FileUpload[]
+}
+
+model Chat {
+  id             String    @id @default(cuid())
+  userId         String?
+  userProfile    UserProfile? @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title          String    @default("New chat")
+  model          String    @default("glm-4.6")
+  systemPrompt   String?
+  temperature    Float     @default(0.7)
+  maxTokens      Int       @default(4096)
+  toolsEnabled   Boolean   @default(true)
+  pinned         Boolean   @default(false)
+  archived       Boolean   @default(false)
+  metadata       String    @default("{}") // JSON
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  messages       Message[]
+  artifacts      Artifact[]
+  toolRuns       ToolRun[]
+
+  @@index([userId])
+  @@index([updatedAt])
+}
+
+model Message {
+  id            String    @id @default(cuid())
+  chatId        String
+  chat          Chat      @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  role          String    @default("user") // user | assistant | system | tool
+  content       String    @default("")
+  status        String    @default("complete") // streaming | complete | error | stopped
+  model         String?
+  toolName      String?
+  toolInput     String?   // JSON
+  toolOutput    String?
+  tokensIn      Int?
+  tokensOut     Int?
+  finishReason  String?
+  metadata      String    @default("{}")
+  artifactIds   String    @default("[]") // JSON array of UUIDs
+  createdAt     DateTime  @default(now())
+
+  @@index([chatId])
+  @@index([chatId, createdAt])
+}
+
+model Artifact {
+  id           String   @id @default(cuid())
+  userId       String?
+  userProfile  UserProfile? @relation(fields: [userId], references: [id], onDelete: Cascade)
+  chatId       String?
+  chat         Chat?     @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  messageId    String?
+  title        String
+  type         String   // markdown | code | html | json | csv | svg | image | etc.
+  language     String?
+  content      String   @default("")
+  storageKey   String?
+  mimeType     String?
+  bytes        Int?
+  version      Int      @default(1)
+  parentId     String?
+  tags         String   @default("[]") // JSON
+  isPublic     Boolean  @default(false)
+  metadata     String   @default("{}")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([userId])
+  @@index([chatId])
+  @@index([type])
+}
+
+model UserSettings {
+  id              String   @id @default(cuid())
+  userId          String   @unique
+  userProfile    UserProfile @relation(fields: [userId], references: [id], onDelete: Cascade)
+  theme           String   @default("dark")
+  fontSans        String   @default("inter")
+  fontMono        String   @default("jetbrains-mono")
+  fontDisplay     String   @default("space-grotesk")
+  density         String   @default("comfortable")
+  accentColor     String?
+  reduceMotion    Boolean  @default(false)
+  sendOnEnter     Boolean  @default(true)
+  showThinking    Boolean  @default(true)
+  showTokenCount  Boolean  @default(false)
+  streamingEnabled Boolean @default(true)
+  defaultModel    String   @default("glm-4.6")
+  defaultTemperature Float @default(0.7)
+  defaultMaxTokens Int    @default(4096)
+  apiKeys         String   @default("{}") // JSON
+  customSystemPrompts String @default("[]")
+  toolPermissions String   @default("{}")
+  shortcuts       String   @default("{}")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model ToolRun {
+  id           String    @id @default(cuid())
+  userId       String?
+  userProfile  UserProfile? @relation(fields: [userId], references: [id], onDelete: Cascade)
+  chatId       String?
+  chat         Chat?     @relation(fields: [chatId], references: [id], onDelete: SetNull)
+  messageId    String?
+  toolName     String
+  toolInput    String    @default("{}")
+  toolOutput   String?
+  status       String    @default("pending")
+  riskLevel    String    @default("safe")
+  approvedBy   String?
+  approvedAt   DateTime?
+  durationMs   Int?
+  error        String?
+  metadata     String    @default("{}")
+  createdAt    DateTime  @default(now())
+
+  @@index([userId])
+  @@index([chatId])
+}
+
+model Memory {
+  id         String   @id @default(cuid())
+  userId     String?
+  userProfile UserProfile? @relation(fields: [userId], references: [id], onDelete: Cascade)
+  chatId     String?
+  content    String
+  source     String?
+  tags       String   @default("[]")
+  importance Float    @default(0.5)
+  metadata   String   @default("{}")
+  createdAt  DateTime @default(now())
+
+  @@index([userId])
+}
+
+model FileUpload {
+  id           String   @id @default(cuid())
+  userId       String?
+  userProfile  UserProfile? @relation(fields: [userId], references: [id], onDelete: Cascade)
+  chatId       String?
+  storageKey   String
+  originalName String
+  mimeType     String?
+  bytes        Int?
+  textContent  String?
+  metadata     String   @default("{}")
+  createdAt    DateTime @default(now())
+
+  @@index([userId])
+}

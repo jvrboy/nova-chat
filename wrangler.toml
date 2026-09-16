@@ -1,0 +1,27 @@
+name = "nova-chat"
+compatibility_date = "2026-09-01"
+compatibility_flags = ["nodejs_compat"]
+pages_build_output_dir = ".vercel/output/static"
+
+# Optional KV namespace bindings — uncomment and add your namespace id
+# [[kv_namespaces]]
+# binding = "NOVA_KV"
+# id = "your-kv-namespace-id"
+
+# Optional R2 bucket bindings
+# [[r2_buckets]]
+# binding = "NOVA_FILES"
+# bucket_name = "nova-chat-files"
+
+# Optional D1 databases
+# [[d1_databases]]
+# binding = "NOVA_DB"
+# database_name = "nova-chat"
+# database_id = "your-db-id"
+
+[env.production]
+name = "nova-chat"
+
+[vars]
+APP_NAME = "Nova Chat"
+APP_VERSION = "1.0.0"
