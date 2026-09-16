@@ -253,6 +253,104 @@ select:focus, input:focus { outline: 2px solid var(--accent-wash); border-color:
   .settings-nav { width: 100%; flex: none; border-right: 0; border-bottom: 1px solid var(--line); max-height: 220px; }
 }
 
+/* ---------- Responsive (all screen sizes) ---------- */
+/* Nav toggle button: hidden on desktop, shown on mobile/tablet. */
+.nav-toggle { display: none; }
+.nav-backdrop { display: none; }
+
+/* Large desktop: roomier reading column */
+@media (min-width: 1600px) {
+  .chat-inner, .composer { max-width: 920px; }
+  .panel-inner { max-width: 1000px; }
+}
+
+/* Small desktop / large tablet */
+@media (max-width: 1200px) {
+  .sidebar { width: 260px; flex-basis: 260px; }
+}
+
+/* Tablet: narrower sidebar, tighter padding */
+@media (max-width: 1024px) {
+  .sidebar { width: 240px; flex-basis: 240px; }
+  .panel-scroll, .settings-body { padding: 1.4rem 1.2rem; }
+  .chat-inner, .composer { max-width: 100%; }
+  .theme-grid { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); }
+}
+
+/* Mobile & small tablet: sidebar becomes an overlay drawer */
+@media (max-width: 860px) {
+  .nav-toggle { display: flex; }
+  .sidebar {
+    position: fixed; top: 0; left: 0; bottom: 0; z-index: 40;
+    width: 282px; flex-basis: 282px; height: 100dvh;
+    transform: translateX(-100%); transition: transform 0.22s ease;
+    box-shadow: none;
+  }
+  .app-shell.nav-open .sidebar { transform: translateX(0); box-shadow: 12px 0 40px rgba(0,0,0,0.25); }
+  .nav-backdrop {
+    display: block; position: fixed; inset: 0; z-index: 30;
+    background: rgba(0,0,0,0.35); backdrop-filter: blur(1px);
+    opacity: 0; pointer-events: none; transition: opacity 0.22s ease;
+  }
+  .app-shell.nav-open .nav-backdrop { opacity: 1; pointer-events: auto; }
+  .topbar { padding: 0.8rem 1rem; }
+  .topbar .title { font-size: 0.98rem; }
+  .chat-scroll { padding: 1rem 0; }
+  .chat-inner, .composer { padding: 0 1rem; }
+  .composer-wrap { padding: 0.7rem 0.8rem calc(0.9rem + env(safe-area-inset-bottom)); }
+  .hero { padding: 1.5rem 1rem; }
+  .hero h1 { font-size: clamp(2rem, 9vw, 3rem); }
+  .hero p.sub { font-size: 1.02rem; }
+  .card-grid { grid-template-columns: 1fr 1fr; }
+  .panel-scroll { padding: 1.2rem 1rem; }
+  .settings-body { padding: 1.2rem 1rem; }
+}
+
+/* Small phones */
+@media (max-width: 560px) {
+  .card-grid { grid-template-columns: 1fr; }
+  .theme-grid { grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); }
+  .btn { padding: 0.48rem 0.85rem; font-size: 0.84rem; }
+  .msg .body { font-size: 0.95rem; }
+  .msg.assistant .body { font-size: 0.98rem; }
+  .pref-row { flex-wrap: wrap; gap: 0.5rem; }
+  .pref-control { width: 100%; justify-content: flex-end; }
+  .slider-wrap input[type='range'] { width: 100%; flex: 1; }
+  .hero h1 { font-size: clamp(1.8rem, 10vw, 2.4rem); }
+}
+
+/* Very small phones */
+@media (max-width: 380px) {
+  .sidebar { width: 86vw; flex-basis: 86vw; }
+  .theme-grid { grid-template-columns: 1fr 1fr; }
+  .topbar .actions .btn { padding: 0.42rem 0.7rem; font-size: 0.8rem; }
+}
+
+/* Landscape phones: reduce vertical chrome */
+@media (max-height: 500px) and (orientation: landscape) {
+  .topbar { padding: 0.5rem 1rem; }
+  .hero { padding: 0.8rem 1rem; }
+  .hero h1 { font-size: 1.6rem; margin: 0.3rem 0; }
+  .hero p.sub { margin-bottom: 0.9rem; }
+}
+
+/* Respect safe-area on notched devices */
+.sidebar { padding-top: calc(1.1rem + env(safe-area-inset-top)); }
+
+/* Touch devices: larger tap targets */
+@media (hover: none) and (pointer: coarse) {
+  .nav-item, .chat-row, .settings-nav-item { padding-top: 0.7rem; padding-bottom: 0.7rem; }
+  .icon-btn { width: 42px; height: 42px; flex-basis: 42px; }
+  .toggle { width: 48px; height: 28px; flex-basis: 48px; }
+  .toggle::after { width: 22px; height: 22px; }
+  .toggle.on::after { transform: translateX(20px); }
+}
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}
+
 /* ---------- Toast ---------- */
 .toast {
   position: fixed; bottom: 1.4rem; left: 50%; transform: translateX(-50%);
@@ -266,7 +364,4 @@ select:focus, input:focus { outline: 2px solid var(--accent-wash); border-color:
 ::-webkit-scrollbar-thumb { background: var(--line-strong); border-radius: 5px; border: 2px solid var(--paper); }
 ::-webkit-scrollbar-track { background: transparent; }
 
-@media (max-width: 860px) {
-  .sidebar { position: absolute; z-index: 20; height: 100%; transform: translateX(-100%); transition: transform 0.2s ease; }
-  .app-shell.nav-open .sidebar { transform: translateX(0); box-shadow: 8px 0 30px rgba(0,0,0,0.12); }
-}
+

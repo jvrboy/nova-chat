@@ -110,6 +110,7 @@ export default function App() {
 
   return (
     <div className={`app-shell${navOpen ? ' nav-open' : ''}`}>
+      {navOpen && <div className="nav-backdrop" onClick={() => setNavOpen(false)} aria-hidden="true" />}
       <aside className="sidebar">
         <div className="brand">
           <span className="brand-mark">Nova</span>
@@ -140,10 +141,11 @@ export default function App() {
 
       <main className="main">
         <div className="topbar">
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem' }}>
-            <div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem', minWidth: 0 }}>
+            <button className="icon-btn nav-toggle" aria-label="Toggle navigation" onClick={() => setNavOpen(!navOpen)}>☰</button>
+            <div style={{ minWidth: 0 }}>
               <div className="crumb">{view === 'chat' ? 'Chats' : view === 'home' ? 'Home' : view[0].toUpperCase() + view.slice(1)}</div>
-              <div className="title">{view === 'chat' ? (activeTitle || 'Chat') : viewTitle(view)}</div>
+              <div className="title" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{view === 'chat' ? (activeTitle || 'Chat') : viewTitle(view)}</div>
             </div>
           </div>
           <div className="actions">
