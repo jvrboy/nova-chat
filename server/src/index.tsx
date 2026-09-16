@@ -28,6 +28,7 @@ import accessRoutes from './routes/access'
 import marketRoutes from './routes/market'
 import insightRoutes from './routes/insights'
 import brainRoutes from './routes/brain'
+import orchRoutes from './routes/orchestrate'
 
 const app = new Hono<AppEnv>()
 
@@ -69,6 +70,7 @@ app.route('/api/access', accessRoutes)
 app.route('/api/market', marketRoutes)
 app.route('/api/insights', insightRoutes)
 app.route('/api/brain', brainRoutes)
+app.route('/api/orchestrate', orchRoutes)
 
 app.get('/api/health', (c) => c.json({ status: 'ok', service: 'nova-backend', time: new Date().toISOString() }))
 

@@ -10,6 +10,9 @@ import { supabaseSelect, supabaseUpsert, supabaseDelete, supabaseStatus } from '
 import { extractFirstMatchingFile } from './zip'
 import { firecrawlScrape, firecrawlSearch, firecrawlMap, firecrawlStatus } from './firecrawl'
 import { huggingfaceChat, huggingfaceEmbed, huggingfaceStatus } from './huggingface'
+import { extraTools } from './tools-extra'
+
+// Self-check: the spread below must actually add the extra tools to the registry.
 
 export type ToolRisk = 'safe' | 'review' | 'sensitive'
 export type ToolContext = { env: Bindings; workspaceId: string; actorId: string; db?: D1Database }
@@ -1402,6 +1405,7 @@ export const toolRegistry: ToolDefinition[] = [
   keywordExtractTool,
   readabilityScoreTool,
   htmlStripTool,
+  ...extraTools,
 ]
 
 export function getTool(id: string): ToolDefinition | undefined {
