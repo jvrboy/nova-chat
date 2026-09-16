@@ -17,7 +17,7 @@ if (!existsSync(routesPath)) {
 
 const routes = JSON.parse(readFileSync(routesPath, 'utf8'))
 routes.exclude = routes.exclude ?? []
-for (const p of ['/static/*', '/app/assets/*']) {
+for (const p of ['/static/*', '/app/assets/*', '/sounds/*']) {
   if (!routes.exclude.includes(p)) routes.exclude.push(p)
 }
 writeFileSync(routesPath, JSON.stringify(routes))

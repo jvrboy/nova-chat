@@ -6,6 +6,7 @@ import {
   type ChatSummary, type SymbolInfo,
 } from './api'
 import { THEMES, applyTheme, getTheme } from './theme'
+import { sounds, configureSounds, unlockAudio } from './sounds'
 import { CATEGORIES, loadSettings, saveSettings, countSettings, type SettingDef, type SettingsValues } from './settings'
 import { applyFonts, loadFontSettings, saveFontSettings, DEFAULT_FONTS, FONTS, type FontSlot, FONT_SLOTS } from './fonts'
 
@@ -26,6 +27,7 @@ function useToast() {
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const show = useCallback((msg: string) => {
     setToast(msg)
+    sounds.notify()
     if (timer.current) clearTimeout(timer.current)
     timer.current = setTimeout(() => setToast(null), 2600)
   }, [])
@@ -44,6 +46,21 @@ export default function App() {
   const [settings, setSettings] = useState<SettingsValues>(loadSettings)
   const { toast, show } = useToast()
   const scrollRef = useRef<HTMLDivElement>(null)
+
+  // Wire the sound engine to the sound settings and unlock audio on first tap.
+  useEffect(() => {
+    configureSounds({
+      enabled: settings['n.sounds'] === true,
+      volume: Number(settings['n.volume'] ?? 50),
+      sendSound: settings['n.sendSound'] === true,
+      receiveSound: settings['n.receiveSound'] !== false,
+    })
+  }, [settings])
+  useEffect(() => {
+    const unlock = () => unlockAudio()
+    window.addEventListener('pointerdown', unlock, { once: true })
+    return () => window.removeEventListener('pointerdown', unlock)
+  }, [])
 
   const refreshChats = useCallback(async () => {
     try { setChats((await listChats()).chats) } catch { /* backend optional */ }
@@ -96,11 +113,14 @@ export default function App() {
     setInput('')
     setMessages((m) => [...m, { role: 'user', content: text, ts: Date.now() }])
     setBusy(true)
+    sounds.send()
     try {
       const res = await sendChat(chatId, text)
+      sounds.receive()
       setMessages((m) => [...m, { role: 'assistant', content: res.assistantMessage.text, ts: Date.now(), tool: res.assistantMessage.tool }])
       refreshChats()
     } catch (e) {
+      sounds.error()
       setMessages((m) => [...m, { role: 'assistant', content: `Sorry — I couldn't get a reply from the backend. ${e instanceof Error ? e.message : ''}`, ts: Date.now() }])
     } finally { setBusy(false) }
   }
@@ -115,7 +135,7 @@ export default function App() {
         <div className="brand">
           <span className="brand-mark">Nova</span>
         </div>
-        <button className="btn primary" onClick={() => newChat()}>＋ New chat</button>
+        <button className="btn primary" onClick={() => { sounds.pop(); newChat() }}>＋ New chat</button>
         <nav className="nav-group">
           <NavItem label="Chats" icon="❝" active={view === 'chat'} onClick={() => { setView('chat'); setNavOpen(false) }} />
           <NavItem label="Projects" icon="▦" active={view === 'projects'} onClick={() => { setView('projects'); setNavOpen(false) }} />
@@ -208,7 +228,7 @@ function viewTitle(v: View): string {
 
 function NavItem({ label, icon, active, onClick }: { label: string; icon: string; active: boolean; onClick: () => void }) {
   return (
-    <button className={`nav-item${active ? ' active' : ''}`} onClick={onClick}>
+    <button className={`nav-item${active ? ' active' : ''}`} onClick={() => { sounds.tap(); onClick() }}>
       <span className="dot" /><span style={{ width: 18, textAlign: 'center' }}>{icon}</span>{label}
     </button>
   )
