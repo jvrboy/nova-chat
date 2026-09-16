@@ -223,6 +223,36 @@ select:focus, input:focus { outline: 2px solid var(--accent-wash); border-color:
 .artifact-empty { text-align: center; padding: 4rem 1rem; color: var(--ink-faint); }
 .artifact-empty .big { font-family: var(--font-display); font-size: 1.6rem; color: var(--ink-soft); margin-bottom: 0.5rem; }
 
+/* ---------- Settings layout ---------- */
+.settings-layout { flex: 1; display: flex; min-height: 0; overflow: hidden; }
+.settings-nav {
+  width: 240px; flex: 0 0 240px; border-right: 1px solid var(--line);
+  background: var(--paper-deep); padding: 1.2rem 0.8rem; overflow-y: auto;
+  display: flex; flex-direction: column; gap: 0.2rem;
+}
+.settings-search { padding: 0 0.2rem 0.7rem; }
+.settings-search input { width: 100%; }
+.settings-nav-item {
+  display: flex; align-items: center; justify-content: space-between; gap: 0.6rem;
+  padding: 0.55rem 0.7rem; border-radius: var(--radius); border: 0; cursor: pointer;
+  background: transparent; color: var(--ink-soft); font-size: 0.92rem; font-weight: 500; text-align: left;
+}
+.settings-nav-item:hover { background: var(--paper); color: var(--foreground); }
+.settings-nav-item.active { background: var(--paper); color: var(--foreground); box-shadow: inset 0 0 0 1px var(--line); }
+.settings-nav-item .count { font-size: 0.72rem; color: var(--ink-faint); background: var(--paper); border: 1px solid var(--line); border-radius: 999px; padding: 0.05rem 0.45rem; }
+.settings-body { flex: 1; overflow-y: auto; padding: 1.8rem; min-width: 0; }
+.settings-body .panel-head h2 { font-family: var(--font-heading); font-size: 1.5rem; margin: 0 0 0.3rem; }
+.settings-body .panel-head p { color: var(--ink-soft); margin: 0; }
+.pref-control { flex: 0 0 auto; display: flex; align-items: center; }
+.slider-wrap { display: inline-flex; align-items: center; gap: 0.6rem; }
+.slider-wrap input[type='range'] { width: 150px; padding: 0; }
+.slider-val { font-size: 0.8rem; color: var(--ink-soft); min-width: 48px; text-align: right; font-variant-numeric: tabular-nums; }
+
+@media (max-width: 860px) {
+  .settings-layout { flex-direction: column; }
+  .settings-nav { width: 100%; flex: none; border-right: 0; border-bottom: 1px solid var(--line); max-height: 220px; }
+}
+
 /* ---------- Toast ---------- */
 .toast {
   position: fixed; bottom: 1.4rem; left: 50%; transform: translateX(-50%);

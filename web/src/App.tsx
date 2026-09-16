@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   listChats, createChat, getMessages, sendChat,
   marketSymbols, marketAnalyze, marketStrategies, marketBacktest,
@@ -6,18 +6,20 @@ import {
   type ChatSummary, type SymbolInfo,
 } from './api'
 import { THEMES, applyTheme, getTheme } from './theme'
+import { CATEGORIES, loadSettings, saveSettings, countSettings, type SettingDef, type SettingsValues } from './settings'
+import { applyFonts, loadFontSettings, saveFontSettings, DEFAULT_FONTS, FONTS, type FontSlot, FONT_SLOTS } from './fonts'
 
-type View = 'home' | 'chat' | 'projects' | 'artifacts' | 'studio' | 'settings'
+type View = 'home' | 'chat' | 'projects' | 'starred' | 'artifacts' | 'studio' | 'customise' | 'settings'
 type Msg = { role: 'user' | 'assistant'; content: string; ts: number; tool?: string | null }
 
 const STARTERS = [
-  'What are you working through?',
-  'Bring a question, a draft, or a half-formed idea.',
   'Think through a decision',
   'Shape some notes',
   'A polished brief or note',
   'A structured comparison or dataset',
 ]
+
+const STAR_KEY = 'nova.starred'
 
 function useToast() {
   const [toast, setToast] = useState<string | null>(null)
@@ -34,10 +36,12 @@ export default function App() {
   const [view, setView] = useState<View>('home')
   const [navOpen, setNavOpen] = useState(false)
   const [chats, setChats] = useState<ChatSummary[]>([])
+  const [starred, setStarred] = useState<string[]>(() => { try { return JSON.parse(localStorage.getItem(STAR_KEY) ?? '[]') } catch { return [] } })
   const [activeChat, setActiveChat] = useState<string | null>(null)
   const [messages, setMessages] = useState<Msg[]>([])
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState(false)
+  const [settings, setSettings] = useState<SettingsValues>(loadSettings)
   const { toast, show } = useToast()
   const scrollRef = useRef<HTMLDivElement>(null)
 
@@ -47,6 +51,23 @@ export default function App() {
 
   useEffect(() => { refreshChats() }, [refreshChats])
   useEffect(() => { scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' }) }, [messages, busy])
+
+  // Apply appearance-related settings live.
+  useEffect(() => {
+    const scale = Number(settings['f.scale'] ?? 100)
+    const radius = Number(settings['a.borderRadius'] ?? 65) / 100
+    document.documentElement.style.setProperty('--nova-font-scale', `${scale}%`)
+    document.documentElement.style.setProperty('--radius', `${(0.65 * radius).toFixed(3)}rem`)
+    saveSettings(settings)
+  }, [settings])
+
+  function toggleStar(id: string) {
+    setStarred((s) => {
+      const next = s.includes(id) ? s.filter((x) => x !== id) : [...s, id]
+      localStorage.setItem(STAR_KEY, JSON.stringify(next))
+      return next
+    })
+  }
 
   async function openChat(id: string) {
     setActiveChat(id); setView('chat'); setNavOpen(false)
@@ -62,7 +83,7 @@ export default function App() {
       setActiveChat(c.id); setMessages([]); setView('chat'); setNavOpen(false)
       if (seed) setInput(seed)
       refreshChats()
-    } catch (e) { show('Could not reach the backend') }
+    } catch { show('Could not reach the backend') }
   }
 
   async function send() {
@@ -84,27 +105,27 @@ export default function App() {
     } finally { setBusy(false) }
   }
 
-  const activeTitle = chats.find((c) => c.id === activeChat)?.title ?? 'New conversation'
+  const activeTitle = chats.find((c) => c.id === activeChat)?.title ?? ''
+  const starredChats = chats.filter((c) => starred.includes(c.id))
 
   return (
     <div className={`app-shell${navOpen ? ' nav-open' : ''}`}>
       <aside className="sidebar">
         <div className="brand">
           <span className="brand-mark">Nova</span>
-          <span className="brand-tag">Quiet intelligence</span>
         </div>
         <button className="btn primary" onClick={() => newChat()}>＋ New chat</button>
         <nav className="nav-group">
-          <div className="nav-label">Your space</div>
-          <NavItem label="Home" icon="⌂" active={view === 'home'} onClick={() => { setView('home'); setNavOpen(false) }} />
           <NavItem label="Chats" icon="❝" active={view === 'chat'} onClick={() => { setView('chat'); setNavOpen(false) }} />
           <NavItem label="Projects" icon="▦" active={view === 'projects'} onClick={() => { setView('projects'); setNavOpen(false) }} />
+          <NavItem label="Starred" icon="★" active={view === 'starred'} onClick={() => { setView('starred'); setNavOpen(false) }} />
           <NavItem label="Artifacts" icon="◈" active={view === 'artifacts'} onClick={() => { setView('artifacts'); setNavOpen(false) }} />
           <NavItem label="Studio" icon="⚗" active={view === 'studio'} onClick={() => { setView('studio'); setNavOpen(false) }} />
+          <NavItem label="Customise" icon="✦" active={view === 'customise'} onClick={() => { setView('customise'); setNavOpen(false) }} />
           <NavItem label="Settings" icon="⚙" active={view === 'settings'} onClick={() => { setView('settings'); setNavOpen(false) }} />
         </nav>
-        <div className="nav-group" style={{ flex: 1 }}>
-          <div className="nav-label">Recent · Chats are sorted by recent activity</div>
+        <div className="nav-group" style={{ flex: 1, minHeight: 0 }}>
+          <div className="nav-label">Recent chats</div>
           <div className="chat-list">
             {chats.slice(0, 20).map((c) => (
               <div key={c.id} className={`chat-row${c.id === activeChat ? ' active' : ''}`} onClick={() => openChat(c.id)}>
@@ -120,14 +141,17 @@ export default function App() {
       <main className="main">
         <div className="topbar">
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem' }}>
-            <button className="icon-btn" style={{ display: 'none' }} onClick={() => setNavOpen(!navOpen)}>☰</button>
             <div>
-              <div className="crumb">Nova / {view === 'chat' ? 'Chats' : view[0].toUpperCase() + view.slice(1)}</div>
-              <div className="title">{view === 'chat' ? activeTitle : view === 'home' ? 'What are you working through?' : view[0].toUpperCase() + view.slice(1)}</div>
+              <div className="crumb">{view === 'chat' ? 'Chats' : view === 'home' ? 'Home' : view[0].toUpperCase() + view.slice(1)}</div>
+              <div className="title">{view === 'chat' ? (activeTitle || 'Chat') : viewTitle(view)}</div>
             </div>
           </div>
           <div className="actions">
-            <button className="btn ghost" onClick={() => show('Conversation is private to your workspace')}>Share</button>
+            {view === 'chat' && activeChat && (
+              <button className="btn ghost" onClick={() => { toggleStar(activeChat); show(starred.includes(activeChat) ? 'Removed from starred' : 'Starred conversation') }}>
+                {starred.includes(activeChat) ? '★ Starred' : '☆ Star'}
+              </button>
+            )}
             <button className="btn" onClick={() => newChat()}>New chat</button>
           </div>
         </div>
@@ -139,12 +163,11 @@ export default function App() {
               <div className="chat-inner">
                 {!messages.length && (
                   <div className="hero" style={{ padding: '3rem 1rem' }}>
-                    <div className="eyebrow">Quiet intelligence</div>
-                    <h1>Bring a question, a draft,<br />or a <em>half-formed idea</em>.</h1>
-                    <p className="sub">This conversation is private to your workspace. Use Shift + Enter for a new line.</p>
+                    <h1>What are you <em>working on?</em></h1>
+                    <p className="sub">A focused space for related conversations — turn a chat into a useful, editable output.</p>
                   </div>
                 )}
-                {messages.map((m, i) => <Message key={i} m={m} />)}
+                {messages.map((m, i) => <Message key={i} m={m} settings={settings} />)}
                 {busy && (
                   <div className="msg">
                     <div className="avatar assistant">N</div>
@@ -153,17 +176,32 @@ export default function App() {
                 )}
               </div>
             </div>
-            <Composer input={input} setInput={setInput} onSend={send} busy={busy} />
+            <Composer input={input} setInput={setInput} onSend={send} busy={busy} settings={settings} />
           </>
         )}
         {view === 'projects' && <Projects />}
+        {view === 'starred' && <Starred chats={starredChats} onOpen={openChat} onUnstar={toggleStar} />}
         {view === 'artifacts' && <Artifacts messages={messages} />}
         {view === 'studio' && <Studio show={show} />}
-        {view === 'settings' && <Settings show={show} />}
+        {view === 'customise' && <Customise show={show} />}
+        {view === 'settings' && <Settings values={settings} onChange={setSettings} show={show} />}
       </main>
       {toast && <div className="toast">{toast}</div>}
     </div>
   )
+}
+
+function viewTitle(v: View): string {
+  switch (v) {
+    case 'home': return 'What are you working on?'
+    case 'chat': return 'Chat'
+    case 'projects': return 'Projects'
+    case 'starred': return 'Starred'
+    case 'artifacts': return 'Artifacts'
+    case 'studio': return 'Studio'
+    case 'customise': return 'Customise'
+    case 'settings': return 'Settings'
+  }
 }
 
 function NavItem({ label, icon, active, onClick }: { label: string; icon: string; active: boolean; onClick: () => void }) {
@@ -177,48 +215,49 @@ function NavItem({ label, icon, active, onClick }: { label: string; icon: string
 function Home({ onStart }: { onStart: (s: string) => void }) {
   return (
     <div className="hero">
-      <div className="eyebrow">Nova · Quiet intelligence</div>
-      <h1>What are you<br /><em>working through?</em></h1>
-      <p className="sub">Bring a question, a draft, or a half-formed idea. A focused space for related conversations — build alongside the conversation and turn it into a useful, editable output.</p>
+      <h1>What are you<br /><em>working on?</em></h1>
+      <p className="sub">A focused space for related conversations — bring a question or a draft and turn it into a useful, editable output.</p>
       <div className="chips">
-        {STARTERS.slice(2).map((s) => <button key={s} className="chip" onClick={() => onStart(s)}>{s}</button>)}
+        {STARTERS.map((s) => <button key={s} className="chip" onClick={() => onStart(s)}>{s}</button>)}
       </div>
     </div>
   )
 }
 
-function Message({ m }: { m: Msg }) {
+function Message({ m, settings }: { m: Msg; settings: SettingsValues }) {
   const isUser = m.role === 'user'
+  const showTs = settings['c.timestamps'] !== false
+  const showAv = settings['c.avatars'] !== false
   return (
     <div className={`msg ${isUser ? 'user' : 'assistant'}`}>
-      <div className={`avatar ${isUser ? 'user' : 'assistant'}`}>{isUser ? 'You' : 'N'}</div>
+      {showAv && <div className={`avatar ${isUser ? 'user' : 'assistant'}`}>{isUser ? 'You' : 'N'}</div>}
       <div className="bubble">
         <div className="role">{isUser ? 'You' : 'Nova'}{m.tool ? ` · used ${m.tool}` : ''}</div>
         <div className="body">{m.content}</div>
-        <div className="time">{new Date(m.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
+        {showTs && <div className="time">{new Date(m.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>}
       </div>
     </div>
   )
 }
 
-function Composer({ input, setInput, onSend, busy }: { input: string; setInput: (s: string) => void; onSend: () => void; busy: boolean }) {
+function Composer({ input, setInput, onSend, busy, settings }: { input: string; setInput: (s: string) => void; onSend: () => void; busy: boolean; settings: SettingsValues }) {
   const ref = useRef<HTMLTextAreaElement>(null)
+  const enterSend = settings['c.enterSend'] !== false
   return (
     <div className="composer-wrap">
       <div className="composer">
         <div className="box">
           <textarea
             ref={ref}
-            rows={1}
+            rows={Number(settings['c.composerRows'] ?? 1)}
             value={input}
-            placeholder="What are you working through?"
-            onChange={(e) => { setInput(e.target.value); const el = e.target; el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, 180) + 'px' }}
-            onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); onSend() } }}
+            placeholder="Type a message…"
+            onChange={(e) => { setInput(e.target.value); const el = e.target; el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, Number(settings['c.composerMax'] ?? 180)) + 'px' }}
+            onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey && enterSend) { e.preventDefault(); onSend() } }}
           />
           <button className="icon-btn" title="Voice input" onClick={() => alert('Voice input is not supported in this browser.')}>🎙</button>
           <button className="icon-btn send" title="Send" disabled={busy || !input.trim()} onClick={onSend}>↑</button>
         </div>
-        <div className="hint">Use Shift + Enter for a new line · Nova uses contextual drafting suggestions</div>
       </div>
     </div>
   )
@@ -235,6 +274,28 @@ function Projects() {
           { ic: '◈', t: 'Drafting space', d: 'Turn conversations into polished, editable output.' },
         ].map((c) => <div key={c.t} className="card"><div className="ic">{c.ic}</div><h3>{c.t}</h3><p>{c.d}</p></div>)}
       </div>
+    </div></div>
+  )
+}
+
+function Starred({ chats, onOpen, onUnstar }: { chats: ChatSummary[]; onOpen: (id: string) => void; onUnstar: (id: string) => void }) {
+  return (
+    <div className="panel-scroll"><div className="panel-inner">
+      <div className="panel-head"><h2>Starred</h2><p>Your starred conversations.</p></div>
+      {!chats.length ? (
+        <div className="artifact-empty"><div className="big">No starred chats</div><div>Star a conversation to find it here.</div></div>
+      ) : (
+        <div className="card-grid">
+          {chats.map((c) => (
+            <div key={c.id} className="card" onClick={() => onOpen(c.id)}>
+              <div className="ic">★</div>
+              <h3>{c.title}</h3>
+              <p>{new Date(c.updated_at).toLocaleString()}</p>
+              <button className="btn ghost" style={{ marginTop: '0.6rem' }} onClick={(e) => { e.stopPropagation(); onUnstar(c.id) }}>Unstar</button>
+            </div>
+          ))}
+        </div>
+      )}
     </div></div>
   )
 }
@@ -267,7 +328,7 @@ function Studio({ show }: { show: (s: string) => void }) {
   const [analysis, setAnalysis] = useState<{ overallBias: string; overallConfidence: number; commentary: string } | null>(null)
   const [backtest, setBacktest] = useState<Record<string, unknown> | null>(null)
   const [busy, setBusy] = useState(false)
-  const [cryptoText, setCryptoText] = useState('Nova — Quiet intelligence')
+  const [cryptoText, setCryptoText] = useState('Nova')
   const [hashOut, setHashOut] = useState('')
   const [transformIn, setTransformIn] = useState('{"hello":"world","n":42}')
   const [transformOut, setTransformOut] = useState('')
@@ -279,27 +340,11 @@ function Studio({ show }: { show: (s: string) => void }) {
     marketStrategies().then((r) => { setStrategies(r.strategies); setStrategy(r.strategies[0]?.id ?? '') }).catch(() => {})
   }, [])
 
-  async function runAnalysis() {
-    setBusy(true)
-    try { setAnalysis(await marketAnalyze(symbol, timeframe)); show('Analysis complete') }
-    catch (e) { show('Analysis failed — is the backend reachable?') }
-    finally { setBusy(false) }
-  }
-  async function runBacktest() {
-    setBusy(true)
-    try { setBacktest(await marketBacktest(symbol, timeframe, strategy || undefined)); show('Backtest complete') }
-    catch { show('Backtest failed') }
-    finally { setBusy(false) }
-  }
-  async function runHash() {
-    try { const r = await cryptoOp({ op: 'hash', algorithm: 'SHA-256', text: cryptoText }); setHashOut(String(r.hex ?? '')) } catch { show('Hash failed') }
-  }
-  async function runTransform(to: string) {
-    try { setTransformOut((await transformData('json', to, transformIn)).output) } catch (e) { setTransformOut(e instanceof Error ? e.message : 'Transform failed') }
-  }
-  async function runStats() {
-    try { setStats(await textStats(textIn)) } catch { show('Text analysis failed') }
-  }
+  async function runAnalysis() { setBusy(true); try { setAnalysis(await marketAnalyze(symbol, timeframe)); show('Analysis complete') } catch { show('Analysis failed — is the backend reachable?') } finally { setBusy(false) } }
+  async function runBacktest() { setBusy(true); try { setBacktest(await marketBacktest(symbol, timeframe, strategy || undefined)); show('Backtest complete') } catch { show('Backtest failed') } finally { setBusy(false) } }
+  async function runHash() { try { const r = await cryptoOp({ op: 'hash', algorithm: 'SHA-256', text: cryptoText }); setHashOut(String(r.hex ?? '')) } catch { show('Hash failed') } }
+  async function runTransform(to: string) { try { setTransformOut((await transformData('json', to, transformIn)).output) } catch (e) { setTransformOut(e instanceof Error ? e.message : 'Transform failed') } }
+  async function runStats() { try { setStats(await textStats(textIn)) } catch { show('Text analysis failed') } }
 
   return (
     <div className="panel-scroll"><div className="panel-inner">
@@ -399,63 +444,155 @@ function Studio({ show }: { show: (s: string) => void }) {
   )
 }
 
-/* ---------- Settings: full theme engine + preferences ---------- */
-function Settings({ show }: { show: (s: string) => void }) {
+/* ---------- Customise: quick theme + font switching ---------- */
+function Customise({ show }: { show: (s: string) => void }) {
   const [theme, setTheme] = useState(localStorage.getItem('nova.theme') ?? 'warm-paper')
-  const [timestamps, setTimestamps] = useState(true)
-  const [toolStatus, setToolStatus] = useState(true)
-  const [sounds, setSounds] = useState(false)
-  const [hints, setHints] = useState(true)
+  const [fonts, setFonts] = useState<Record<FontSlot, string>>(loadFontSettings)
 
-  function pick(id: string) {
-    setTheme(id)
-    localStorage.setItem('nova.theme', id)
-    applyTheme(id)
-    show(`Theme: ${getTheme(id).label}`)
+  function pickTheme(id: string) {
+    setTheme(id); localStorage.setItem('nova.theme', id); applyTheme(id); show(`Theme: ${getTheme(id).label}`)
+  }
+  function pickFont(slot: FontSlot, id: string) {
+    const next = { ...fonts, [slot]: id }; setFonts(next); saveFontSettings(next); show('Font updated')
   }
 
   return (
     <div className="panel-scroll"><div className="panel-inner">
-      <div className="panel-head"><h2>Shape your workspace</h2><p>Appearance &amp; accessibility, writing &amp; chat, and workspace preferences.</p></div>
+      <div className="panel-head"><h2>Customise</h2><p>Shape the look and feel — {THEMES.length} themes and {FONT_SLOTS.length} font roles, applied instantly.</p></div>
 
       <div className="pref-section">
-        <h3>Appearance &amp; accessibility</h3>
-        <p className="desc">Change message surface geometry, fonts, and theme.</p>
+        <h3>Colour theme</h3>
+        <p className="desc">Applied instantly and remembered on this device.</p>
         <div className="theme-grid">
           {THEMES.map((t) => (
-            <div key={t.id} className={`theme-swatch${t.id === theme ? ' active' : ''}`} onClick={() => pick(t.id)}>
+            <div key={t.id} className={`theme-swatch${t.id === theme ? ' active' : ''}`} onClick={() => pickTheme(t.id)}>
               <div className="prev" style={{ background: t.background }}>
                 <div className="bar" style={{ background: t.accent }} />
+                <div className="bar" style={{ background: t.paper, bottom: 24, opacity: 0.9, width: '45%' }} />
               </div>
-              <div className="nm">{t.label}</div>
+              <div className="nm">{t.label}{t.dark ? ' · dark' : ''}</div>
             </div>
           ))}
         </div>
       </div>
 
       <div className="pref-section">
-        <h3>Writing &amp; chat</h3>
-        <p className="desc">Check text as you write and show helpful hints.</p>
-        <PrefToggle label="Show timestamps" sub="Used for timestamps and schedules." on={timestamps} set={setTimestamps} />
-        <PrefToggle label="Show tool status" sub="Show progress labels for long-running tools." on={toolStatus} set={setToolStatus} />
-        <PrefToggle label="Show helpful hints" sub="Use Nova's contextual drafting suggestions." on={hints} set={setHints} />
-        <PrefToggle label="Sound effects" sub="Use quiet interface sounds." on={sounds} set={setSounds} />
-      </div>
-
-      <div className="pref-section">
-        <h3>Workspace</h3>
-        <p className="desc">This conversation is private to your workspace.</p>
-        <div className="pref-row"><div><div className="lbl">Backend</div><div className="sub">Cloudflare Workers + D1 edge API</div></div><span className="chip" style={{ cursor: 'default' }}>webapp-9ek.pages.dev</span></div>
+        <h3>Typography</h3>
+        <p className="desc">Pick a typeface for each role. Loaded on demand.</p>
+        {FONT_SLOTS.map((slot) => (
+          <div className="pref-row" key={slot}>
+            <div><div className="lbl">{slot[0].toUpperCase() + slot.slice(1)} font</div><div className="sub">{slot === 'sans' ? 'Interface' : slot === 'serif' ? 'Assistant prose' : slot === 'display' ? 'Headlines' : 'Code'}</div></div>
+            <select value={fonts[slot]} onChange={(e) => pickFont(slot, e.target.value)}>
+              {FONTS[slot].map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}
+            </select>
+          </div>
+        ))}
+        <button className="btn ghost" style={{ marginTop: '0.6rem' }} onClick={() => { setFonts({ ...DEFAULT_FONTS }); saveFontSettings({ ...DEFAULT_FONTS }); show('Fonts reset') }}>Reset fonts</button>
       </div>
     </div></div>
   )
 }
 
-function PrefToggle({ label, sub, on, set }: { label: string; sub: string; on: boolean; set: (b: boolean) => void }) {
+/* ---------- Settings: professional, searchable, 150+ options ---------- */
+function Settings({ values, onChange, show }: { values: SettingsValues; onChange: (v: SettingsValues) => void; show: (s: string) => void }) {
+  const [cat, setCat] = useState('general')
+  const [query, setQuery] = useState('')
+
+  const setVal = (id: string, val: unknown) => onChange({ ...values, [id]: val })
+
+  const allSettings = useMemo(() => {
+    const out: { def: SettingDef; catTitle: string }[] = []
+    for (const c of CATEGORIES) for (const g of c.groups) for (const s of g.settings) out.push({ def: s, catTitle: c.title })
+    return out
+  }, [])
+
+  const filtered = query.trim()
+    ? allSettings.filter(({ def }) => (def.label + ' ' + (def.hint ?? '')).toLowerCase().includes(query.toLowerCase()))
+    : null
+
+  const activeCat = CATEGORIES.find((c) => c.id === cat) ?? CATEGORIES[0]
+
+  return (
+    <div className="settings-layout">
+      <aside className="settings-nav">
+        <div className="settings-search">
+          <input type="text" placeholder={`Search ${countSettings()} settings…`} value={query} onChange={(e) => setQuery(e.target.value)} />
+        </div>
+        {CATEGORIES.map((c) => {
+          const n = c.groups.reduce((m, g) => m + g.settings.length, 0)
+          return (
+            <button key={c.id} className={`settings-nav-item${!filtered && c.id === cat ? ' active' : ''}`} onClick={() => { setCat(c.id); setQuery('') }}>
+              <span>{c.title}</span><span className="count">{n}</span>
+            </button>
+          )
+        })}
+        <div style={{ marginTop: 'auto', padding: '0.6rem 0.2rem', fontSize: '0.74rem', color: 'var(--ink-faint)' }}>
+          {countSettings()} settings · saved on this device
+        </div>
+      </aside>
+
+      <div className="settings-body">
+        {filtered ? (
+          <div className="pref-section">
+            <h3>Search results</h3>
+            <p className="desc">{filtered.length} setting{filtered.length === 1 ? '' : 's'} matching “{query}”.</p>
+            {filtered.map(({ def }) => <SettingRow key={def.id} def={def} value={values[def.id]} onChange={setVal} />)}
+            {!filtered.length && <p style={{ color: 'var(--ink-faint)' }}>No settings match your search.</p>}
+          </div>
+        ) : (
+          <>
+            <div className="panel-head" style={{ marginBottom: '1.2rem' }}>
+              <h2>{activeCat.title}</h2>
+              <p>{activeCat.blurb}</p>
+            </div>
+            {activeCat.groups.map((grp) => (
+              <div className="pref-section" key={grp.name}>
+                <h3>{grp.name}</h3>
+                <p className="desc">{grp.settings.length} options</p>
+                {grp.settings.map((def) => <SettingRow key={def.id} def={def} value={values[def.id]} onChange={setVal} />)}
+              </div>
+            ))}
+          </>
+        )}
+        <div style={{ display: 'flex', gap: '0.6rem', marginTop: '0.5rem' }}>
+          <button className="btn ghost" onClick={() => { const d = loadSettings(); onChange(d); show('Settings reloaded') }}>Reload</button>
+          <button className="btn" onClick={() => { localStorage.removeItem('nova.settings'); onChange(loadSettings()); show('Settings reset to defaults') }}>Reset to defaults</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function SettingRow({ def, value, onChange }: { def: SettingDef; value: unknown; onChange: (id: string, val: unknown) => void }) {
+  const val = value === undefined ? def.def : value
   return (
     <div className="pref-row">
-      <div><div className="lbl">{label}</div><div className="sub">{sub}</div></div>
-      <button className={`toggle${on ? ' on' : ''}`} onClick={() => set(!on)} aria-label={label} />
+      <div>
+        <div className="lbl">{def.label}</div>
+        {def.hint && <div className="sub">{def.hint}</div>}
+      </div>
+      <div className="pref-control">
+        {def.type === 'toggle' && (
+          <button className={`toggle${val ? ' on' : ''}`} aria-label={def.label} onClick={() => onChange(def.id, !val)} />
+        )}
+        {def.type === 'select' && (
+          <select value={String(val)} onChange={(e) => onChange(def.id, e.target.value)}>
+            {def.options?.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
+        )}
+        {def.type === 'slider' && (
+          <span className="slider-wrap">
+            <input type="range" min={def.min} max={def.max} step={def.step} value={Number(val)} onChange={(e) => onChange(def.id, Number(e.target.value))} />
+            <span className="slider-val">{Number(val)}{def.unit ?? ''}</span>
+          </span>
+        )}
+        {def.type === 'color' && (
+          <input type="color" value={String(val)} onChange={(e) => onChange(def.id, e.target.value)} style={{ width: 44, height: 30, padding: 2, border: '1px solid var(--line-strong)', borderRadius: 6, background: 'var(--background)' }} />
+        )}
+        {def.type === 'text' && (
+          <input type="text" value={String(val)} placeholder="—" onChange={(e) => onChange(def.id, e.target.value)} style={{ minWidth: 220 }} />
+        )}
+      </div>
     </div>
   )
 }

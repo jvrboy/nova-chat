@@ -72,11 +72,12 @@ app.get('/api/health', (c) => c.json({ status: 'ok', service: 'nova-backend', ti
 
 app.use('/static/*', serveStatic({ root: './public' }))
 
-// Nova web app (the "Quiet intelligence" frontend) — built from web/ into
-// dist/app/. The hashed assets under /app/assets/* are excluded from the Worker
-// in _routes.json (see scripts/fix-routes.mjs) and served directly by Pages.
-// The index.html document itself is served here via the Pages ASSETS binding
-// (no static-content manifest required) so deep links and /app both resolve.
+// Nova web app — built from web/ and shipped in dist/app/. It is the product at
+// the ROOT of the site (https://<host>/), so users land directly in the app.
+// Hashed assets under /app/assets/* are excluded from the Worker in _routes.json
+// (scripts/fix-routes.mjs) and served straight from Pages storage; the index.html
+// document is served here via the Pages ASSETS binding so / and every client-side
+// path resolve to the SPA. The old admin landing page was removed per request.
 async function serveSpaIndex(c: any) {
   try {
     const res = await (c.env.ASSETS as Fetcher).fetch(new Request(new URL('/app/index.html', c.req.url)))
@@ -84,50 +85,10 @@ async function serveSpaIndex(c: any) {
   } catch { /* fall through */ }
   return c.text('Nova web app not found. Build web/ and redeploy.', 404)
 }
-app.get('/app', serveSpaIndex)
+app.get('/', serveSpaIndex)
+app.get('/app', serveSpaIndex) // back-compat: /app still works
 app.get('/app/', serveSpaIndex)
 app.get('/app/*', serveSpaIndex)
-
-app.get('/', (c) => {
-  return c.html(`<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Nova Backend</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-</head>
-<body class="bg-slate-950 text-slate-100 min-h-screen">
-  <div class="max-w-3xl mx-auto px-6 py-16">
-    <h1 class="text-3xl font-bold mb-2">🪐 Nova Backend</h1>
-    <p class="text-slate-400 mb-8">Real Cloudflare Workers + D1 backend for the Nova app: LLM chat with streaming and RAG, tools, multi-agent orchestration, pipelines, scheduled workflows, and push notifications.</p>
-    <div class="grid gap-3">
-      <a href="/api/health" class="block rounded-lg border border-slate-800 bg-slate-900 p-4 hover:border-sky-500 transition">
-        <div class="font-semibold">GET /api/health</div>
-        <div class="text-sm text-slate-400">Service health check</div>
-      </a>
-      <a href="/api/tools" class="block rounded-lg border border-slate-800 bg-slate-900 p-4 hover:border-sky-500 transition">
-        <div class="font-semibold">GET /api/tools</div>
-        <div class="text-sm text-slate-400">List available backend tools (41)</div>
-      </a>
-      <a href="/api/agents" class="block rounded-lg border border-slate-800 bg-slate-900 p-4 hover:border-sky-500 transition">
-        <div class="font-semibold">GET /api/agents</div>
-        <div class="text-sm text-slate-400">List available agents (10)</div>
-      </a>
-      <a href="/api/pipelines" class="block rounded-lg border border-slate-800 bg-slate-900 p-4 hover:border-sky-500 transition">
-        <div class="font-semibold">GET /api/pipelines</div>
-        <div class="text-sm text-slate-400">List built-in pipelines</div>
-      </a>
-      <a href="/api/observability/providers" class="block rounded-lg border border-slate-800 bg-slate-900 p-4 hover:border-sky-500 transition">
-        <div class="font-semibold">GET /api/observability/providers</div>
-        <div class="text-sm text-slate-400">Supabase / Kaggle / E2B configuration status</div>
-      </a>
-    </div>
-    <p class="mt-10 text-xs text-slate-500">See README.md in this repo for the full API reference.</p>
-  </div>
-</body>
-</html>`)
-})
 
 export default {
   fetch: app.fetch,
