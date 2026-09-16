@@ -94,6 +94,14 @@ app.get('/app', serveSpaIndex) // back-compat: /app still works
 app.get('/app/', serveSpaIndex)
 app.get('/app/*', serveSpaIndex)
 
+// Client-side routing catch-all: /projects, /chat, /settings, etc. all serve
+// the SPA so deep links and refreshes land on the right view. API misses still
+// return JSON 404s.
+app.get('*', (c) => {
+  if (c.req.path.startsWith('/api/')) return c.json({ error: 'Not found' }, 404)
+  return serveSpaIndex(c)
+})
+
 export default {
   fetch: app.fetch,
   // Cloudflare Cron Trigger handler: drains due jobs, evaluates alert rules,

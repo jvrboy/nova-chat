@@ -7,6 +7,7 @@ import {
 } from './api'
 import { THEMES, applyTheme, getTheme } from './theme'
 import { sounds, configureSounds, unlockAudio } from './sounds'
+import { extractArtifacts, loadArtifacts, saveArtifacts, mergeArtifacts, downloadArtifact, openHtmlInNewTab, artifactIcon, type Artifact } from './artifacts'
 import { CATEGORIES, loadSettings, saveSettings, countSettings, type SettingDef, type SettingsValues } from './settings'
 import { applyFonts, loadFontSettings, saveFontSettings, DEFAULT_FONTS, FONTS, type FontSlot, FONT_SLOTS } from './fonts'
 
@@ -34,8 +35,19 @@ function useToast() {
   return { toast, show }
 }
 
+
+// ---- URL routing: each view maps to a real path so refresh/deep-link works ----
+const VIEW_PATH: Record<string, string> = { home: '/', chat: '/chat', projects: '/projects', starred: '/starred', artifacts: '/artifacts', studio: '/studio', customise: '/customise', settings: '/settings' }
+function pathToView(pathname: string): View {
+  const p = pathname.replace(/\/+$/, '') || '/'
+  for (const [v, path] of Object.entries(VIEW_PATH)) if (path === p) return v as View
+  return 'home'
+}
+
 export default function App() {
-  const [view, setView] = useState<View>('home')
+  const [view, setViewState] = useState<View>(() => pathToView(window.location.pathname))
+  const setView = (v: View) => { setViewState(v); const path = VIEW_PATH[v] ?? '/'; if (window.location.pathname !== path) window.history.pushState({}, '', path) }
+  const [artifacts, setArtifacts] = useState<Artifact[]>(loadArtifacts)
   const [navOpen, setNavOpen] = useState(false)
   const [chats, setChats] = useState<ChatSummary[]>([])
   const [starred, setStarred] = useState<string[]>(() => { try { return JSON.parse(localStorage.getItem(STAR_KEY) ?? '[]') } catch { return [] } })
@@ -59,7 +71,9 @@ export default function App() {
   useEffect(() => {
     const unlock = () => unlockAudio()
     window.addEventListener('pointerdown', unlock, { once: true })
-    return () => window.removeEventListener('pointerdown', unlock)
+    const onPop = () => setViewState(pathToView(window.location.pathname))
+    window.addEventListener('popstate', onPop)
+    return () => { window.removeEventListener('pointerdown', unlock); window.removeEventListener('popstate', onPop) }
   }, [])
 
   const refreshChats = useCallback(async () => {
@@ -117,7 +131,10 @@ export default function App() {
     try {
       const res = await sendChat(chatId, text)
       sounds.receive()
-      setMessages((m) => [...m, { role: 'assistant', content: res.assistantMessage.text, ts: Date.now(), tool: res.assistantMessage.tool }])
+      const replyMsg: Msg = { role: 'assistant', content: res.assistantMessage.text, ts: Date.now(), tool: res.assistantMessage.tool }
+      setMessages((m) => [...m, replyMsg])
+      const found = extractArtifacts(replyMsg)
+      if (found.length) { setArtifacts((prev) => { const next = mergeArtifacts(prev, found); saveArtifacts(next); return next }); show(`Artifact created: ${found[0].title}`) }
       refreshChats()
     } catch (e) {
       sounds.error()
@@ -203,7 +220,7 @@ export default function App() {
         )}
         {view === 'projects' && <Projects />}
         {view === 'starred' && <Starred chats={starredChats} onOpen={openChat} onUnstar={toggleStar} />}
-        {view === 'artifacts' && <Artifacts messages={messages} />}
+        {view === 'artifacts' && <Artifacts items={artifacts} />}
         {view === 'studio' && <Studio show={show} />}
         {view === 'customise' && <Customise show={show} />}
         {view === 'settings' && <Settings values={settings} onChange={setSettings} show={show} />}
@@ -322,18 +339,49 @@ function Starred({ chats, onOpen, onUnstar }: { chats: ChatSummary[]; onOpen: (i
   )
 }
 
-function Artifacts({ messages }: { messages: Msg[] }) {
-  const artifacts = messages.filter((m) => m.role === 'assistant' && m.content.length > 240)
+function Artifacts({ items }: { items: Artifact[] }) {
+  const [open, setOpen] = useState<Artifact | null>(null)
   return (
     <div className="panel-scroll"><div className="panel-inner">
-      <div className="panel-head"><h2>Artifacts</h2><p>Turn your conversation into a useful, editable output. Show document and code previews.</p></div>
-      {!artifacts.length ? (
-        <div className="artifact-empty"><div className="big">Nothing here yet</div><div>Long-form Nova replies will appear here as artifacts.</div></div>
+      <div className="panel-head"><h2>Artifacts</h2><p>Code, documents, and media from your conversations — with native playback and preview.</p></div>
+      {!items.length ? (
+        <div className="artifact-empty"><div className="big">Nothing here yet</div><div>Ask Nova to build something — code, a document, or media — and it appears here.</div></div>
       ) : (
         <div className="card-grid">
-          {artifacts.map((m, i) => (
-            <div key={i} className="card"><div className="ic">◈</div><h3>Artifact {i + 1}</h3><p>{m.content.slice(0, 120)}…</p></div>
+          {items.map((a) => (
+            <div key={a.id} className="card" onClick={() => setOpen(a)}>
+              <div className="ic">{artifactIcon(a.type)}</div>
+              <h3>{a.title}</h3>
+              <p>{a.type}{a.language ? ` · ${a.language}` : ''} · {new Date(a.createdAt).toLocaleDateString()}</p>
+            </div>
           ))}
+        </div>
+      )}
+      {open && (
+        <div className="artifact-modal" onClick={() => setOpen(null)}>
+          <div className="artifact-modal-body" onClick={(e) => e.stopPropagation()}>
+            <div className="artifact-modal-head">
+              <strong>{artifactIcon(open.type)} {open.title}</strong>
+              <span>
+                {open.type === 'html' && <button className="btn ghost" onClick={() => openHtmlInNewTab(open)}>Open app</button>}
+                {!open.previewUrl && <button className="btn ghost" onClick={() => downloadArtifact(open)}>Download</button>}
+                <button className="btn" onClick={() => setOpen(null)}>Close</button>
+              </span>
+            </div>
+            <div className="artifact-modal-content">
+              {open.type === 'html' && <iframe title={open.title} sandbox="allow-scripts" srcDoc={open.content} style={{ width: '100%', height: 420, border: '1px solid var(--line)', borderRadius: 8, background: '#fff' }} />}
+              {open.type === 'code' && <pre style={{ overflowX: 'auto', fontSize: '0.8rem', lineHeight: 1.5 }}><code>{open.content}</code></pre>}
+              {open.type === 'document' && <div style={{ fontFamily: 'var(--font-serif)', lineHeight: 1.7, whiteSpace: 'pre-wrap' }}>{open.content}</div>}
+              {open.type === 'image' && open.previewUrl && <img src={open.previewUrl} alt={open.title} style={{ maxWidth: '100%', borderRadius: 8 }} />}
+              {open.type === 'audio' && open.previewUrl && <audio controls src={open.previewUrl} style={{ width: '100%' }} />}
+              {open.type === 'midi' && open.previewUrl && (
+                <div>
+                  <audio controls src={open.previewUrl} style={{ width: '100%' }} />
+                  <p style={{ color: 'var(--ink-faint)', fontSize: '0.85rem' }}>MIDI file — <a href={open.previewUrl} target="_blank" rel="noopener">download to play in a MIDI player</a>.</p>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       )}
     </div></div>

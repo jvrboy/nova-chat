@@ -365,3 +365,10 @@ select:focus, input:focus { outline: 2px solid var(--accent-wash); border-color:
 ::-webkit-scrollbar-track { background: transparent; }
 
 
+
+/* ---------- Artifact modal ---------- */
+.artifact-modal { position: fixed; inset: 0; z-index: 60; background: rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; padding: 1rem; }
+.artifact-modal-body { background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius); width: 100%; max-width: 860px; max-height: 86vh; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 20px 60px rgba(0,0,0,0.3); }
+.artifact-modal-head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 0.9rem 1.2rem; border-bottom: 1px solid var(--line); }
+.artifact-modal-head span { display: flex; gap: 0.5rem; }
+.artifact-modal-content { padding: 1.2rem; overflow: auto; }
