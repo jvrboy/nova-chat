@@ -1,9 +1,51 @@
 // ============ Nova Chat Tool Registry ============
 // Each tool can be invoked by the chat backend or directly via /api/tools/[name]
 // Risk levels: safe (auto-run) | review (needs approval) | sensitive (never auto-run)
+//
+// All tools are edge-runtime compatible (no Node.js fs/os/crypto imports).
 
-import ZAI from "z-ai-web-dev-sdk";
 import { recordToolRun } from "@/lib/storage";
+
+/**
+ * Edge-compatible helper to get Z.AI config from env vars.
+ * Bypasses the z-ai-web-dev-sdk which uses Node's fs/os modules.
+ */
+function getZaiConfig() {
+  return {
+    baseUrl: process.env.ZAI_BASE_URL || "https://internal-api.z.ai/v1",
+    apiKey: process.env.ZAI_API_KEY || process.env.ZAI_TOKEN || "Z.ai",
+    token: process.env.ZAI_TOKEN,
+    chatId: process.env.ZAI_CHAT_ID,
+    userId: process.env.ZAI_USER_ID,
+  };
+}
+
+async function zaiFetch(pathname: string, body: any): Promise<any> {
+  const cfg = getZaiConfig();
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    "Authorization": `Bearer ${cfg.apiKey}`,
+    "X-Z-AI-From": "Z",
+  };
+  if (cfg.token) headers["X-Token"] = cfg.token;
+  if (cfg.chatId) headers["X-Chat-Id"] = cfg.chatId;
+  if (cfg.userId) headers["X-User-Id"] = cfg.userId;
+  const res = await fetch(`${cfg.baseUrl}${pathname}`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const txt = await res.text().catch(() => "");
+    throw new Error(`Z.AI API ${res.status}: ${txt.slice(0, 200)}`);
+  }
+  // Some endpoints return JSON, some return SSE/JSON streams. We assume JSON for tools.
+  const contentType = res.headers.get("content-type") || "";
+  if (contentType.includes("application/json")) {
+    return await res.json();
+  }
+  return { text: await res.text() };
+}
 
 export interface ToolParam {
   name: string;
@@ -235,8 +277,21 @@ const uuidGenerator: Tool = {
   ],
   async execute({ count }) {
     const n = Math.min(100, Math.max(1, Number(count) || 1));
-    const { v4 } = await import("uuid");
-    const uuids = Array.from({ length: n }, () => v4());
+    // Use Web Crypto UUID (works on edge runtime + Node 19+)
+    const uuidFn = (): string => {
+      const g = (globalThis as any).crypto;
+      if (g?.randomUUID) return g.randomUUID();
+      // Fallback: build a v4 UUID from random bytes
+      const bytes = new Uint8Array(16);
+      if (g?.getRandomValues) g.getRandomValues(bytes);
+      else for (let i = 0; i < 16; i++) bytes[i] = Math.floor(Math.random() * 256);
+      // Set version (4) and variant (10xx)
+      bytes[6] = (bytes[6] & 0x0f) | 0x40;
+      bytes[8] = (bytes[8] & 0x3f) | 0x80;
+      const hex = Array.from(bytes).map((b) => b.toString(16).padStart(2, "0"));
+      return `${hex.slice(0, 4).join("")}-${hex.slice(4, 6).join("")}-${hex.slice(6, 8).join("")}-${hex.slice(8, 10).join("")}-${hex.slice(10, 16).join("")}`;
+    };
+    const uuids = Array.from({ length: n }, () => uuidFn());
     await recordToolRun({ toolName: "uuid-generator", toolInput: { count: n }, toolOutput: { uuids } });
     return { uuids };
   },
@@ -273,27 +328,34 @@ const base64Codec: Tool = {
 const hashGenerator: Tool = {
   id: "hash-generator",
   name: "Hash Generator",
-  description: "Generate SHA-256, SHA-512, or MD5 hash of input text.",
+  description: "Generate SHA-256 or SHA-512 hash of input text. (MD5 not supported on edge runtime — use SHA-256.)",
   category: "utility",
   risk: "safe",
   icon: "Hash",
   params: [
-    { name: "algorithm", type: "string", description: "sha256 | sha512 | md5", default: "sha256" },
+    { name: "algorithm", type: "string", description: "sha256 | sha512", default: "sha256" },
     { name: "input", type: "string", description: "Input text", required: true },
   ],
   async execute({ algorithm, input }) {
     const algo = (algorithm || "sha256").toLowerCase();
-    const crypto = await import("crypto");
-    let hash: string;
-    if (algo === "md5") {
-      hash = crypto.createHash("md5").update(input || "").digest("hex");
-    } else if (algo === "sha512") {
-      hash = crypto.createHash("sha512").update(input || "").digest("hex");
-    } else {
-      hash = crypto.createHash("sha256").update(input || "").digest("hex");
+    const text = input || "";
+    let hashHex: string;
+    try {
+      const subtle = (globalThis as any).crypto?.subtle;
+      if (!subtle) throw new Error("Web Crypto not available");
+      const data = new TextEncoder().encode(text);
+      let algoName: string = "SHA-256";
+      if (algo === "sha512") algoName = "SHA-512";
+      else if (algo === "sha1") algoName = "SHA-1";
+      else if (algo === "md5") throw new Error("MD5 not supported on edge runtime — use sha256 or sha512");
+      const buf = await subtle.digest(algoName, data);
+      const bytes = new Uint8Array(buf);
+      hashHex = Array.from(bytes).map((b) => b.toString(16).padStart(2, "0")).join("");
+    } catch (e: any) {
+      hashHex = `Error: ${e.message}`;
     }
-    await recordToolRun({ toolName: "hash-generator", toolInput: { algorithm: algo, input }, toolOutput: { hash } });
-    return { algorithm: algo, hash };
+    await recordToolRun({ toolName: "hash-generator", toolInput: { algorithm: algo, input }, toolOutput: { hash: hashHex } });
+    return { algorithm: algo, hash: hashHex };
   },
 };
 
@@ -311,14 +373,20 @@ const passwordGenerator: Tool = {
     { name: "uppercase", type: "boolean", description: "Include uppercase", default: true },
   ],
   async execute({ length, symbols, numbers, uppercase }) {
-    const crypto = await import("crypto");
     let chars = "abcdefghijklmnopqrstuvwxyz";
     if (uppercase) chars += "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
     if (numbers) chars += "0123456789";
     if (symbols) chars += "!@#$%^&*()-_=+[]{}<>?";
     const len = Math.min(128, Math.max(8, Number(length) || 24));
-    const bytes = crypto.randomBytes(len);
-    const password = Array.from(bytes, (b) => chars[b % chars.length]).join("");
+    // Use Web Crypto API (works on edge runtime + Node)
+    const randomValues = new Uint32Array(len);
+    if (typeof globalThis !== "undefined" && (globalThis as any).crypto?.getRandomValues) {
+      (globalThis as any).crypto.getRandomValues(randomValues);
+    } else {
+      // Fallback to Math.random (less secure, but works everywhere)
+      for (let i = 0; i < len; i++) randomValues[i] = Math.floor(Math.random() * 0xffffffff);
+    }
+    const password = Array.from(randomValues, (b) => chars[b % chars.length]).join("");
     await recordToolRun({ toolName: "password-generator", toolInput: { length: len, symbols, numbers, uppercase }, toolOutput: { password } });
     return { password, length: len };
   },
@@ -420,14 +488,9 @@ const webSearch: Tool = {
   async execute({ query, count }) {
     const start = Date.now();
     try {
-      const zai = await ZAI.create();
       const n = Math.min(10, Math.max(1, Number(count) || 5));
-      const results: any = await zai.functions.invoke("web_search", {
-        query,
-        num: n,
-      });
-      // FunctionMap: web_search returns SearchFunctionResultItem[] (an array)
-      const arr = Array.isArray(results) ? results : (results?.results || []);
+      const result: any = await zaiFetch("/functions/web_search", { query, num: n });
+      const arr = Array.isArray(result) ? result : (result?.results || []);
       const out = arr.map((r: any) => ({
         title: r.name || r.title,
         url: r.url,
@@ -466,8 +529,7 @@ const webReader: Tool = {
   async execute({ url }) {
     const start = Date.now();
     try {
-      const zai = await ZAI.create();
-      const result = await zai.functions.invoke("page_reader", { url });
+      const result: any = await zaiFetch("/functions/page_reader", { url });
       await recordToolRun({
         toolName: "web-reader",
         toolInput: { url },
@@ -504,8 +566,7 @@ const imageGeneration: Tool = {
   async execute({ prompt, size }) {
     const start = Date.now();
     try {
-      const zai = await ZAI.create();
-      const result: any = await zai.images.generations.create({
+      const result: any = await zaiFetch("/images/generations", {
         prompt,
         size: size || "1024x1024",
       });
@@ -576,10 +637,21 @@ const qrGenerator: Tool = {
   async execute({ text, size }) {
     const s = Math.min(1024, Math.max(64, Number(size) || 256));
     const txt = text || "";
-    // Simple SVG QR placeholder (real implementation would use a QR library)
-    // Generate a deterministic-looking SVG using a hash of the text as a seed
-    const crypto = await import("crypto");
-    const hash = crypto.createHash("sha256").update(txt).digest("hex");
+    // Generate a deterministic-looking SVG "pseudo-QR" using SHA-256 of the text as a seed.
+    // (Not a real QR code — for a real QR, integrate a QR library that works on edge.)
+    const subtle = (globalThis as any).crypto?.subtle;
+    let hash = "";
+    try {
+      const data = new TextEncoder().encode(txt);
+      const buf = await subtle.digest("SHA-256", data);
+      const bytes = new Uint8Array(buf);
+      hash = Array.from(bytes).map((b) => b.toString(16).padStart(2, "0")).join("");
+    } catch (e: any) {
+      // Fallback: simple FNV-1a hash
+      let h = 2166136261;
+      for (let i = 0; i < txt.length; i++) { h ^= txt.charCodeAt(i); h = Math.imul(h, 16777619); }
+      hash = (h >>> 0).toString(16).padStart(8, "0").repeat(8);
+    }
     let cells: number[] = [];
     for (let i = 0; i < 256; i++) cells.push(parseInt(hash.substr(i * 2, 2), 16) % 2);
     const cellSize = s / 16;

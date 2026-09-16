@@ -87,6 +87,9 @@ export function NovaProvider({ children }: { children: React.ReactNode }) {
   const [currentArtifactId, setCurrentArtifactId] = useState<string | null>(null);
   const [loading, setLoading] = useState({ chats: true, messages: false, settings: true });
   const abortRef = useRef<AbortController | null>(null);
+  // Ref to read current chat id inside async callbacks without stale closure
+  const currentChatIdRef = useRef<string | null>(null);
+  useEffect(() => { currentChatIdRef.current = currentChatId; }, [currentChatId]);
 
   // ============ Load settings first ============
   useEffect(() => {
@@ -203,13 +206,19 @@ export function NovaProvider({ children }: { children: React.ReactNode }) {
   // ============ Send message with SSE streaming ============
   const sendMessage = useCallback(async (text: string) => {
     if (!text.trim()) return;
-    if (!currentChatId) {
-      const id = await newChat();
-      if (!id) return;
-      // Wait for state to settle
+    // Resolve the chat id first — either the current chat, or create a new one.
+    // We need to handle this carefully because `currentChatId` from closure may be stale.
+    let chatId = currentChatIdRef.current;
+    if (!chatId) {
+      const newId = await newChat();
+      if (!newId) {
+        toast.error("Could not start a new chat");
+        return;
+      }
+      chatId = newId;
+      // small delay so other React state propagates
       await new Promise((r) => setTimeout(r, 50));
     }
-    const chatId = currentChatId || (await newChat());
     if (!chatId) return;
 
     // Optimistic: add user message
