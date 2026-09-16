@@ -4,6 +4,7 @@ import type { AppEnv } from '../lib/types'
 import { newId, nowIso } from '../lib/ids'
 import { appendAudit } from '../lib/db'
 import { chatComplete, streamChatComplete, llmAvailable, offlineReply, LlmMessage } from '../lib/llm'
+import { aiConfigured } from '../lib/ai'
 import { runTool, toolAsLlmSpec, toolRegistry, getTool } from '../lib/tools'
 import { semanticSearch, upsertEmbedding } from '../lib/embeddings'
 
@@ -116,7 +117,7 @@ chat.post('/:id/messages', async (c) => {
 
   // No LLM key configured on this deployment? Use the offline tool-backed
   // responder so the web app stays fully functional instead of erroring.
-  if (!llmAvailable(c.env)) {
+  if (!llmAvailable(c.env) && !aiConfigured(c.env)) {
     const reply = offlineReply(text)
     const assistantMsgId = newId('msg')
     await c.env.DB.prepare('INSERT INTO messages (id, chat_id, workspace_id, role, content, tool_name, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')

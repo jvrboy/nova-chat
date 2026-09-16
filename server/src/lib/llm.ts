@@ -1,4 +1,5 @@
 import type { Bindings } from './types'
+import { aiChat, aiConfigured, type ChatMessage as AiMessage } from './ai'
 
 export type LlmContentPart =
   | { type: 'text'; text: string }
@@ -117,6 +118,17 @@ export async function chatComplete(
     maxTokens?: number
   }
 ): Promise<ChatCompletionResult> {
+  // No OpenAI key but free-tier AI pools configured? Route through the
+  // multi-provider router (Groq/Gemini/Ollama) with automatic key rotation.
+  if (!llmAvailable(env) && aiConfigured(env)) {
+    const msgs: AiMessage[] = options.messages.map((m) => ({
+      role: m.role === 'system' ? 'system' : m.role === 'user' ? 'user' : 'assistant',
+      content: typeof m.content === 'string' ? m.content : m.content == null ? '' : JSON.stringify(m.content),
+    }))
+    const r = await aiChat(env, msgs, {})
+    return { message: { role: 'assistant', content: r.text }, raw: { provider: r.provider, model: r.model }, usage: undefined }
+  }
+
   const baseUrl = (env.OPENAI_BASE_URL || 'https://api.openai.com/v1').replace(/\/$/, '')
   const model = resolveModel(env, options.model)
 

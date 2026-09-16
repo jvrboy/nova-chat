@@ -2,6 +2,7 @@ import { Hono } from 'hono'
 import type { AppEnv } from '../lib/types'
 import { newId, nowIso } from '../lib/ids'
 import { appendAudit } from '../lib/db'
+import { realtimeQuote, alphaSeries, realtimeStatus } from '../lib/realtime'
 import {
   SYMBOLS,
   getSymbol,
@@ -248,6 +249,29 @@ market.post('/backtest', async (c) => {
     return c.json({ ...result, symbol: resolved.symbol, timeframe: resolved.timeframe, source: resolved.source, strategy: { id: strategy.id, name: strategy.name }, initial })
   } catch (e) {
     return c.json({ error: e instanceof Error ? e.message : 'Backtest failed' }, 400)
+  }
+})
+
+// ---- Real-time data (Finnhub / Alpha Vantage / Deriv with key rotation) ----
+market.get('/realtime/status', (c) => c.json({ providers: realtimeStatus(c.env) }))
+
+market.get('/realtime/quote/:symbol', async (c) => {
+  const symbol = c.req.param('symbol')
+  try {
+    const quote = await realtimeQuote(c.env, symbol, c.env.DB)
+    return c.json(quote)
+  } catch (e) {
+    return c.json({ error: e instanceof Error ? e.message : 'Real-time quote failed' }, 502)
+  }
+})
+
+market.get('/realtime/series/:symbol', async (c) => {
+  const symbol = c.req.param('symbol')
+  try {
+    const series = await alphaSeries(c.env, symbol, c.env.DB)
+    return c.json(series)
+  } catch (e) {
+    return c.json({ error: e instanceof Error ? e.message : 'Series fetch failed' }, 502)
   }
 })
 

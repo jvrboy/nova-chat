@@ -51,6 +51,15 @@ export type Bindings = {
   RATE_LIMIT_PER_MINUTE?: string
   // Optional: enables Expo push delivery (lib/push.ts falls back to a no-op log without it).
   EXPO_ACCESS_TOKEN?: string
+  // AI provider pools (free-tier keys, JSON arrays of {key}) with auto-rotation. See lib/ai.ts.
+  GROQ_KEYS_JSON?: string
+  GEMINI_KEYS_JSON?: string
+  OLLAMA_KEYS_JSON?: string
+  // Real-time market data pools (free keys). See lib/realtime.ts.
+  FINNHUB_KEYS_JSON?: string
+  ALPHAVANTAGE_KEYS_JSON?: string
+  DERIV_TOKEN?: string
+  DERIV_APP_ID?: string
 }
 
 export type AppEnv = {
