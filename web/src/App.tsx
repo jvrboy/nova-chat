@@ -4,7 +4,7 @@ import {
   marketSymbols, marketAnalyze, marketStrategies, marketBacktest,
   cryptoOp, transformData, textStats,
   type ChatSummary, type SymbolInfo,
-} from './api'
+, getSyncKey, setSyncKey, pullRemoteSettings, pushRemoteSettings } from './api'
 import { THEMES, applyTheme, getTheme } from './theme'
 import { sounds, configureSounds, unlockAudio } from './sounds'
 import { extractArtifacts, loadArtifacts, saveArtifacts, mergeArtifacts, downloadArtifact, openHtmlInNewTab, artifactIcon, type Artifact } from './artifacts'
@@ -87,10 +87,30 @@ export default function App() {
   useEffect(() => {
     const scale = Number(settings['f.scale'] ?? 100)
     const radius = Number(settings['a.borderRadius'] ?? 65) / 100
-    document.documentElement.style.setProperty('--nova-font-scale', `${scale}%`)
-    document.documentElement.style.setProperty('--radius', `${(0.65 * radius).toFixed(3)}rem`)
+    const blur = Number(settings['a.blurAmount'] ?? 8)
+    const uiScale = Number(settings['a.uiScale'] ?? 100) / 100
+    const sideW = Number(settings['a.sidebarWidth'] ?? 288)
+    const root = document.documentElement
+    root.style.setProperty('--nova-font-scale', `${scale}%`)
+    root.style.setProperty('--radius', `${(0.65 * radius).toFixed(3)}rem`)
+    root.style.setProperty('--app-blur', `${blur}px`)
+    root.style.setProperty('--ui-scale', String(uiScale))
+    root.style.setProperty('--sidebar-w', `${sideW}px`)
+    root.style.setProperty('--chat-size', `${Number(settings['f.chatSize'] ?? 100)}%`)
+    root.style.setProperty('--line-h', String(Number(settings['f.lineHeight'] ?? 165) / 100))
+    document.body.classList.toggle('glass', settings['a.glassFx'] === true)
+    document.body.classList.toggle('reduce-motion', settings['a.reduceMotion'] === true || settings['y.reduceMotionA11y'] === true)
+    document.body.classList.toggle('compact', settings['a.compact'] === true)
     saveSettings(settings)
+    // Push to cloud for cross-device sync (debounced-ish, best effort).
+    if (settings['g.cloudSync'] !== false && getSyncKey()) pushRemoteSettings(settings)
   }, [settings])
+  // Pull remote settings on load when a sync key is set.
+  useEffect(() => {
+    if (!getSyncKey()) return
+    pullRemoteSettings().then((remote) => { if (remote && Object.keys(remote).length) setSettings((cur) => ({ ...cur, ...remote })) })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   function toggleStar(id: string) {
     setStarred((s) => {
@@ -219,7 +239,7 @@ export default function App() {
                 )}
               </div>
             </div>
-            <Composer input={input} setInput={setInput} onSend={send} busy={busy} settings={settings} />
+            <Composer input={input} setInput={setInput} onSend={send} busy={busy} settings={settings} show={show} />
           </>
         )}
         {view === 'projects' && <Projects />}
@@ -283,7 +303,7 @@ function Message({ m, settings }: { m: Msg; settings: SettingsValues }) {
   )
 }
 
-function Composer({ input, setInput, onSend, busy, settings }: { input: string; setInput: (s: string) => void; onSend: () => void; busy: boolean; settings: SettingsValues }) {
+function Composer({ input, setInput, onSend, busy, settings, show }: { input: string; setInput: (s: string) => void; onSend: () => void; busy: boolean; settings: SettingsValues; show: (s: string) => void }) {
   const ref = useRef<HTMLTextAreaElement>(null)
   const enterSend = settings['c.enterSend'] !== false
   return (
@@ -298,7 +318,7 @@ function Composer({ input, setInput, onSend, busy, settings }: { input: string; 
             onChange={(e) => { setInput(e.target.value); const el = e.target; el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, Number(settings['c.composerMax'] ?? 180)) + 'px' }}
             onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey && enterSend) { e.preventDefault(); onSend() } }}
           />
-          <button className="icon-btn" title="Voice input" onClick={() => { (window as any).__novaVoice?.() }}>🎙</button>
+          <button className="icon-btn" title="Voice input" onClick={() => show('Voice input is not supported in this browser.')}>🎙</button>
           <button className="icon-btn send" title="Send" disabled={busy || !input.trim()} onClick={onSend}>↑</button>
         </div>
       </div>
@@ -628,10 +648,28 @@ function Settings({ values, onChange, show }: { values: SettingsValues; onChange
             ))}
           </>
         )}
+        <div className="pref-section">
+          <h3>Sync across devices</h3>
+          <p className="desc">Enter the same sync key on every device to share chats and settings.</p>
+          <SyncKeyRow show={show} />
+        </div>
         <div style={{ display: 'flex', gap: '0.6rem', marginTop: '0.5rem' }}>
           <button className="btn ghost" onClick={() => { const d = loadSettings(); onChange(d); show('Settings reloaded') }}>Reload</button>
           <button className="btn" onClick={() => { localStorage.removeItem('nova.settings'); onChange(loadSettings()); show('Settings reset to defaults') }}>Reset to defaults</button>
         </div>
+      </div>
+    </div>
+  )
+}
+
+function SyncKeyRow({ show }: { show: (s: string) => void }) {
+  const [key, setKey] = useState(getSyncKey())
+  return (
+    <div className="pref-row">
+      <div><div className="lbl">Sync key</div><div className="sub">A passphrase you invent — same on all your devices.</div></div>
+      <div style={{ display: 'flex', gap: '0.5rem' }}>
+        <input type="text" value={key} placeholder="e.g. my-nova-key" onChange={(e) => setKey(e.target.value)} style={{ minWidth: 200 }} />
+        <button className="btn" onClick={() => { setSyncKey(key); show(key ? 'Sync enabled — reload to sync' : 'Sync key cleared') }}>Save</button>
       </div>
     </div>
   )

@@ -5,13 +5,23 @@
 const API = '/api'
 const WORKSPACE_KEY = 'nova.workspaceId'
 
+// A shared "sync key" lets all your devices land in the SAME workspace, so
+// chats and settings persist and sync across devices. Set it in Settings.
+const SYNCKEY = 'nova.syncKey'
+export function getSyncKey(): string { return localStorage.getItem(SYNCKEY) ?? '' }
+export function setSyncKey(k: string): void { localStorage.setItem(SYNCKEY, k.trim()) }
 export function getWorkspaceId(): string {
+  const key = getSyncKey()
+  if (key) return `sync-${key.toLowerCase().replace(/[^a-z0-9-]/g, '-')}`
   let id = localStorage.getItem(WORKSPACE_KEY)
-  if (!id) {
-    id = `web-${crypto.randomUUID()}`
-    localStorage.setItem(WORKSPACE_KEY, id)
-  }
+  if (!id) { id = `web-${crypto.randomUUID()}`; localStorage.setItem(WORKSPACE_KEY, id) }
   return id
+}
+export async function pullRemoteSettings(): Promise<Record<string, unknown> | null> {
+  try { const r = await req<{ settings: Record<string, unknown> | null }>('/sync'); return r.settings } catch { return null }
+}
+export async function pushRemoteSettings(settings: Record<string, unknown>): Promise<void> {
+  try { await req('/sync', { method: 'PUT', body: JSON.stringify({ settings }) }) } catch { /* offline */ }
 }
 
 async function req<T = unknown>(path: string, opts: RequestInit = {}): Promise<T> {

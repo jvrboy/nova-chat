@@ -401,3 +401,13 @@ html[data-nova-theme] .toast { border: 1px solid var(--line-strong); }
 
 /* Mobile topbar: hide crumb on tiny screens */
 @media (max-width: 420px) { .topbar .crumb { display: none; } }
+
+/* ---------- Wired settings (now functional) ---------- */
+body.glass .sidebar, body.glass .topbar, body.glass .composer-wrap, body.glass .pref-section, body.glass .card { backdrop-filter: blur(var(--app-blur, 8px)); -webkit-backdrop-filter: blur(var(--app-blur, 8px)); }
+body.glass .sidebar, body.glass .topbar, body.glass .composer-wrap { background: color-mix(in srgb, var(--paper) 78%, transparent); }
+body.glass .pref-section, body.glass .card { background: color-mix(in srgb, var(--paper) 82%, transparent); }
+body.reduce-motion *, body.reduce-motion *::before, body.reduce-motion *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+body.compact .nav-item, body.compact .chat-row, body.compact .pref-row { padding-top: 0.35rem; padding-bottom: 0.35rem; }
+body.compact .msg .body { font-size: 0.92rem; }
+.sidebar { width: var(--sidebar-w, 288px); flex-basis: var(--sidebar-w, 288px); }
+.msg .body { font-size: calc(0.98rem * (var(--chat-size, 100%) / 100)); line-height: var(--line-h, 1.65); }
