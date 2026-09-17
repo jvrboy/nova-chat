@@ -17,8 +17,24 @@ if (!existsSync(routesPath)) {
 
 const routes = JSON.parse(readFileSync(routesPath, 'utf8'))
 routes.exclude = routes.exclude ?? []
-for (const p of ['/static/*', '/app/assets/*', '/sounds/*']) {
+// Add the web app's static paths so requests for them never hit the Worker.
+// Note: Cloudflare Pages rejects overlapping rules, so we de-duplicate any
+// path that is already covered by a broader splat rule (e.g. /app/* covers
+// /app/assets/*, so we don't add the latter if the former is present).
+const candidates = ['/static/*', '/app/assets/*', '/sounds/*', '/app/*']
+for (const p of candidates) {
   if (!routes.exclude.includes(p)) routes.exclude.push(p)
 }
+// Remove overlapping rules: if a path is a prefix of another (with splat),
+// drop the more specific one (the broader rule already covers it).
+const isSplat = (p) => p.endsWith('/*')
+const prefix = (p) => p.replace(/\/\*$/, '')
+routes.exclude = routes.exclude.filter((p) => {
+  if (!isSplat(p)) return true
+  const myPrefix = prefix(p)
+  // keep p only if NO other rule is a broader prefix of p
+  const covered = routes.exclude.some((other) => other !== p && isSplat(other) && prefix(p).startsWith(prefix(other) + '/'))
+  return !covered
+})
 writeFileSync(routesPath, JSON.stringify(routes))
 console.log('fix-routes: exclude =', routes.exclude.join(', '))
