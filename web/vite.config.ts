@@ -2,6 +2,7 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
 export default defineConfig({
+  css: { postcss: { plugins: [] } }, // don't inherit the Expo app's root postcss config
   // Served from the Cloudflare Pages project under /app/ so the SPA shares an
   // origin with the /api backend (no CORS).
   base: '/app/',
