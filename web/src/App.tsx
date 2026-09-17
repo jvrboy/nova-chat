@@ -104,7 +104,11 @@ export default function App() {
     setActiveChat(id); setView('chat'); setNavOpen(false)
     try {
       const rows = (await getMessages(id)).messages
-      setMessages(rows.filter((r) => r.role === 'user' || r.role === 'assistant').map((r) => ({ role: r.role as 'user' | 'assistant', content: r.content, ts: Date.parse(r.created_at), tool: r.tool_name })))
+      const msgs = rows.filter((r) => r.role === 'user' || r.role === 'assistant').map((r) => ({ role: r.role as 'user' | 'assistant', content: r.content, ts: Date.parse(r.created_at), tool: r.tool_name }))
+      setMessages(msgs)
+      // Backfill artifacts from existing conversation history (fixes pre-fix chats).
+      const backfill = msgs.flatMap((m) => extractArtifacts(m))
+      if (backfill.length) setArtifacts((prev) => { const next = mergeArtifacts(prev, backfill); saveArtifacts(next); return next })
     } catch { setMessages([]) }
   }
 
@@ -294,7 +298,7 @@ function Composer({ input, setInput, onSend, busy, settings }: { input: string; 
             onChange={(e) => { setInput(e.target.value); const el = e.target; el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, Number(settings['c.composerMax'] ?? 180)) + 'px' }}
             onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey && enterSend) { e.preventDefault(); onSend() } }}
           />
-          <button className="icon-btn" title="Voice input" onClick={() => alert('Voice input is not supported in this browser.')}>🎙</button>
+          <button className="icon-btn" title="Voice input" onClick={() => { (window as any).__novaVoice?.() }}>🎙</button>
           <button className="icon-btn send" title="Send" disabled={busy || !input.trim()} onClick={onSend}>↑</button>
         </div>
       </div>
