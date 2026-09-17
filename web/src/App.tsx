@@ -97,7 +97,7 @@ export default function App() {
     root.style.setProperty('--app-blur', `${blur}px`)
     root.style.setProperty('--ui-scale', String(uiScale))
     root.style.setProperty('--sidebar-w', `${sideW}px`)
-    root.style.setProperty('--chat-size', `${Number(settings['f.chatSize'] ?? 100)}%`)
+    root.style.setProperty('--chat-scale', String(Number(settings['f.chatSize'] ?? 100) / 100))
     root.style.setProperty('--line-h', String(Number(settings['f.lineHeight'] ?? 165) / 100))
     document.body.classList.toggle('glass', settings['a.glassFx'] === true)
     document.body.classList.toggle('reduce-motion', settings['a.reduceMotion'] === true || settings['y.reduceMotionA11y'] === true)

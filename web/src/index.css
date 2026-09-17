@@ -410,4 +410,4 @@ body.reduce-motion *, body.reduce-motion *::before, body.reduce-motion *::after 
 body.compact .nav-item, body.compact .chat-row, body.compact .pref-row { padding-top: 0.35rem; padding-bottom: 0.35rem; }
 body.compact .msg .body { font-size: 0.92rem; }
 .sidebar { width: var(--sidebar-w, 288px); flex-basis: var(--sidebar-w, 288px); }
-.msg .body { font-size: calc(0.98rem * (var(--chat-size, 100%) / 100)); line-height: var(--line-h, 1.65); }
+.msg .body { font-size: calc(0.98rem * var(--chat-scale, 1)); line-height: var(--line-h, 1.65); }
