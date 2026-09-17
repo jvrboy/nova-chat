@@ -5,6 +5,8 @@ import {
   cryptoOp, transformData, textStats,
   type ChatSummary, type SymbolInfo,
   getSyncKey, setSyncKey, pullRemoteSettings, pushRemoteSettings,
+  listProjects, createProject, listProjectTasks, setTaskStatus, deleteChat,
+  type Project, type ProjectTask,
 } from './api'
 import { THEMES, applyTheme, getTheme } from './theme'
 import { sounds, configureSounds, unlockAudio } from './sounds'
@@ -192,8 +194,11 @@ export default function App() {
           <div className="chat-list">
             {chats.slice(0, 20).map((c) => (
               <div key={c.id} className={`chat-row${c.id === activeChat ? ' active' : ''}`} onClick={() => openChat(c.id)}>
-                <div className="t">{c.title}</div>
-                <div className="s">{new Date(c.updated_at).toLocaleDateString()}</div>
+                <div className="t" style={{ flex: 1 }}>{c.title}</div>
+                <div className="s" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span>{new Date(c.updated_at).toLocaleDateString()}</span>
+                  <button className="chat-del" title="Delete conversation" onClick={async (e) => { e.stopPropagation(); try { await deleteChat(c.id); show('Conversation deleted'); if (activeChat === c.id) { setActiveChat(null); setMessages([]) } refreshChats() } catch { show('Could not delete') } }}>×</button>
+                </div>
               </div>
             ))}
             {!chats.length && <div className="chat-row"><div className="s">No conversations yet.</div></div>}
@@ -243,7 +248,7 @@ export default function App() {
             <Composer input={input} setInput={setInput} onSend={send} busy={busy} settings={settings} show={show} />
           </>
         )}
-        {view === 'projects' && <Projects />}
+        {view === 'projects' && <Projects show={show} onOpenChat={() => setView('chat')} />}
         {view === 'starred' && <Starred chats={starredChats} onOpen={openChat} onUnstar={toggleStar} />}
         {view === 'artifacts' && <Artifacts items={artifacts} />}
         {view === 'studio' && <Studio show={show} />}
@@ -319,7 +324,19 @@ function Composer({ input, setInput, onSend, busy, settings, show }: { input: st
             onChange={(e) => { setInput(e.target.value); const el = e.target; el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, Number(settings['c.composerMax'] ?? 180)) + 'px' }}
             onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey && enterSend) { e.preventDefault(); onSend() } }}
           />
-          <button className="icon-btn" title="Voice input" onClick={() => show('Voice input is not supported in this browser.')}>🎙</button>
+          <button className="icon-btn" title="Voice input" onClick={() => {
+            const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+            if (!SR) { show('Voice input is not supported in this browser.'); return }
+            try {
+              const rec = new SR()
+              rec.lang = 'en-US'; rec.interimResults = false; rec.maxAlternatives = 1
+              show('Listening…')
+              rec.onresult = (e: any) => { const t = e.results?.[0]?.[0]?.transcript ?? ''; if (t) setInput((input ? input + ' ' : '') + t); show('Transcribed into the draft') }
+              rec.onerror = () => show('Voice input failed.')
+              rec.onend = () => {}
+              rec.start()
+            } catch { show('Voice input failed to start.') }
+          }}>🎙</button>
           <button className="icon-btn send" title="Send" disabled={busy || !input.trim()} onClick={onSend}>↑</button>
         </div>
       </div>
@@ -327,17 +344,71 @@ function Composer({ input, setInput, onSend, busy, settings, show }: { input: st
   )
 }
 
-function Projects() {
+function Projects({ show, onOpenChat }: { show: (s: string) => void; onOpenChat: () => void }) {
+  const [projects, setProjects] = useState<Project[]>([])
+  const [loading, setLoading] = useState(true)
+  const [name, setName] = useState('')
+  const [expanded, setExpanded] = useState<string | null>(null)
+  const [tasks, setTasks] = useState<Record<string, ProjectTask[]>>({})
+
+  const refresh = useCallback(async () => {
+    setLoading(true)
+    try { setProjects((await listProjects()).projects) } catch { show('Could not load projects') } finally { setLoading(false) }
+  }, [show])
+  useEffect(() => { refresh() }, [refresh])
+
+  async function add() {
+    const n = name.trim(); if (!n) return
+    try { await createProject(n); setName(''); show('Project created with a starter plan'); refresh() } catch { show('Could not create project') }
+  }
+  async function toggle(id: string) {
+    if (expanded === id) { setExpanded(null); return }
+    setExpanded(id)
+    if (!tasks[id]) { try { const t = (await listProjectTasks(id)).tasks; setTasks((m) => ({ ...m, [id]: t })) } catch { /* ignore */ } }
+  }
+  async function cycleStatus(taskId: string, projectId: string) {
+    const order = ['backlog', 'todo', 'in_progress', 'blocked', 'done']
+    const cur = (tasks[projectId] ?? []).find((t) => t.id === taskId)
+    const next = order[(order.indexOf(cur?.status ?? 'todo') + 1) % order.length]
+    try {
+      await setTaskStatus(taskId, next)
+      setTasks((m) => ({ ...m, [projectId]: (m[projectId] ?? []).map((t) => (t.id === taskId ? { ...t, status: next } : t)) }))
+    } catch { show('Could not update task') }
+  }
+
   return (
     <div className="panel-scroll"><div className="panel-inner">
-      <div className="panel-head"><h2>Projects</h2><p>A focused space for related conversations. Tell Nova how to work in this project.</p></div>
-      <div className="card-grid">
-        {[
-          { ic: '▦', t: 'New project', d: 'Group chats, notes, and artifacts around one effort.' },
-          { ic: '❝', t: 'Research brief', d: 'Steps, milestones, and next actions in one place.' },
-          { ic: '◈', t: 'Drafting space', d: 'Turn conversations into polished, editable output.' },
-        ].map((c) => <div key={c.t} className="card"><div className="ic">{c.ic}</div><h3>{c.t}</h3><p>{c.d}</p></div>)}
+      <div className="panel-head"><h2>Projects</h2><p>A focused space for related conversations. Each project starts with a starter plan.</p></div>
+      <div className="pref-section" style={{ marginBottom: '1rem' }}>
+        <div style={{ display: 'flex', gap: '0.6rem' }}>
+          <input type="text" placeholder="New project name…" value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') add() }} style={{ flex: 1 }} />
+          <button className="btn primary" onClick={add}>Create</button>
+        </div>
       </div>
+      {loading ? <p style={{ color: 'var(--ink-faint)' }}>Loading…</p> : !projects.length ? (
+        <div className="artifact-empty"><div className="big">No projects yet</div><div>Create your first project above — it comes with a starter plan of tasks.</div></div>
+      ) : (
+        <div className="card-grid">
+          {projects.map((pr) => (
+            <div key={pr.id} className="card" onClick={() => toggle(pr.id)}>
+              <div className="ic" style={{ color: pr.color }}>▦</div>
+              <h3>{pr.name}</h3>
+              <p>{pr.description || 'Project'} · {new Date(pr.updated_at).toLocaleDateString()}</p>
+              {expanded === pr.id && (
+                <div style={{ marginTop: '0.7rem', borderTop: '1px solid var(--line)', paddingTop: '0.6rem' }} onClick={(e) => e.stopPropagation()}>
+                  {(tasks[pr.id] ?? []).map((t) => (
+                    <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.3rem 0', fontSize: '0.86rem' }}>
+                      <button className="btn ghost" style={{ padding: '0.15rem 0.5rem', fontSize: '0.72rem' }} onClick={() => cycleStatus(t.id, pr.id)}>{t.status}</button>
+                      <span style={{ textDecoration: t.status === 'done' ? 'line-through' : 'none', color: t.status === 'done' ? 'var(--ink-faint)' : 'inherit' }}>{t.title}</span>
+                    </div>
+                  ))}
+                  {!tasks[pr.id]?.length && <p style={{ color: 'var(--ink-faint)', fontSize: '0.82rem' }}>No tasks.</p>}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
     </div></div>
   )
 }

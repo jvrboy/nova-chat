@@ -107,3 +107,18 @@ export async function textStats(text: string) {
 export async function health() {
   return req<{ status: string; service: string; time: string }>('/health')
 }
+
+// ---- Projects (real CRUD) ----
+export type Project = { id: string; name: string; description: string; color: string; updated_at: string }
+export type ProjectTask = { id: string; title: string; description: string; status: string; priority: string }
+export async function listProjects() { return req<{ projects: Project[] }>('/projects') }
+export async function createProject(name: string, description = '', color = '#55d6ff') {
+  return req<{ id: string; name: string }>('/projects', { method: 'POST', body: JSON.stringify({ name, description, color }) })
+}
+export async function listProjectTasks(projectId: string) { return req<{ tasks: ProjectTask[] }>(`/projects/${encodeURIComponent(projectId)}/tasks`) }
+export async function setTaskStatus(taskId: string, status: string) {
+  return req(`/projects/tasks/${encodeURIComponent(taskId)}`, { method: 'PATCH', body: JSON.stringify({ status }) })
+}
+export async function deleteChat(chatId: string) {
+  return req(`/chats/${encodeURIComponent(chatId)}`, { method: 'DELETE' })
+}
