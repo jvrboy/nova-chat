@@ -11,6 +11,7 @@ import { extractFirstMatchingFile } from './zip'
 import { firecrawlScrape, firecrawlSearch, firecrawlMap, firecrawlStatus } from './firecrawl'
 import { huggingfaceChat, huggingfaceEmbed, huggingfaceStatus } from './huggingface'
 import { extraTools } from './tools-extra'
+import { advancedTools } from './tools-advanced'
 
 // Self-check: the spread below must actually add the extra tools to the registry.
 
@@ -1406,6 +1407,7 @@ export const toolRegistry: ToolDefinition[] = [
   readabilityScoreTool,
   htmlStripTool,
   ...extraTools,
+  ...advancedTools,
 ]
 
 export function getTool(id: string): ToolDefinition | undefined {

@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { getChat, createMessage, updateMessage, getSettings } from "@/lib/storage";
-import { parseArtifactsFromMarkdown, inferTitle } from "@/lib/artifacts";
+import { parseArtifactsFromMarkdown, inferTitle, validateArtifact } from "@/lib/artifacts";
 import { saveArtifact } from "@/lib/artifacts/server";
 import { executeTool, TOOLS } from "@/lib/tools";
 
@@ -368,20 +368,27 @@ Be concise, friendly, and proactive.`;
         const artifactIds: string[] = [];
         for (const p of parsed) {
           try {
-            const aid = await saveArtifact(body.chatId, assistantMsg.id, {
-              title: inferTitle(p.content, p.type),
+            const spec = {
+              title: p.title || inferTitle(p.content, p.type),
               type: p.type as any,
               language: p.language,
               content: p.content,
               tags: [p.type, p.language].filter(Boolean),
-            });
+            };
+            // Validate before saving — warn on issues but still persist
+            const issues = validateArtifact(spec);
+            if (issues.length > 0) {
+              sendEvent("artifact_warning", { type: p.type, issues });
+            }
+            const aid = await saveArtifact(body.chatId, assistantMsg.id, spec);
             artifactIds.push(aid);
             sendEvent("artifact", {
               id: aid,
               messageId: assistantMsg.id,
               type: p.type,
               language: p.language,
-              title: inferTitle(p.content, p.type),
+              title: spec.title,
+              issues: issues.length ? issues : undefined,
             });
           } catch (e: any) {
             sendEvent("error", { error: `Failed to save artifact: ${e.message}` });

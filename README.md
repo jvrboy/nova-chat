@@ -4,6 +4,36 @@ An Expo (React Native) AI workspace app — chat, agents, tools, memory, files,
 and automation — backed by a Cloudflare Workers API with a full offline
 fallback.
 
+## What's New — Ultra-Advanced Backend
+
+The backend is now powered by a multi-strategy reasoning engine, a
+persistent long-running task system, and a continuously-self-improving
+brain. Highlights:
+
+- **7 reasoning strategies** with auto-routing per query:
+  ReAct, Tree-of-Thought, Plan-and-Execute, Self-Critique, Multi-Agent Debate,
+  Reflect-and-Refine, Direct
+- **Long-running tasks** that survive across Worker invocations and
+  keep working ("never stops until done") until the goal is verified complete.
+  Cron-driven; resumable; observable.
+- **Brain ↔ Chat integration** — every chat pulls memory + skills + knowledge
+  via the brain, then writes back an episodic memory and reinforces skills
+  on high-confidence answers (real online learning).
+- **Continuous training** — the brain runs training sessions on a configurable
+  schedule (default: every 6 hours) and triggers periodic self-reflection.
+- **13 new advanced tools** (68 total, up from 55) including `reason-react`,
+  `tree-of-thought`, `plan-execute`, `self-critique`, `multi-debate`,
+  `long-task-start`, `code-review`, `prompt-optimize`, `synthesize-research`,
+  `strategy-recommend`, `chain-tools`, and more.
+- **Enhanced artifacts** — 16 types (was 10), now with validation, optional
+  titles, and renderable/downloadable flags.
+- **New API surface** at `/api/advanced/*` — streaming advanced chat with
+  real-time reasoning trace visibility, task lifecycle endpoints, brain
+  capabilities snapshot, training triggers.
+- **35 server tests** (was 21), all passing.
+
+See `worklog.md` for the full change list.
+
 ## Structure
 
 ```
