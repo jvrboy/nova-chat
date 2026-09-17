@@ -4,7 +4,8 @@ import {
   marketSymbols, marketAnalyze, marketStrategies, marketBacktest,
   cryptoOp, transformData, textStats,
   type ChatSummary, type SymbolInfo,
-, getSyncKey, setSyncKey, pullRemoteSettings, pushRemoteSettings } from './api'
+  getSyncKey, setSyncKey, pullRemoteSettings, pushRemoteSettings,
+} from './api'
 import { THEMES, applyTheme, getTheme } from './theme'
 import { sounds, configureSounds, unlockAudio } from './sounds'
 import { extractArtifacts, loadArtifacts, saveArtifacts, mergeArtifacts, downloadArtifact, openHtmlInNewTab, artifactIcon, type Artifact } from './artifacts'
