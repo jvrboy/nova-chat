@@ -11,11 +11,12 @@ const SYNCKEY = 'nova.syncKey'
 export function getSyncKey(): string { return localStorage.getItem(SYNCKEY) ?? '' }
 export function setSyncKey(k: string): void { localStorage.setItem(SYNCKEY, k.trim()) }
 export function getWorkspaceId(): string {
+  // AUTOMATIC cross-device sync: by default every browser (iOS, Android,
+  // desktop) uses ONE shared workspace, so chats & settings sync with zero
+  // setup. Setting a sync key in Settings switches to your private workspace.
   const key = getSyncKey()
   if (key) return `sync-${key.toLowerCase().replace(/[^a-z0-9-]/g, '-')}`
-  let id = localStorage.getItem(WORKSPACE_KEY)
-  if (!id) { id = `web-${crypto.randomUUID()}`; localStorage.setItem(WORKSPACE_KEY, id) }
-  return id
+  return 'nova-shared'
 }
 export async function pullRemoteSettings(): Promise<Record<string, unknown> | null> {
   try { const r = await req<{ settings: Record<string, unknown> | null }>('/sync'); return r.settings } catch { return null }

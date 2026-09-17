@@ -107,11 +107,11 @@ export default function App() {
     document.body.classList.toggle('compact', settings['a.compact'] === true)
     saveSettings(settings)
     // Push to cloud for cross-device sync (debounced-ish, best effort).
-    if (settings['g.cloudSync'] !== false && getSyncKey()) pushRemoteSettings(settings)
+    if (settings['g.cloudSync'] !== false) pushRemoteSettings(settings)
   }, [settings])
   // Pull remote settings on load when a sync key is set.
   useEffect(() => {
-    if (!getSyncKey()) return
+    // Automatic settings sync: pull the shared settings on every load.
     pullRemoteSettings().then((remote) => { if (remote && Object.keys(remote).length) setSettings((cur) => ({ ...cur, ...remote })) })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
