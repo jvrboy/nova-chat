@@ -16,8 +16,9 @@ sync.put('/', async (c) => {
   const body = await c.req.json().catch(() => ({}))
   const settings = body?.settings && typeof body.settings === 'object' ? body.settings : {}
   await c.env.DB.prepare('INSERT INTO kv_settings (workspace_id, key, value, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(workspace_id, key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at')
-    .bind(workspaceId, 'sync:settings', JSON.stringify(settings), nowIso()).run()
-  return c.json({ ok: true, updatedAt: nowIso() })
+    .bind(workspaceId, 'sync:settings', JSON.stringify(settings), at).run()
+  const at = nowIso()
+  return c.json({ ok: true, workspaceId, updatedAt: at, settings })
 })
 
 export default sync

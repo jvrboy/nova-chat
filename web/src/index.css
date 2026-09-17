@@ -404,8 +404,8 @@ html[data-nova-theme] .toast { border: 1px solid var(--line-strong); }
 
 /* ---------- Wired settings (now functional) ---------- */
 body.glass .sidebar, body.glass .topbar, body.glass .composer-wrap, body.glass .pref-section, body.glass .card { backdrop-filter: blur(var(--app-blur, 8px)); -webkit-backdrop-filter: blur(var(--app-blur, 8px)); }
-body.glass .sidebar, body.glass .topbar, body.glass .composer-wrap { background: color-mix(in srgb, var(--paper) 78%, transparent); }
-body.glass .pref-section, body.glass .card { background: color-mix(in srgb, var(--paper) 82%, transparent); }
+body.glass .sidebar, body.glass .topbar, body.glass .composer-wrap { background: var(--paper); opacity: 0.92; }
+body.glass .pref-section, body.glass .card { background: var(--paper); }
 body.reduce-motion *, body.reduce-motion *::before, body.reduce-motion *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 body.compact .nav-item, body.compact .chat-row, body.compact .pref-row { padding-top: 0.35rem; padding-bottom: 0.35rem; }
 body.compact .msg .body { font-size: 0.92rem; }
