@@ -31,6 +31,12 @@ import brainRoutes from './routes/brain'
 import orchRoutes from './routes/orchestrate'
 import syncRoutes from './routes/sync'
 import midiRoutes from './routes/midi'
+import advancedRoutes from './routes/advanced'
+import { drainPendingLongTasks } from './lib/longTask'
+import { runTrainingSession } from './lib/brain/training'
+import { bindBrainDb } from './lib/brain/db'
+import { ensureBrainInitialized } from './lib/brain/init'
+import { periodicReflection } from './lib/brain/core'
 
 const app = new Hono<AppEnv>()
 
@@ -75,6 +81,7 @@ app.route('/api/brain', brainRoutes)
 app.route('/api/orchestrate', orchRoutes)
 app.route('/api/sync', syncRoutes)
 app.route('/api/midi', midiRoutes)
+app.route('/api/advanced', advancedRoutes)
 
 app.get('/api/health', (c) => c.json({ status: 'ok', service: 'nova-backend', time: new Date().toISOString() }))
 
@@ -109,8 +116,9 @@ app.get('*', (c) => {
 export default {
   fetch: app.fetch,
   // Cloudflare Cron Trigger handler: drains due jobs, evaluates alert rules,
-  // and runs any due scheduled workflows for every known workspace, on the
-  // schedule defined in wrangler.jsonc. Real background processing.
+  // runs any due scheduled workflows for every known workspace, drains
+  // pending long-running tasks (the "never stops until done" engine), and
+  // runs a periodic brain training session for continuous self-improvement.
   async scheduled(_event: ScheduledEvent, env: AppEnv['Bindings'], ctx: ExecutionContext) {
     ctx.waitUntil(
       (async () => {
@@ -119,6 +127,57 @@ export default {
         for (const workspace of workspaces) {
           await drainJobQueue(env, workspace.id)
           await evaluateAlerts(env, workspace.id)
+        }
+
+        // Drain pending long-running tasks — advances each task by one phase.
+        // Tasks with more work remaining will be picked up again on the next tick.
+        try {
+          const drainResult = await drainPendingLongTasks(env, env.DB, 10)
+          console.log(`[cron] long-tasks: processed=${drainResult.processed} completed=${drainResult.completed} failed=${drainResult.failed}`)
+        } catch (err) {
+          console.error('[cron] long-task drain failed:', err)
+        }
+
+        // Continuous brain training: run a small session every cron tick
+        // (default every 5 min) — keeps capabilities evolving even when
+        // no users are submitting tasks. Best-effort; never blocks the
+        // scheduled handler.
+        try {
+          bindBrainDb(env.DB)
+          await ensureBrainInitialized()
+
+          // Check if training is due (based on training_schedule table)
+          const schedule = await env.DB.prepare(
+            "SELECT * FROM training_schedule WHERE enabled = 1 AND (next_run_at IS NULL OR next_run_at <= datetime('now')) ORDER BY next_run_at ASC LIMIT 1",
+          ).first<any>()
+
+          if (schedule) {
+            const now = new Date()
+            const next = new Date(now.getTime() + (schedule.interval_minutes ?? 360) * 60_000)
+            await env.DB.prepare(
+              'UPDATE training_schedule SET last_run_at = ?, next_run_at = ? WHERE id = ?',
+            ).bind(now.toISOString(), next.toISOString(), schedule.id).run()
+
+            const categories = (() => {
+              try { return JSON.parse(schedule.categories) as any[] } catch { return ['logic', 'math', 'language', 'planning', 'creative', 'coding', 'reasoning'] }
+            })()
+            const rounds = Math.min(Math.max(Number(schedule.rounds_per_run) || 2, 1), 5)
+            const difficultyStart = Math.min(Math.max(Number(schedule.difficulty_start) || 1, 1), 10)
+            const difficultyEnd = Math.min(Math.max(Number(schedule.difficulty_end) || 5, difficultyStart), 10)
+
+            await runTrainingSession({
+              rounds,
+              categories,
+              difficultyStart,
+              difficultyEnd,
+            })
+            console.log(`[cron] brain training session completed: rounds=${rounds} categories=${categories.length}`)
+
+            // Trigger a periodic reflection too
+            await periodicReflection().catch(() => {})
+          }
+        } catch (err) {
+          console.error('[cron] continuous training failed:', err)
         }
       })()
     )
