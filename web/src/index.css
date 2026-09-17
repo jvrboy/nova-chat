@@ -417,3 +417,14 @@ body.compact .msg .body { font-size: 0.92rem; }
 .chat-del { border: 0; background: transparent; color: var(--ink-faint); cursor: pointer; font-size: 1rem; line-height: 1; padding: 0 0.2rem; border-radius: 4px; opacity: 0; transition: opacity 0.15s ease; }
 .chat-row:hover .chat-del { opacity: 1; }
 .chat-del:hover { color: var(--danger, #d85a3a); background: var(--paper-deep); }
+
+/* ---------- Chats manager + message actions ---------- */
+.chat-manage-list { display: flex; flex-direction: column; gap: 0.3rem; }
+.chat-manage-row { display: flex; align-items: center; gap: 0.7rem; padding: 0.6rem 0.8rem; border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper); }
+.chat-manage-row.selected { border-color: var(--accent); background: var(--accent-wash); }
+.chat-manage-row .cmr-title { flex: 1; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.chat-manage-row .cmr-date { font-size: 0.76rem; color: var(--ink-faint); }
+.msg-actions { margin-top: 0.25rem; opacity: 0; transition: opacity 0.15s ease; }
+.msg:hover .msg-actions { opacity: 1; }
+.msg-act { border: 0; background: transparent; color: var(--ink-faint); cursor: pointer; font-size: 0.76rem; padding: 0.1rem 0.4rem; border-radius: 4px; }
+.msg-act:hover { color: var(--accent); background: var(--paper-deep); }

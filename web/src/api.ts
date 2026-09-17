@@ -122,3 +122,11 @@ export async function setTaskStatus(taskId: string, status: string) {
 export async function deleteChat(chatId: string) {
   return req(`/chats/${encodeURIComponent(chatId)}`, { method: 'DELETE' })
 }
+
+// ---- Chat management + MIDI ----
+export async function updateChat(chatId: string, patch: { title?: string; archived?: boolean }) {
+  return req(`/chats/${encodeURIComponent(chatId)}`, { method: 'PATCH', body: JSON.stringify(patch) })
+}
+export async function generateMidi(body: { key?: string; tempo?: number; bars?: number; style?: string }) {
+  return req<{ ok: boolean; base64: string; filename: string; meta: Record<string, unknown> }>('/midi/generate', { method: 'POST', body: JSON.stringify(body) })
+}

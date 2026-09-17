@@ -264,6 +264,22 @@ chat.post('/:id/stream', async (c) => {
   })
 })
 
+
+// PATCH /api/chats/:id — rename and/or archive a conversation.
+chat.patch('/:id', async (c) => {
+  const workspaceId = c.get('workspaceId')
+  const chatId = c.req.param('id')
+  const body = await c.req.json().catch(() => ({}))
+  const owner = await c.env.DB.prepare('SELECT id FROM chats WHERE id = ? AND workspace_id = ?').bind(chatId, workspaceId).first()
+  if (!owner) return c.json({ error: 'Chat not found in workspace.' }, 404)
+  const at = nowIso()
+  if (typeof body.title === 'string' && body.title.trim()) await c.env.DB.prepare('UPDATE chats SET title = ?, updated_at = ? WHERE id = ?').bind(body.title.trim().slice(0, 120), at, chatId).run()
+  if (body.archived === true) await c.env.DB.prepare('UPDATE chats SET title = ?, updated_at = ? WHERE id = ?').bind('[archived] ' + String((await c.env.DB.prepare('SELECT title FROM chats WHERE id = ?').bind(chatId).first<{title:string}>())?.title ?? ''), at, chatId).run()
+  await appendAudit(c.env.DB, { workspaceId, actorId: c.get('actorId'), action: 'chat.updated', resource: 'chat', resourceId: chatId })
+  const updated = await c.env.DB.prepare('SELECT id, title, updated_at FROM chats WHERE id = ?').bind(chatId).first()
+  return c.json(updated)
+})
+
 chat.delete('/:id', async (c) => {
   const workspaceId = c.get('workspaceId')
   const chatId = c.req.param('id')

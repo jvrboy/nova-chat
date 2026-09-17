@@ -18,6 +18,8 @@ export type Artifact = {
 
 export type SourceMsg = { role: string; content: string; ts: number }
 
+function hashOf(str: string): string { let h = 5381; for (let i = 0; i < str.length; i++) h = ((h << 5) + h + str.charCodeAt(i)) | 0; return (h >>> 0).toString(36) }
+
 const IMAGE_EXT = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg']
 const AUDIO_EXT = ['mp3', 'wav', 'ogg', 'm4a', 'flac']
 const MIDI_EXT = ['mid', 'midi']
@@ -49,7 +51,7 @@ export function extractArtifacts(msg: SourceMsg): Artifact[] {
     if (code.length < 20) continue
     const type: ArtifactType = lang === 'html' ? 'html' : 'code'
     out.push({
-      id: `art-${msg.ts}-c${out.length}`,
+      id: `art-c-${hashOf(code)}`,
       type,
       language: lang,
       title: guessCodeTitle(code, lang),
@@ -66,7 +68,7 @@ export function extractArtifacts(msg: SourceMsg): Artifact[] {
     const ext = url.split('.').pop()!.toLowerCase()
     const type: ArtifactType = IMAGE_EXT.includes(ext) ? 'image' : MIDI_EXT.includes(ext) ? 'midi' : 'audio'
     out.push({
-      id: `art-${msg.ts}-m${out.length}`,
+      id: `art-m-${hashOf(url)}`,
       type,
       title: url.split('/').pop()!.split('?')[0],
       content: '',
@@ -79,7 +81,7 @@ export function extractArtifacts(msg: SourceMsg): Artifact[] {
   // 3. Long-form documents (no code/media found)
   if (out.length === 0 && msg.content.length > 400) {
     out.push({
-      id: `art-${msg.ts}-d`,
+      id: `art-d-${hashOf(msg.content.slice(0, 400))}`,
       type: 'document',
       title: guessDocTitle(msg.content),
       content: msg.content,
@@ -109,8 +111,9 @@ export function saveArtifacts(items: Artifact[]): void {
 }
 
 export function mergeArtifacts(existing: Artifact[], incoming: Artifact[]): Artifact[] {
-  const seen = new Set(existing.map((a) => a.id))
-  const fresh = incoming.filter((a) => !seen.has(a.id))
+  const seenIds = new Set(existing.map((a) => a.id))
+  const seenContent = new Set(existing.map((a) => hashOf((a.content || a.previewUrl || '') + a.type)))
+  const fresh = incoming.filter((a) => !seenIds.has(a.id) && !seenContent.has(hashOf((a.content || a.previewUrl || '') + a.type)))
   return fresh.length ? [...existing, ...fresh] : existing
 }
 

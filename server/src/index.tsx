@@ -30,6 +30,7 @@ import insightRoutes from './routes/insights'
 import brainRoutes from './routes/brain'
 import orchRoutes from './routes/orchestrate'
 import syncRoutes from './routes/sync'
+import midiRoutes from './routes/midi'
 
 const app = new Hono<AppEnv>()
 
@@ -73,6 +74,7 @@ app.route('/api/insights', insightRoutes)
 app.route('/api/brain', brainRoutes)
 app.route('/api/orchestrate', orchRoutes)
 app.route('/api/sync', syncRoutes)
+app.route('/api/midi', midiRoutes)
 
 app.get('/api/health', (c) => c.json({ status: 'ok', service: 'nova-backend', time: new Date().toISOString() }))
 

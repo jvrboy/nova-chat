@@ -5,7 +5,7 @@ import {
   cryptoOp, transformData, textStats,
   type ChatSummary, type SymbolInfo,
   getSyncKey, setSyncKey, pullRemoteSettings, pushRemoteSettings,
-  listProjects, createProject, listProjectTasks, setTaskStatus, deleteChat,
+  listProjects, createProject, listProjectTasks, setTaskStatus, deleteChat, updateChat, generateMidi,
   type Project, type ProjectTask,
 } from './api'
 import { THEMES, applyTheme, getTheme } from './theme'
@@ -60,6 +60,7 @@ export default function App() {
   const [busy, setBusy] = useState(false)
   const [settings, setSettings] = useState<SettingsValues>(loadSettings)
   const { toast, show } = useToast()
+  useEffect(() => { (window as any).__novaToast = show }, [show])
   const scrollRef = useRef<HTMLDivElement>(null)
 
   // Wire the sound engine to the sound settings and unlock audio on first tap.
@@ -226,7 +227,8 @@ export default function App() {
         </div>
 
         {view === 'home' && <Home onStart={(s) => newChat(s)} />}
-        {view === 'chat' && (
+        {view === 'chat' && !activeChat && <ChatsManager chats={chats} activeChat={activeChat} onOpen={openChat} onChanged={refreshChats} show={show} />}
+        {view === 'chat' && activeChat !== null && (
           <>
             <div className="chat-scroll" ref={scrollRef}>
               <div className="chat-inner">
@@ -273,6 +275,71 @@ function viewTitle(v: View): string {
   }
 }
 
+function ChatsManager({ chats, activeChat, onOpen, onChanged, show }: { chats: ChatSummary[]; activeChat: string | null; onOpen: (id: string) => void; onChanged: () => void; show: (s: string) => void }) {
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [renaming, setRenaming] = useState<string | null>(null)
+  const [name, setName] = useState('')
+  const toggle = (id: string) => setSelected((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n })
+  const all = selected.size === chats.length && chats.length > 0
+  async function bulk(action: 'archive' | 'delete') {
+    for (const id of selected) { try { action === 'delete' ? await deleteChat(id) : await updateChat(id, { archived: true }) } catch {} }
+    setSelected(new Set()); onChanged(); show(action === 'delete' ? `Deleted ${selected.size} chat(s)` : `Archived ${selected.size} chat(s)`)
+  }
+  async function rename(id: string) { const t = name.trim(); if (!t) { setRenaming(null); return } try { await updateChat(id, { title: t }); show('Renamed'); setRenaming(null); onChanged() } catch { show('Rename failed') } }
+  return (
+    <div className="panel-scroll"><div className="panel-inner">
+      <div className="panel-head"><h2>Chats</h2><p>{chats.length} conversation{chats.length === 1 ? '' : 's'} — select to manage in bulk.</p></div>
+      {chats.length > 0 && (
+        <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
+          <button className="btn ghost" onClick={() => setSelected(all ? new Set() : new Set(chats.map((c) => c.id)))}>{all ? 'Clear all' : 'Select all'}</button>
+          <button className="btn ghost" disabled={!selected.size} onClick={() => bulk('archive')}>Archive ({selected.size})</button>
+          <button className="btn ghost" disabled={!selected.size} style={{ color: 'var(--danger)' }} onClick={() => bulk('delete')}>Delete ({selected.size})</button>
+        </div>
+      )}
+      {!chats.length && <div className="artifact-empty"><div className="big">No conversations yet</div><div>Start a new chat from the sidebar.</div></div>}
+      <div className="chat-manage-list">
+        {chats.map((c) => (
+          <div key={c.id} className={`chat-manage-row${selected.has(c.id) ? ' selected' : ''}`}>
+            <input type="checkbox" checked={selected.has(c.id)} onChange={() => toggle(c.id)} />
+            {renaming === c.id ? (
+              <input autoFocus type="text" value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') rename(c.id); if (e.key === 'Escape') setRenaming(null) }} onBlur={() => rename(c.id)} style={{ flex: 1 }} />
+            ) : (
+              <span className="cmr-title" onClick={() => onOpen(c.id)} style={{ fontWeight: c.id === activeChat ? 700 : 500 }}>{c.title}</span>
+            )}
+            <span className="cmr-date">{new Date(c.updated_at).toLocaleDateString()}</span>
+            <button className="btn ghost" style={{ padding: '0.15rem 0.5rem' }} onClick={() => { setRenaming(c.id); setName(c.title) }}>Rename</button>
+          </div>
+        ))}
+      </div>
+    </div></div>
+  )
+}
+function MidiCard({ show }: { show: (s: string) => void }) {
+  const [key, setKey] = useState('Am'); const [tempo, setTempo] = useState(122); const [style, setStyle] = useState('edm'); const [busy, setBusy] = useState(false)
+  const [res, setRes] = useState<{ filename: string; meta: Record<string, unknown> } | null>(null)
+  async function gen() {
+    setBusy(true)
+    try {
+      const r = await generateMidi({ key, tempo, style })
+      const bin = atob(r.base64); const bytes = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
+      const blob = new Blob([bytes], { type: 'audio/midi' }); const url = URL.createObjectURL(blob)
+      const a = document.createElement('a'); a.href = url; a.download = r.filename; a.click(); URL.revokeObjectURL(url)
+      setRes(r); show(`MIDI ready — ${(r.meta.events as number) ?? 0} events, ${(r.meta.sections as string[])?.length ?? 0} sections`)
+    } catch { show('MIDI generation failed') } finally { setBusy(false) }
+  }
+  return (
+    <div>
+      <div style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap', marginBottom: '0.6rem' }}>
+        <select value={key} onChange={(e) => setKey(e.target.value)}>{['C','Cm','D','Dm','E','Em','F','G','Am','A','Bm','B'].map((k) => <option key={k}>{k}</option>)}</select>
+        <select value={style} onChange={(e) => setStyle(e.target.value)}>{['edm','house','lofi','ballad'].map((x) => <option key={x}>{x}</option>)}</select>
+        <input type="range" min={70} max={160} value={tempo} onChange={(e) => setTempo(Number(e.target.value))} style={{ flex: 1, minWidth: 120 }} />
+        <span style={{ fontSize: '0.82rem', color: 'var(--ink-soft)', alignSelf: 'center' }}>{tempo} BPM</span>
+        <button className="btn primary" disabled={busy} onClick={gen}>{busy ? 'Composing…' : 'Generate MIDI'}</button>
+      </div>
+      {res && <p style={{ fontSize: '0.8rem', color: 'var(--ink-faint)' }}>Downloaded {res.filename} · features: {((res.meta.features as string[]) ?? []).join(', ')}</p>}
+    </div>
+  )
+}
 function NavItem({ label, icon, active, onClick }: { label: string; icon: string; active: boolean; onClick: () => void }) {
   return (
     <button className={`nav-item${active ? ' active' : ''}`} onClick={() => { sounds.tap(); onClick() }}>
@@ -303,6 +370,9 @@ function Message({ m, settings }: { m: Msg; settings: SettingsValues }) {
       <div className="bubble">
         <div className="role">{isUser ? 'You' : 'Nova'}{m.tool ? ` · used ${m.tool}` : ''}</div>
         <div className="body">{m.content}</div>
+        <div className="msg-actions">
+          <button className="msg-act" title="Copy response" onClick={() => { navigator.clipboard?.writeText(m.content).then(() => (window as any).__novaToast?.('Copied')).catch(() => {}) }}>⧉ Copy</button>
+        </div>
         {showTs && <div className="time">{new Date(m.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>}
       </div>
     </div>
@@ -605,6 +675,12 @@ function Studio({ show }: { show: (s: string) => void }) {
             ))}
           </div>
         )}
+      </div>
+
+      <div className="pref-section">
+        <h3>MIDI composer</h3>
+        <p className="desc">Professional song-structure MIDI: humanized timing & velocity, extended voicings with voice leading, motif transformation, modulation & pitch-bend automation, phrasing with rests.</p>
+        <MidiCard show={show} />
       </div>
     </div></div>
   )
